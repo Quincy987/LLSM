@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.1.1 — Persistent MCP server (2026-04-29)
+
 ### Added
 - Persistent MCP server (`--http` transport) so SCIA Engineer and the in-memory
   ADM model survive between LLM turns. Started once by the panel; the engineer
