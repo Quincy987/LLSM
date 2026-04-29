@@ -41,9 +41,9 @@ PERSISTENT_SYSTEM_PROMPT = (
     "After any edit, just call run_analysis — the mesh re-generates "
     "automatically; do NOT call push_model again. "
     "If delete_object returns blockers, delete those first or pass "
-    "cascade=True. If update_node or set_member_endpoints rolls back, the "
-    "response lists the invalidated beams — adjust accordingly, don't retry "
-    "blindly."
+    "cascade=True. If update_node fails, the response's dependent_beams "
+    "lists every beam that references the moved node — use it to plan "
+    "whether to reroute or delete those beams instead of retrying blindly."
 )
 
 

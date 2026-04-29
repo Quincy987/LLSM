@@ -241,9 +241,14 @@ def _attach_warning(result: dict, warn: str | None) -> dict:
 
 
 def update_node(ctx: LlsmContext, name: str, x_mm: float, y_mm: float, z_mm: float) -> dict:
-    """Move an existing node to new coordinates. Try-or-rollback on failure.
+    """Move an existing node to new coordinates.
 
-    Returns the list of beams whose curve became invalid if rollback occurred.
+    The builder rolls back the X/Y/Z assignment if the .NET property write
+    throws (rare for in-memory ADM); the resulting model is not validated
+    here, so structural problems surface later when SCIA meshes the model.
+    On failure we return the list of beams that reference this node, so the
+    LLM has context about what's coupled to the move (it may want to delete
+    or re-route them).
     """
     if ctx.builder is None:
         return {"ok": False, "error": "no builder — call new_model first"}
@@ -252,14 +257,13 @@ def update_node(ctx: LlsmContext, name: str, x_mm: float, y_mm: float, z_mm: flo
     except KeyError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
-        # Walk dependents on rollback so the LLM knows which beams blocked the move
         deps: list[str] = []
         try:
             deps = ctx.builder.find_dependents(name)
         except Exception:
             pass
         return {"ok": False, "error": f"update rejected: {type(e).__name__}: {e}",
-                "rolled_back": True, "invalidated_beams": deps}
+                "rolled_back": True, "dependent_beams": deps}
     warn = _propagate_edit(ctx)
     return _attach_warning(
         {"ok": True, "name": name, "xyz_mm": [x_mm, y_mm, z_mm], "mesh_dirty": True},

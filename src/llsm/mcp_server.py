@@ -67,8 +67,10 @@ INSTRUCTIONS_PERSISTENT = (
     "Edit semantics:\n"
     "  - delete_object refuses if dependents exist and returns the blocker list. "
     "Pass cascade=True to remove dependents automatically, or delete them first.\n"
-    "  - update_node and set_member_endpoints rollback on failure and report the "
-    "invalidated beams. Don't retry blindly when you receive a blocker list.\n"
+    "  - update_node failure responses include `dependent_beams`: beams that "
+    "reference the moved node. Use that list to decide whether to also reroute "
+    "or delete those beams. Don't retry blindly.\n"
+    "  - set_member_endpoints rolls back its curve change on failure.\n"
     "  - After ANY edit, just call run_analysis — the mesh is regenerated "
     "automatically. You do NOT need to call push_model again."
 )
@@ -170,8 +172,12 @@ def _register_common_tools(mcp: FastMCP) -> None:
     # --- Edit primitives ---
     @mcp.tool()
     def update_node(name: str, x_mm: float, y_mm: float, z_mm: float) -> dict:
-        """Move an existing node to new coordinates. Try-or-rollback: returns invalidated_beams on failure.
-        After this, just call run_analysis — the mesh re-generates automatically."""
+        """Move an existing node to new coordinates. Best-effort rollback if the
+        write throws; the new geometry is validated later when SCIA meshes.
+        On failure the response includes `dependent_beams`: every beam that
+        references this node, so you can plan a re-route or delete.
+        After a successful call, just call run_analysis — the mesh re-generates
+        automatically."""
         return scia_tools.update_node(_ctx, name=name, x_mm=x_mm, y_mm=y_mm, z_mm=z_mm)
 
     @mcp.tool()

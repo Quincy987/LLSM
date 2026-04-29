@@ -166,6 +166,18 @@ def spawn(verbose: bool = False) -> McpHandle:
     LLSM_HOME.mkdir(parents=True, exist_ok=True)
     cleanup_stale_server(verbose=verbose)
 
+    # Defense in depth: cleanup_stale_server only removes PORT_FILE/PID_FILE
+    # when it positively identifies a stale child. If the prior process died
+    # leaving PORT_FILE alone (or PID_FILE was manually deleted), our polling
+    # loop below would read the STALE port before the new child rewrites it.
+    # Clear them unconditionally now so the only port-file we ever see is the
+    # one our new child writes.
+    for f in (PORT_FILE, PID_FILE):
+        try:
+            f.unlink(missing_ok=True)
+        except Exception:
+            pass
+
     creationflags = 0
     if os.name == "nt":
         # CREATE_NEW_PROCESS_GROUP lets us send CTRL_BREAK_EVENT later.
