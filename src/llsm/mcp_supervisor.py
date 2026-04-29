@@ -26,6 +26,7 @@ import psutil
 LLSM_HOME = Path.home() / ".llsm"
 PID_FILE = LLSM_HOME / "mcp.pid"
 PORT_FILE = LLSM_HOME / "mcp.port"
+LOG_FILE = LLSM_HOME / "mcp.log"
 CMDLINE_MARKER = "llsm.mcp_server"
 
 # How long the panel waits for the child to bind + drop the port-file.
@@ -51,12 +52,32 @@ class McpHandle:
 
     @property
     def mcp_config_json(self) -> str:
-        """JSON string that maps to claude --mcp-config <json>."""
-        return json.dumps({
-            "mcpServers": {
-                "llsm": {"type": "http", "url": self.url}
-            }
-        })
+        """JSON string that maps to claude --mcp-config <json>.
+
+        Compact separators avoid embedded spaces, which keeps the value safe
+        even if some future caller routes it through a path with shell parsing.
+        """
+        return json.dumps(
+            {"mcpServers": {"llsm": {"type": "http", "url": self.url}}},
+            separators=(",", ":"),
+        )
+
+
+def _tail_log(path: Path, max_bytes: int = 4000) -> str:
+    """Best-effort tail of the child stdio log, for surfacing in error messages."""
+    try:
+        size = path.stat().st_size
+    except FileNotFoundError:
+        return ""
+    except Exception:
+        return ""
+    offset = max(0, size - max_bytes)
+    try:
+        with open(path, "rb") as f:
+            f.seek(offset)
+            return f.read().decode("utf-8", errors="replace")
+    except Exception:
+        return ""
 
 
 def _read_pid_file(path: Path) -> dict[str, Any] | None:
@@ -160,21 +181,31 @@ def spawn(verbose: bool = False) -> McpHandle:
     if verbose:
         print(f"[mcp-supervisor] spawn: {cmd}", file=sys.stderr)
 
-    proc = subprocess.Popen(
-        cmd,
-        creationflags=creationflags,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    # Route child stdio to a log file rather than PIPE. With PIPE, nobody
+    # drains the buffer, so once it fills (~64KB on Windows) the child blocks
+    # on print/log writes — fatal during a long session where uvicorn logs
+    # every MCP request.
+    log_fp = open(LOG_FILE, "ab")
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            creationflags=creationflags,
+            stdout=log_fp,
+            stderr=log_fp,
+        )
+    finally:
+        # Popen dups the fd; we don't need our copy any more.
+        log_fp.close()
 
     # Wait for the child to atomically write its port-file.
     deadline = time.monotonic() + PORT_FILE_TIMEOUT_S
     port: int | None = None
     while time.monotonic() < deadline:
         if proc.poll() is not None:
-            err = (proc.stderr.read() or b"").decode(errors="replace") if proc.stderr else ""
+            tail = _tail_log(LOG_FILE, max_bytes=4000)
             raise RuntimeError(
-                f"MCP server exited early (code={proc.returncode})\n{err}"
+                f"MCP server exited early (code={proc.returncode}); "
+                f"log tail (see {LOG_FILE}):\n{tail}"
             )
         try:
             raw = PORT_FILE.read_text(encoding="utf-8").strip()
@@ -190,8 +221,10 @@ def spawn(verbose: bool = False) -> McpHandle:
     if port is None:
         # Port-file never appeared; abort and clean up.
         _kill_tree(proc.pid)
+        tail = _tail_log(LOG_FILE, max_bytes=4000)
         raise RuntimeError(
-            f"MCP server did not bind a port within {PORT_FILE_TIMEOUT_S}s"
+            f"MCP server did not bind a port within {PORT_FILE_TIMEOUT_S}s; "
+            f"log tail (see {LOG_FILE}):\n{tail}"
         )
 
     pid_data = _read_pid_file(PID_FILE) or {}

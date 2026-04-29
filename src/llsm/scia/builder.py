@@ -268,23 +268,34 @@ class ModelBuilder:
         Cascade-blocker check for delete_object. Walks the ADM model looking for
         references on common attributes (cross-section, curve nodes, support node,
         load case, load group, beam-load reference).
+
+        We compare by Name string rather than Python object identity because
+        pythonnet returns a fresh Python proxy on each managed-attribute access;
+        `obj.CrossSection is target` is unreliable. Names are unique within the
+        builder's bookkeeping, so name-equality is the safest stable comparison.
         """
-        target = self.get(name)
+        target_name = name
         deps: list[str] = []
-        for obj in self._model:
-            if obj is target:
-                continue
+
+        def _name_of(x: Any) -> str | None:
+            if x is None:
+                return None
             try:
-                obj_name = obj.Name
+                return x.Name
             except Exception:
+                return None
+
+        for obj in self._model:
+            obj_name = _name_of(obj)
+            if obj_name is None or obj_name == target_name:
                 continue
             try:
-                if getattr(obj, "CrossSection", None) is target:
+                if _name_of(getattr(obj, "CrossSection", None)) == target_name:
                     deps.append(obj_name); continue
             except Exception:
                 pass
             try:
-                if getattr(obj, "Material", None) is target:
+                if _name_of(getattr(obj, "Material", None)) == target_name:
                     deps.append(obj_name); continue
             except Exception:
                 pass
@@ -294,7 +305,7 @@ class ModelBuilder:
                     matched = False
                     for c in curves:
                         for n in (getattr(c, "Nodes", None) or []):
-                            if n is target:
+                            if _name_of(n) == target_name:
                                 matched = True; break
                         if matched:
                             break
@@ -303,23 +314,23 @@ class ModelBuilder:
             except Exception:
                 pass
             try:
-                if getattr(obj, "Node", None) is target:
+                if _name_of(getattr(obj, "Node", None)) == target_name:
                     deps.append(obj_name); continue
             except Exception:
                 pass
             try:
-                if getattr(obj, "LoadGroup", None) is target:
+                if _name_of(getattr(obj, "LoadGroup", None)) == target_name:
                     deps.append(obj_name); continue
             except Exception:
                 pass
             try:
-                if getattr(obj, "LoadCase", None) is target:
+                if _name_of(getattr(obj, "LoadCase", None)) == target_name:
                     deps.append(obj_name); continue
             except Exception:
                 pass
             try:
                 ref = getattr(obj, "Reference", None)
-                if ref is not None and getattr(ref, "Beam", None) is target:
+                if ref is not None and _name_of(getattr(ref, "Beam", None)) == target_name:
                     deps.append(obj_name); continue
             except Exception:
                 pass
@@ -340,7 +351,13 @@ class ModelBuilder:
         deleted: list[str] = []
         if cascade:
             for d in deps:
-                deleted.extend(self.delete_object(d, cascade=True))
+                # A dependent may have already been removed via a different
+                # cascade path (e.g. a load that depends on both a beam and a
+                # node when both are being cascaded). Tolerate that.
+                try:
+                    deleted.extend(self.delete_object(d, cascade=True))
+                except KeyError:
+                    continue
 
         last_exc: Exception | None = None
         for attempt in (

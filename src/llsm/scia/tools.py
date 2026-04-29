@@ -206,21 +206,38 @@ def close_scia(ctx: LlsmContext) -> dict:
 # Tools: model edits (in-memory ADM mutation + auto re-sync to SCIA)
 # ===================================================================
 
-def _propagate_edit(ctx: LlsmContext) -> None:
+def _propagate_edit(ctx: LlsmContext) -> str | None:
     """Auto-push the in-memory ADM change to SCIA's data server.
 
-    Only meaningful once a project is open (push_model has run). Before that,
-    edits live only in the builder and the next push_model carries them across.
-    Always sets mesh_dirty so the next run_analysis re-meshes.
+    Returns None on success, or a short error string the caller should attach
+    as `sync_warning` in the tool response. We never raise: the ADM mutation
+    has already happened and the LLM needs a structured result, not an
+    exception bubbling out of a successful edit path.
+
+    Sets mesh_dirty unconditionally so the next run_analysis re-meshes —
+    even when the SCIA-side sync fails, the ADM is now ahead of the mesh.
+
+    Skips the SCIA sync when no project is open yet: edits live in the
+    builder and the next push_model will carry them across.
     """
     ctx.mesh_dirty = True
     if not ctx.project_opened or ctx.session is None:
-        return
+        return None
     sess = ctx.session
     proj = sess.project
     if proj is None:
-        return
-    sess.submit(lambda: proj.Model.RefreshModel_ToSCIAEngineer())
+        return None
+    try:
+        sess.submit(lambda: proj.Model.RefreshModel_ToSCIAEngineer())
+    except Exception as e:
+        return f"ADM updated but SCIA sync failed: {type(e).__name__}: {e}"
+    return None
+
+
+def _attach_warning(result: dict, warn: str | None) -> dict:
+    if warn:
+        result["sync_warning"] = warn
+    return result
 
 
 def update_node(ctx: LlsmContext, name: str, x_mm: float, y_mm: float, z_mm: float) -> dict:
@@ -243,8 +260,11 @@ def update_node(ctx: LlsmContext, name: str, x_mm: float, y_mm: float, z_mm: flo
             pass
         return {"ok": False, "error": f"update rejected: {type(e).__name__}: {e}",
                 "rolled_back": True, "invalidated_beams": deps}
-    _propagate_edit(ctx)
-    return {"ok": True, "name": name, "xyz_mm": [x_mm, y_mm, z_mm], "mesh_dirty": True}
+    warn = _propagate_edit(ctx)
+    return _attach_warning(
+        {"ok": True, "name": name, "xyz_mm": [x_mm, y_mm, z_mm], "mesh_dirty": True},
+        warn,
+    )
 
 
 def delete_object(ctx: LlsmContext, name: str, cascade: bool = False) -> dict:
@@ -266,8 +286,8 @@ def delete_object(ctx: LlsmContext, name: str, cascade: bool = False) -> dict:
                 "blockers": blockers}
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
-    _propagate_edit(ctx)
-    return {"ok": True, "deleted": deleted, "mesh_dirty": True}
+    warn = _propagate_edit(ctx)
+    return _attach_warning({"ok": True, "deleted": deleted, "mesh_dirty": True}, warn)
 
 
 def set_line_load_magnitude(ctx: LlsmContext, name: str, magnitude_kn_per_m: float) -> dict:
@@ -280,8 +300,11 @@ def set_line_load_magnitude(ctx: LlsmContext, name: str, magnitude_kn_per_m: flo
         return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
-    _propagate_edit(ctx)
-    return {"ok": True, "name": name, "q_kNpm": magnitude_kn_per_m, "mesh_dirty": True}
+    warn = _propagate_edit(ctx)
+    return _attach_warning(
+        {"ok": True, "name": name, "q_kNpm": magnitude_kn_per_m, "mesh_dirty": True},
+        warn,
+    )
 
 
 def set_member_cross_section(ctx: LlsmContext, name: str, cross_section: str) -> dict:
@@ -294,8 +317,11 @@ def set_member_cross_section(ctx: LlsmContext, name: str, cross_section: str) ->
         return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
-    _propagate_edit(ctx)
-    return {"ok": True, "name": name, "section": cross_section, "mesh_dirty": True}
+    warn = _propagate_edit(ctx)
+    return _attach_warning(
+        {"ok": True, "name": name, "section": cross_section, "mesh_dirty": True},
+        warn,
+    )
 
 
 def set_member_endpoints(ctx: LlsmContext, name: str, node_a: str, node_b: str) -> dict:
@@ -311,8 +337,11 @@ def set_member_endpoints(ctx: LlsmContext, name: str, node_a: str, node_b: str) 
     except Exception as e:
         return {"ok": False, "error": f"endpoint reroute rejected: {type(e).__name__}: {e}",
                 "rolled_back": True}
-    _propagate_edit(ctx)
-    return {"ok": True, "name": name, "between": [node_a, node_b], "mesh_dirty": True}
+    warn = _propagate_edit(ctx)
+    return _attach_warning(
+        {"ok": True, "name": name, "between": [node_a, node_b], "mesh_dirty": True},
+        warn,
+    )
 
 
 # ===================================================================
