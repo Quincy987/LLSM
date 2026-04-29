@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llsm"
+version = "0.1.0"
+description = "LLM-driven automation for SCIA Engineer"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40.0",
+    "pythonnet>=3.0.5",
+    "pywin32>=310",
+    "psutil>=7.0.0",
+]
+
+[project.scripts]
+llsm = "llsm.cli:main"
+llsm-panel = "llsm.panel:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
