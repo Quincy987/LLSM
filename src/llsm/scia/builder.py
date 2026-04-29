@@ -199,6 +199,172 @@ class ModelBuilder:
         self._objects_by_name[name] = ld
         return ld
 
+    # --- Edit primitives ---------------------------------------------------
+
+    def update_node(self, name: str, x_mm: float, y_mm: float, z_mm: float) -> Any:
+        """Move an existing node. Try-or-rollback semantics.
+
+        On any exception while mutating, restore the original X/Y/Z and re-raise.
+        Caller is responsible for RefreshModel_ToSCIAEngineer + ValidateModel after.
+        """
+        node = self.get(name)
+        prev = (node.X, node.Y, node.Z)
+        try:
+            node.X = self._un.Length(x_mm, self._un.Units.LengthUnit.Millimeter)
+            node.Y = self._un.Length(y_mm, self._un.Units.LengthUnit.Millimeter)
+            node.Z = self._un.Length(z_mm, self._un.Units.LengthUnit.Millimeter)
+        except Exception:
+            node.X, node.Y, node.Z = prev
+            raise
+        return node
+
+    def set_line_load_magnitude(self, name: str, magnitude_kn_per_m: float) -> Any:
+        """Adjust the magnitude of an existing line load (kN/m)."""
+        load = self.get(name)
+        load.Value = self._un.ForcePerLength(
+            magnitude_kn_per_m, self._un.Units.ForcePerLengthUnit.KilonewtonPerMeter
+        )
+        return load
+
+    def set_member_cross_section(self, name: str, cross_section: str) -> Any:
+        """Swap the cross-section of an existing curve member."""
+        beam = self.get(name)
+        xs = self.get(cross_section)
+        beam.CrossSection = xs
+        return beam
+
+    def set_member_endpoints(self, name: str, node_a: str, node_b: str) -> Any:
+        """Re-route a beam between two existing nodes. Try-or-rollback."""
+        beam = self.get(name)
+        na, nb = self.get(node_a), self.get(node_b)
+        if na is nb:
+            raise ValueError(f"endpoints must differ (got both = {node_a!r})")
+        prev_curves = beam.Curves
+        try:
+            nodes = self._System.Collections.Generic.List[
+                self._adm.StructuralElements.StructuralPointConnection
+            ]()
+            nodes.Add(na)
+            nodes.Add(nb)
+            line = self._adm.Subtypes.Curve[self._adm.StructuralElements.StructuralPointConnection](
+                self._adm.Enums.CurveGeometricalShape.Line, nodes
+            )
+            curves = self._System.Collections.Generic.List[
+                self._adm.Subtypes.Curve[self._adm.StructuralElements.StructuralPointConnection]
+            ]()
+            curves.Add(line)
+            beam.Curves = curves
+        except Exception:
+            try:
+                beam.Curves = prev_curves
+            except Exception:
+                pass
+            raise
+        return beam
+
+    def find_dependents(self, name: str) -> list[str]:
+        """Return names of objects that reference `name`.
+
+        Cascade-blocker check for delete_object. Walks the ADM model looking for
+        references on common attributes (cross-section, curve nodes, support node,
+        load case, load group, beam-load reference).
+        """
+        target = self.get(name)
+        deps: list[str] = []
+        for obj in self._model:
+            if obj is target:
+                continue
+            try:
+                obj_name = obj.Name
+            except Exception:
+                continue
+            try:
+                if getattr(obj, "CrossSection", None) is target:
+                    deps.append(obj_name); continue
+            except Exception:
+                pass
+            try:
+                if getattr(obj, "Material", None) is target:
+                    deps.append(obj_name); continue
+            except Exception:
+                pass
+            try:
+                curves = getattr(obj, "Curves", None)
+                if curves is not None:
+                    matched = False
+                    for c in curves:
+                        for n in (getattr(c, "Nodes", None) or []):
+                            if n is target:
+                                matched = True; break
+                        if matched:
+                            break
+                    if matched:
+                        deps.append(obj_name); continue
+            except Exception:
+                pass
+            try:
+                if getattr(obj, "Node", None) is target:
+                    deps.append(obj_name); continue
+            except Exception:
+                pass
+            try:
+                if getattr(obj, "LoadGroup", None) is target:
+                    deps.append(obj_name); continue
+            except Exception:
+                pass
+            try:
+                if getattr(obj, "LoadCase", None) is target:
+                    deps.append(obj_name); continue
+            except Exception:
+                pass
+            try:
+                ref = getattr(obj, "Reference", None)
+                if ref is not None and getattr(ref, "Beam", None) is target:
+                    deps.append(obj_name); continue
+            except Exception:
+                pass
+        return deps
+
+    def delete_object(self, name: str, *, cascade: bool = False) -> list[str]:
+        """Delete an ADM object by name.
+
+        Returns the list of names that were deleted (the target plus any cascaded
+        dependents). With cascade=False, raises ValueError(blockers_list) if
+        dependents exist. With cascade=True, recursively deletes dependents first.
+        """
+        target = self.get(name)
+        deps = self.find_dependents(name)
+        if deps and not cascade:
+            raise ValueError(deps)
+
+        deleted: list[str] = []
+        if cascade:
+            for d in deps:
+                deleted.extend(self.delete_object(d, cascade=True))
+
+        last_exc: Exception | None = None
+        for attempt in (
+            lambda: self._svc.RemoveItemFromModel(self._model, target),
+            lambda: self._model.Remove(target),
+            lambda: self._svc.DeleteItemFromModel(self._model, target),
+        ):
+            try:
+                attempt()
+                last_exc = None
+                break
+            except Exception as e:
+                last_exc = e
+                continue
+        if last_exc is not None:
+            raise RuntimeError(
+                f"ADM delete API not available in this SCIA version: "
+                f"{type(last_exc).__name__}: {last_exc}"
+            )
+
+        self._objects_by_name.pop(name, None)
+        deleted.append(name)
+        return deleted
+
     # --- Query + finalize --------------------------------------------------
 
     def get(self, name: str) -> Any:

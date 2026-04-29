@@ -6,6 +6,7 @@ import psutil, win32api, win32con, win32gui, win32process
 from .llm.anthropic_backend import AnthropicBackend
 from .llm.claude_code_backend import ClaudeCodeBackend
 from .scia.loader import load as load_scia
+from . import mcp_supervisor
 
 GWLP_HWNDPARENT = -8
 SCIA_PROC_NAMES = {"sciaengineer.exe"}
@@ -49,9 +50,41 @@ class LlsmPanel:
         self._backend = None
         self._model = model
         self._backend_kind = backend_kind
+        self._mcp_handle = None  # mcp_supervisor.McpHandle | None
         self._build_ui()
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._start_mcp_server()
         self._poll_scia()
         self._drain_outbox()
+
+    def _start_mcp_server(self):
+        """Spawn the persistent MCP server child. Logs to the panel on success/failure.
+
+        Only used when the LLM backend talks via Claude Code (which speaks MCP).
+        The direct-API backend has no MCP layer, so we skip the child for it.
+        """
+        if self._backend_kind != "claude-code":
+            self._sysline("backend=api: persistent MCP server not started")
+            return
+        try:
+            self._mcp_handle = mcp_supervisor.spawn(verbose=True)
+            self._sysline(f"MCP server up at {self._mcp_handle.url}")
+        except Exception as exc:
+            self._sysline(f"MCP server failed to start: {type(exc).__name__}: {exc}")
+            self._mcp_handle = None
+
+    def _on_close(self):
+        """Window close handler — graceful MCP shutdown then destroy."""
+        if self._mcp_handle is not None:
+            try:
+                mcp_supervisor.shutdown(self._mcp_handle, verbose=True)
+            except Exception as exc:
+                print(f"[panel] MCP shutdown failed: {exc}")
+            self._mcp_handle = None
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
 
     def _build_ui(self):
         self.root = tk.Tk()
@@ -132,6 +165,10 @@ class LlsmPanel:
                 self._backend = AnthropicBackend(**kwargs)
             else:
                 # default: claude code subprocess (uses Max subscription, no API key)
+                # Hand it the persistent-MCP-server config so all turns hit the
+                # SAME server (and thus the same SCIA + in-memory ADM model).
+                if self._mcp_handle is not None:
+                    kwargs["mcp_config_json"] = self._mcp_handle.mcp_config_json
                 self._backend = ClaudeCodeBackend(**kwargs)
         return self._backend
 

@@ -18,6 +18,9 @@ class LlsmContext:
     """Holds the live SciaSession + the in-progress ModelBuilder.
 
     One context per LLM conversation. Tools mutate state on it.
+
+    mesh_dirty tracks whether the FE mesh is stale relative to the ADM model:
+    set after every successful push or edit; cleared after run_analysis remeshes.
     """
     def __init__(self) -> None:
         self.session: SciaSession | None = None
@@ -25,6 +28,7 @@ class LlsmContext:
         self.project_opened: bool = False
         self.last_calc_ok: bool = False
         self.rapi: Any = None
+        self.mesh_dirty: bool = False
 
     def ensure_session(self, visible: bool = False) -> SciaSession:
         if self.session is None:
@@ -160,17 +164,25 @@ def push_model(ctx: LlsmContext) -> dict:
 
     errors = sess.submit(_open_and_push)
     ctx.project_opened = True
-    return {"ok": not errors, "errors": errors, "items_pushed": ctx.builder.item_count()}
+    ctx.mesh_dirty = True
+    return {"ok": not errors, "errors": errors, "items_pushed": ctx.builder.item_count(),
+            "mesh_dirty": ctx.mesh_dirty}
 
 
 def run_analysis(ctx: LlsmContext) -> dict:
-    """Generate FE mesh and run linear analysis."""
+    """Generate FE mesh (if dirty) and run linear analysis.
+
+    Skips re-meshing when mesh_dirty is False — fast path for repeated result
+    queries on an unchanged model. Edit tools always set mesh_dirty=True.
+    """
     if not ctx.project_opened:
         return {"ok": False, "error": "no project open — call push_model first"}
     sess = ctx.session
+    needs_mesh = ctx.mesh_dirty
 
     def _mesh_and_calc():
-        sess.project.CreateMesh()
+        if needs_mesh:
+            sess.project.CreateMesh()
         sess.project.RunCalculation()
         time.sleep(5)  # small grace period for result files
         rapi = sess.project.Model.InitializeResultsAPI()
@@ -179,12 +191,128 @@ def run_analysis(ctx: LlsmContext) -> dict:
     rapi = sess.submit(_mesh_and_calc)
     ctx.rapi = rapi
     ctx.last_calc_ok = rapi is not None
-    return {"ok": ctx.last_calc_ok, "rapi_initialized": ctx.last_calc_ok}
+    if ctx.last_calc_ok:
+        ctx.mesh_dirty = False
+    return {"ok": ctx.last_calc_ok, "rapi_initialized": ctx.last_calc_ok,
+            "remeshed": needs_mesh, "mesh_dirty": ctx.mesh_dirty}
 
 
 def close_scia(ctx: LlsmContext) -> dict:
     ctx.close()
     return {"ok": True}
+
+
+# ===================================================================
+# Tools: model edits (in-memory ADM mutation + auto re-sync to SCIA)
+# ===================================================================
+
+def _propagate_edit(ctx: LlsmContext) -> None:
+    """Auto-push the in-memory ADM change to SCIA's data server.
+
+    Only meaningful once a project is open (push_model has run). Before that,
+    edits live only in the builder and the next push_model carries them across.
+    Always sets mesh_dirty so the next run_analysis re-meshes.
+    """
+    ctx.mesh_dirty = True
+    if not ctx.project_opened or ctx.session is None:
+        return
+    sess = ctx.session
+    proj = sess.project
+    if proj is None:
+        return
+    sess.submit(lambda: proj.Model.RefreshModel_ToSCIAEngineer())
+
+
+def update_node(ctx: LlsmContext, name: str, x_mm: float, y_mm: float, z_mm: float) -> dict:
+    """Move an existing node to new coordinates. Try-or-rollback on failure.
+
+    Returns the list of beams whose curve became invalid if rollback occurred.
+    """
+    if ctx.builder is None:
+        return {"ok": False, "error": "no builder — call new_model first"}
+    try:
+        ctx.builder.update_node(name, x_mm, y_mm, z_mm)
+    except KeyError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        # Walk dependents on rollback so the LLM knows which beams blocked the move
+        deps: list[str] = []
+        try:
+            deps = ctx.builder.find_dependents(name)
+        except Exception:
+            pass
+        return {"ok": False, "error": f"update rejected: {type(e).__name__}: {e}",
+                "rolled_back": True, "invalidated_beams": deps}
+    _propagate_edit(ctx)
+    return {"ok": True, "name": name, "xyz_mm": [x_mm, y_mm, z_mm], "mesh_dirty": True}
+
+
+def delete_object(ctx: LlsmContext, name: str, cascade: bool = False) -> dict:
+    """Delete an ADM object by name.
+
+    Without cascade, refuses if dependents exist and returns the blocker list.
+    With cascade=True, recursively removes dependents first.
+    """
+    if ctx.builder is None:
+        return {"ok": False, "error": "no builder — call new_model first"}
+    try:
+        deleted = ctx.builder.delete_object(name, cascade=cascade)
+    except KeyError as e:
+        return {"ok": False, "error": str(e)}
+    except ValueError as e:
+        # The builder packs blocker names into args[0] when dependents exist
+        blockers = e.args[0] if e.args and isinstance(e.args[0], list) else []
+        return {"ok": False, "error": "dependents exist — pass cascade=True or delete them first",
+                "blockers": blockers}
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+    _propagate_edit(ctx)
+    return {"ok": True, "deleted": deleted, "mesh_dirty": True}
+
+
+def set_line_load_magnitude(ctx: LlsmContext, name: str, magnitude_kn_per_m: float) -> dict:
+    """Adjust the magnitude of an existing line load (kN/m)."""
+    if ctx.builder is None:
+        return {"ok": False, "error": "no builder — call new_model first"}
+    try:
+        ctx.builder.set_line_load_magnitude(name, magnitude_kn_per_m)
+    except KeyError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    _propagate_edit(ctx)
+    return {"ok": True, "name": name, "q_kNpm": magnitude_kn_per_m, "mesh_dirty": True}
+
+
+def set_member_cross_section(ctx: LlsmContext, name: str, cross_section: str) -> dict:
+    """Swap the cross-section of an existing curve member."""
+    if ctx.builder is None:
+        return {"ok": False, "error": "no builder — call new_model first"}
+    try:
+        ctx.builder.set_member_cross_section(name, cross_section)
+    except KeyError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    _propagate_edit(ctx)
+    return {"ok": True, "name": name, "section": cross_section, "mesh_dirty": True}
+
+
+def set_member_endpoints(ctx: LlsmContext, name: str, node_a: str, node_b: str) -> dict:
+    """Re-route a beam between two existing nodes. Try-or-rollback."""
+    if ctx.builder is None:
+        return {"ok": False, "error": "no builder — call new_model first"}
+    try:
+        ctx.builder.set_member_endpoints(name, node_a, node_b)
+    except KeyError as e:
+        return {"ok": False, "error": str(e)}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"endpoint reroute rejected: {type(e).__name__}: {e}",
+                "rolled_back": True}
+    _propagate_edit(ctx)
+    return {"ok": True, "name": name, "between": [node_a, node_b], "mesh_dirty": True}
 
 
 # ===================================================================
