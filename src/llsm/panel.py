@@ -79,6 +79,7 @@ GWLP_HWNDPARENT = -8
 SCIA_PROC_NAMES = {"sciaengineer.exe"}
 POLL_INTERVAL_MS = 250
 HEALTH_PING_INTERVAL_MS = 30_000
+HEARTBEAT_INTERVAL_MS = 10_000
 SIGNAL_PIPE_DRAIN_MS = 100
 PANEL_WIDTH = 460
 SINGLE_INSTANCE_MUTEX = "Global\\LLSMPanel"
@@ -137,6 +138,7 @@ class LlsmPanel:
         self._drain_outbox()
         self._drain_signal_pipe()
         self._schedule_health_ping()
+        self._heartbeat_tick()
 
     # -------- Signal handling (Item 1) --------
 
@@ -179,7 +181,70 @@ class LlsmPanel:
                 # Schedule close on the Tk thread (we ARE the Tk thread).
                 self.root.after(0, self._on_close)
                 return  # don't reschedule; close handler will tear down
-        self.root.after(SIGNAL_PIPE_DRAIN_MS, self._drain_signal_pipe)
+        self._safe_after(SIGNAL_PIPE_DRAIN_MS, self._drain_signal_pipe)
+
+
+    # -------- Diagnostic instrumentation --------
+
+    def _log_callback_exc(self, exc, val, tb):
+        """Tk uncaught-exception hook. Writes the full traceback to panel.log.
+
+        Without this override, exceptions raised inside `after()` callbacks
+        on Windows can terminate mainloop with no Python-side trace at all -
+        the user sees the panel disappear and panel.log shows nothing.
+        """
+        import traceback as _tb
+        msg = "".join(_tb.format_exception(exc, val, tb))
+        try:
+            print(f"[panel] UNCAUGHT in Tk callback:\n{msg}", file=sys.stderr)
+        except Exception:
+            pass
+        # Don't re-raise; we want mainloop to keep running.
+
+    def _safe_after(self, delay_ms, callback, *args):
+        """Wrapper for root.after that catches + logs any exception in the
+        scheduled callback, then re-schedules at the same interval.
+
+        Without this, a one-time transient error (e.g. SCIA process gone away
+        between our two reads) kills the polling loop permanently because
+        the error propagates out and Tk drops the after-handler.
+        """
+        def _wrap():
+            if self._closing:
+                return
+            try:
+                callback(*args)
+            except Exception as exc:
+                import traceback as _tb
+                tb_str = _tb.format_exc()
+                try:
+                    print(f"[panel] {callback.__name__} raised; rescheduling. {exc!r}\n{tb_str}", file=sys.stderr)
+                except Exception:
+                    pass
+                # Reschedule so the loop survives the error.
+                try:
+                    self.root.after(delay_ms, _wrap)
+                except Exception:
+                    pass
+        try:
+            self.root.after(delay_ms, _wrap)
+        except Exception as exc:
+            print(f"[panel] after() schedule failed for {callback.__name__}: {exc}", file=sys.stderr)
+
+    def _heartbeat_tick(self):
+        """Write a timestamped line to panel.log every 10 s.
+
+        If the panel dies, the gap between the last heartbeat and 'now'
+        tells us within ~10 s when it happened, which scopes the search
+        in the surrounding stderr noise.
+        """
+        if self._closing:
+            return
+        try:
+            print(f"[panel] heartbeat {datetime.now().isoformat(timespec='seconds')}", file=sys.stderr)
+        except Exception:
+            pass
+        self._safe_after(HEARTBEAT_INTERVAL_MS, self._heartbeat_tick)
 
     # -------- MCP supervisor lifecycle --------
 
@@ -226,7 +291,7 @@ class LlsmPanel:
     def _schedule_health_ping(self):
         if self._closing:
             return
-        self.root.after(HEALTH_PING_INTERVAL_MS, self._health_ping_tick)
+        self._safe_after(HEALTH_PING_INTERVAL_MS, self._health_ping_tick)
 
     def _health_ping_tick(self):
         if self._closing:
@@ -278,6 +343,9 @@ class LlsmPanel:
 
     def _build_ui(self):
         self.root = tk.Tk()
+        # Route uncaught exceptions in Tk callbacks to panel.log instead of
+        # default handling (which on Windows can silently kill mainloop).
+        self.root.report_callback_exception = self._log_callback_exc
         self.root.title(f"LLSM - {self._backend_kind}")
         self.root.geometry(f"{PANEL_WIDTH}x800+0+0")
         self.root.minsize(360, 500)
@@ -388,7 +456,7 @@ class LlsmPanel:
             self._position_next_to_scia()
         except Exception as exc:
             self.status_var.set(f"poll error: {exc}")
-        self.root.after(POLL_INTERVAL_MS, self._poll_scia)
+        self._safe_after(POLL_INTERVAL_MS, self._poll_scia)
 
     # -------- Backend wiring (Item 7 callbacks) --------
 
@@ -481,7 +549,7 @@ class LlsmPanel:
                     self._append("LLSM", msg, "assistant")
         except queue.Empty:
             pass
-        self.root.after(80, self._drain_outbox)
+        self._safe_after(80, self._drain_outbox)
 
     # -------- Helpers --------
 
@@ -500,7 +568,26 @@ class LlsmPanel:
         self.history.config(state="disabled")
 
     def run(self):
-        self.root.mainloop()
+        """Enter Tk mainloop with bracketing log lines.
+
+        If the panel dies mysteriously, the LAST heartbeat in panel.log plus the
+        'mainloop exited' line below pin death timing and exit cause exactly.
+        """
+        print(f"[panel] mainloop entering at {datetime.now().isoformat(timespec='seconds')}", file=sys.stderr)
+        exit_cause = "clean"
+        try:
+            self.root.mainloop()
+        except SystemExit:
+            exit_cause = "SystemExit"
+            raise
+        except KeyboardInterrupt:
+            exit_cause = "KeyboardInterrupt (mainloop)"
+        except BaseException as exc:
+            import traceback as _tb
+            exit_cause = f"exception: {type(exc).__name__}: {exc}"
+            print(f"[panel] mainloop crashed:\n{_tb.format_exc()}", file=sys.stderr)
+        finally:
+            print(f"[panel] mainloop exited at {datetime.now().isoformat(timespec='seconds')} ({exit_cause})", file=sys.stderr)
 
 
 # === Single-instance enforcement (Item 3) ===
