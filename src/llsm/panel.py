@@ -115,7 +115,7 @@ def _find_scia_main_hwnd():
 
 
 class LlsmPanel:
-    def __init__(self, *, model=None, backend_kind="claude-code", connect_existing=False):
+    def __init__(self, *, model=None, backend_kind="claude-code", connect_existing=False, always_on_top=False):
         self.scia_hwnd = None
         self.outbox = queue.Queue()
         self.busy = False
@@ -124,6 +124,7 @@ class LlsmPanel:
         self._model = model
         self._backend_kind = backend_kind
         self._connect_existing = connect_existing
+        self._always_on_top = always_on_top
         self._mcp_handle = None  # mcp_supervisor.McpHandle | None
         self._mcp_status = "unknown"  # "up" | "down" | "unknown"
 
@@ -326,8 +327,8 @@ class LlsmPanel:
 
     def _refresh_status_bar(self):
         scia_part = (
-            f"docked to SCIA (hwnd 0x{self.scia_hwnd:x})" if self.scia_hwnd
-            else "waiting for SCIA Engineer..."
+            f"SCIA: running (hwnd 0x{self.scia_hwnd:x})" if self.scia_hwnd
+            else "SCIA: not detected"
         )
         mcp_part = f"MCP: {self._mcp_status}"
         self.status_var.set(f"{scia_part}    |    {mcp_part}")
@@ -364,6 +365,8 @@ class LlsmPanel:
         # default handling (which on Windows can silently kill mainloop).
         self.root.report_callback_exception = self._log_callback_exc
         self.root.title(f"LLSM - {self._backend_kind}")
+        if self._always_on_top:
+            self.root.attributes("-topmost", True)
         self.root.geometry(f"{PANEL_WIDTH}x800+0+0")
         self.root.minsize(360, 500)
 
@@ -407,7 +410,8 @@ class LlsmPanel:
 
         self._sysline(
             f"Welcome to LLSM. Backend: {self._backend_kind}. "
-            f"Press Enter to send, Shift+Enter for newline."
+            f"Press Enter to send, Shift+Enter for newline. "
+            f"Standalone mode - this window stays put when SCIA opens/closes."
         )
 
     def _on_return_key(self, event):
@@ -425,7 +429,14 @@ class LlsmPanel:
         if killed:
             self._sysline("chat cancelled; SCIA state may be partial - call model_summary to verify")
 
-    # -------- Win32 docking (unchanged from prior) --------
+    # -------- Win32 docking (DEAD CODE - kept for reference) --------
+    # These methods were used to make the panel a Win32-owned child of SCIA's
+    # main HWND. We removed the call sites in q-368 because:
+    #   - When SCIA is minimized, all owned windows minimize too (Win32 rule),
+    #     so launching SCIA in ShowWindowShowMinNoActive made the panel vanish.
+    #   - GetWindowRect on a minimized window returns ~(-32000,-32000,...);
+    #     positioning the panel at scia_right placed it off-screen.
+    # Kept here so the reasoning isn't lost in git history. Do not call them.
 
     def _own_to_scia(self, scia_hwnd):
         try:
@@ -459,18 +470,22 @@ class LlsmPanel:
             self.root.geometry(cur)
 
     def _poll_scia(self):
+        """Track whether SCIA is alive for the status bar. No positioning, no owner-window.
+
+        We deliberately do NOT dock to SCIA: the previous Win32 owner-window
+        approach (SetWindowLong(GWLP_HWNDPARENT, scia_hwnd)) caused the panel
+        to auto-minimize whenever SCIA minimized, plus position math against
+        a minimized SCIA's GetWindowRect put the panel off-screen. The panel
+        is now a standalone free-floating window that the user places where
+        they want.
+        """
         if self._closing:
             return
         try:
             hwnd = _find_scia_main_hwnd()
             if hwnd != self.scia_hwnd:
-                if hwnd:
-                    self.scia_hwnd = hwnd
-                    self._own_to_scia(hwnd)
-                else:
-                    self.scia_hwnd = None
+                self.scia_hwnd = hwnd  # may be None
                 self._refresh_status_bar()
-            self._position_next_to_scia()
         except Exception as exc:
             self.status_var.set(f"poll error: {exc}")
         self._safe_after(POLL_INTERVAL_MS, self._poll_scia)
@@ -638,6 +653,8 @@ def main():
                     help="LLM backend (default: claude-code)")
     ap.add_argument("--connect-to-existing", action="store_true",
                     help="Reattach to a running MCP supervisor instead of spawning fresh")
+    ap.add_argument("--always-on-top", action="store_true",
+                    help="Keep the panel above other windows (still independent of SCIA's lifecycle)")
     args = ap.parse_args()
 
     # Item 3: enforce single instance.
@@ -663,6 +680,7 @@ def main():
             model=args.model,
             backend_kind=args.backend,
             connect_existing=args.connect_to_existing,
+            always_on_top=args.always_on_top,
         ).run()
         return 0
     finally:
