@@ -26,6 +26,7 @@ import psutil
 LLSM_HOME = Path.home() / ".llsm"
 PID_FILE = LLSM_HOME / "mcp.pid"
 PORT_FILE = LLSM_HOME / "mcp.port"
+SESSION_ID_FILE = LLSM_HOME / "mcp.session-id"
 LOG_FILE = LLSM_HOME / "mcp.log"
 CMDLINE_MARKER = "llsm.mcp_server"
 
@@ -40,11 +41,13 @@ CTRL_BREAK_WAIT_S = 3.0
 
 @dataclass
 class McpHandle:
-    proc: subprocess.Popen
+    proc: subprocess.Popen | None  # None when reattached to a pre-existing supervisor
     port: int
     shutdown_token: str
     pid_file: Path
     port_file: Path
+    session_id: str = ""
+    reattached: bool = False  # True if connect_to_existing() returned this handle
 
     @property
     def url(self) -> str:
@@ -262,10 +265,21 @@ def shutdown(handle: McpHandle, verbose: bool = False) -> None:
     3. If still alive after another 3 s: terminate
 
     Total worst case ~8 s.
+
+    If the handle is reattached (proc=None - we don't own the subprocess),
+    only the admin route is used; signal/terminate require process ownership.
     """
     proc = handle.proc
 
     def _alive() -> bool:
+        if proc is None:
+            data = _read_pid_file(handle.pid_file)
+            if data is None:
+                return False
+            pid = data.get("pid")
+            if not isinstance(pid, int):
+                return False
+            return _process_matches(pid, CMDLINE_MARKER)
         return proc.poll() is None
 
     # Layer 1: admin route
@@ -284,13 +298,18 @@ def shutdown(handle: McpHandle, verbose: bool = False) -> None:
         except Exception as e:
             if verbose:
                 print(f"[mcp-supervisor] admin shutdown failed: {e}", file=sys.stderr)
-        try:
-            proc.wait(timeout=ADMIN_SHUTDOWN_WAIT_S)
-        except subprocess.TimeoutExpired:
-            pass
+        if proc is not None:
+            try:
+                proc.wait(timeout=ADMIN_SHUTDOWN_WAIT_S)
+            except subprocess.TimeoutExpired:
+                pass
+        else:
+            deadline = time.monotonic() + ADMIN_SHUTDOWN_WAIT_S
+            while time.monotonic() < deadline and _alive():
+                time.sleep(0.1)
 
-    # Layer 2: CTRL_BREAK_EVENT (Windows) / SIGINT (POSIX)
-    if _alive():
+    # Layer 2: CTRL_BREAK_EVENT (Windows) / SIGINT (POSIX) - only if we own the process
+    if _alive() and proc is not None:
         if os.name == "nt":
             try:
                 import signal as _signal
@@ -308,8 +327,8 @@ def shutdown(handle: McpHandle, verbose: bool = False) -> None:
         except subprocess.TimeoutExpired:
             pass
 
-    # Layer 3: terminate
-    if _alive():
+    # Layer 3: terminate (only if we own the process)
+    if _alive() and proc is not None:
         if verbose:
             print("[mcp-supervisor] terminating MCP server", file=sys.stderr)
         try:
@@ -324,3 +343,123 @@ def shutdown(handle: McpHandle, verbose: bool = False) -> None:
             f.unlink(missing_ok=True)
         except Exception:
             pass
+
+
+# --- Session-id persistence (alongside pid-file) ---
+
+def _atomic_write(path: Path, content: str) -> None:
+    """Atomic write: write to <path>.tmp then os.replace."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    try:
+        os.chmod(tmp, 0o600)
+    except Exception:
+        pass
+    os.replace(tmp, path)
+
+
+def write_session_id(session_id: str) -> None:
+    """Persist the panel's claude session_id so a relaunched panel can resume."""
+    LLSM_HOME.mkdir(parents=True, exist_ok=True)
+    _atomic_write(SESSION_ID_FILE, session_id.strip())
+
+
+def read_session_id() -> str | None:
+    """Read a previously-persisted session_id, or None if absent/empty."""
+    try:
+        raw = SESSION_ID_FILE.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return None
+    except Exception:
+        return None
+    return raw or None
+
+
+def clear_session_id() -> None:
+    try:
+        SESSION_ID_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def kill_orphan_claudes(session_id: str, verbose: bool = False) -> int:
+    """Kill any live claude processes whose command line carries session_id.
+
+    Used to recover from the Ctrl+C-mid-chat case: the panel died but its claude
+    subprocess outlived it and is still holding the session-id lock. Bounded
+    scope - only kills claude processes carrying OUR session-id.
+    """
+    if not session_id:
+        return 0
+    killed = 0
+    needle = session_id.lower()
+    for proc in psutil.process_iter(["pid", "name"]):
+        try:
+            name = (proc.info.get("name") or "").lower()
+            if "claude" not in name:
+                continue
+            cmdline = " ".join(proc.cmdline()).lower()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+        if needle in cmdline:
+            if verbose:
+                print(f"[mcp-supervisor] killing orphan claude pid={proc.pid} (carries session-id)", file=sys.stderr)
+            try:
+                proc.kill()
+                killed += 1
+            except Exception:
+                pass
+    if killed:
+        time.sleep(0.5)
+    return killed
+
+
+def connect_to_existing(verbose: bool = False) -> McpHandle | None:
+    """Try to attach to a supervisor that's already running.
+
+    Returns an McpHandle with proc=None (we don't own the subprocess) and
+    reattached=True if a healthy server is found. Returns None if no usable
+    server exists - caller should then spawn() a fresh one.
+    """
+    pid_data = _read_pid_file(PID_FILE)
+    if pid_data is None:
+        return None
+    pid = pid_data.get("pid")
+    if not isinstance(pid, int):
+        return None
+    if not _process_matches(pid, CMDLINE_MARKER):
+        return None
+    try:
+        port_raw = PORT_FILE.read_text(encoding="utf-8").strip()
+        port = int(port_raw)
+    except Exception:
+        return None
+    token = pid_data.get("shutdown_token", "")
+    if not token:
+        return None
+    session_id = read_session_id() or ""
+    if verbose:
+        print(f"[mcp-supervisor] reattached to running MCP server pid={pid} port={port}", file=sys.stderr)
+    return McpHandle(
+        proc=None,
+        port=port,
+        shutdown_token=token,
+        pid_file=PID_FILE,
+        port_file=PORT_FILE,
+        session_id=session_id,
+        reattached=True,
+    )
+
+
+def health_ping(handle: McpHandle, timeout_s: float = 1.5) -> bool:
+    """Cheap alive-check via GET /admin/ping. Returns True iff status==200."""
+    try:
+        import urllib.request
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{handle.port}/admin/ping",
+            timeout=timeout_s,
+        ) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
