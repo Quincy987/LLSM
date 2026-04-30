@@ -177,7 +177,6 @@ class ClaudeCodeBackend:
         rc, stdout, stderr = self._run_once(message)
 
         if rc != 0:
-            stderr_strip = stderr.strip()[:2000]
             if self._is_session_in_use(stderr):
                 if self._on_orphan_cleanup is not None:
                     try:

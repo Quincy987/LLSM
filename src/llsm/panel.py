@@ -56,6 +56,7 @@ except Exception as _exc:
 import argparse
 import queue
 import signal
+import socket
 import threading
 import time
 import tkinter as tk
@@ -126,9 +127,11 @@ class LlsmPanel:
         self._mcp_handle = None  # mcp_supervisor.McpHandle | None
         self._mcp_status = "unknown"  # "up" | "down" | "unknown"
 
-        # Signal pipe (Item 1: Ctrl+C handling on Windows Tk)
-        self._sig_read_fd = None
-        self._sig_write_fd = None
+        # Signal pipe (Item 1: Ctrl+C handling on Windows Tk).
+        # socketpair, NOT os.pipe: signal.set_wakeup_fd on Windows requires
+        # a socket handle - pipe FDs silently do nothing.
+        self._sig_read_sock = None
+        self._sig_write_sock = None
 
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -146,39 +149,53 @@ class LlsmPanel:
         """Wire SIGINT (Ctrl+C in launching terminal) into the Tk thread.
 
         On Windows, Tk's mainloop() runs a C-level message pump that doesn't
-        dispatch Python signal handlers. signal.set_wakeup_fd() tells Python
-        to write a single byte to a pipe whenever a signal arrives; we poll
-        that pipe via root.after() and trigger graceful close from the Tk
-        thread when we see traffic.
+        dispatch Python signal handlers. signal.set_wakeup_fd() writes a byte
+        to a fd whenever a signal arrives, and we poll that fd via root.after().
+
+        Critical detail: signal.set_wakeup_fd on Windows requires a SOCKET
+        handle, not a pipe FD. socket.socketpair() works on Windows (uses an
+        AF_INET loopback pair under the hood) and on POSIX. Using os.pipe()
+        here is silently broken on Windows - the wakeup byte goes nowhere
+        and Ctrl+C in the launching terminal does NOT trigger _on_close.
         """
         try:
-            r, w = os.pipe()
-            os.set_blocking(r, False)
-            os.set_blocking(w, False)
-            self._sig_read_fd = r
-            self._sig_write_fd = w
-            signal.set_wakeup_fd(w)
+            rsock, wsock = socket.socketpair()
+        except Exception as exc:
+            print(f"[panel] could not create signal socketpair: {exc}", file=sys.stderr)
+            return
+        try:
+            rsock.setblocking(False)
+            wsock.setblocking(False)
+            self._sig_read_sock = rsock
+            self._sig_write_sock = wsock
+            signal.set_wakeup_fd(wsock.fileno())
             # Empty handler: required so Python actually runs *something* on
-            # SIGINT and writes to the wakeup_fd. Default behaviour is
-            # KeyboardInterrupt which Tk's mainloop swallows on Windows.
+            # SIGINT and writes to the wakeup fd. The default behaviour is
+            # KeyboardInterrupt, which Tk's mainloop swallows on Windows.
             signal.signal(signal.SIGINT, lambda *_: None)
             if hasattr(signal, "SIGBREAK"):
                 signal.signal(signal.SIGBREAK, lambda *_: None)
         except Exception as exc:
-            print(f"[panel] could not install SIGINT pipe: {exc}", file=sys.stderr)
+            print(f"[panel] could not install SIGINT handler: {exc}", file=sys.stderr)
+            try: rsock.close()
+            except Exception: pass
+            try: wsock.close()
+            except Exception: pass
+            self._sig_read_sock = None
+            self._sig_write_sock = None
 
     def _drain_signal_pipe(self):
-        """Tk after-callback: any byte on the pipe means a signal arrived."""
+        """Tk after-callback: any byte on the wakeup socket means a signal arrived."""
         if self._closing:
             return
-        if self._sig_read_fd is not None:
+        if self._sig_read_sock is not None:
             try:
-                data = os.read(self._sig_read_fd, 1024)
+                data = self._sig_read_sock.recv(1024)
             except (BlockingIOError, OSError):
                 data = b""
             if data:
-                print("[panel] signal received via wakeup pipe -> closing", file=sys.stderr)
-                # Schedule close on the Tk thread (we ARE the Tk thread).
+                print("[panel] signal received via wakeup socket -> closing", file=sys.stderr)
+                # We ARE the Tk thread; schedule close at idle.
                 self.root.after(0, self._on_close)
                 return  # don't reschedule; close handler will tear down
         self._safe_after(SIGNAL_PIPE_DRAIN_MS, self._drain_signal_pipe)
@@ -472,9 +489,14 @@ class LlsmPanel:
                     kwargs["mcp_config_json"] = self._mcp_handle.mcp_config_json
                     if self._mcp_handle.session_id:
                         kwargs["session_id"] = self._mcp_handle.session_id
-                        # If we reattached to a running supervisor, the session
-                        # is mid-conversation; tell the backend to use --resume.
-                        kwargs["session_started"] = self._mcp_handle.reattached
+                        # If we have a session_id at all, it ALREADY exists in
+                        # claude's storage - either because we reattached to a
+                        # live supervisor or because a previous panel persisted
+                        # it on disk. Either way, the FIRST chat must use
+                        # --resume <id>, not --session-id <id> (which would
+                        # collide and trigger our recovery path on every fresh
+                        # launch with a prior conversation on disk).
+                        kwargs["session_started"] = True
                 # Item 7: callbacks for orphan-cleanup + session rotation.
                 kwargs["on_session_rotated"] = self._on_session_rotated
                 kwargs["on_orphan_cleanup"] = self._on_orphan_cleanup
