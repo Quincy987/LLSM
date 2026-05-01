@@ -19,6 +19,7 @@ try:
 except Exception:
     pass
 _PANEL_LOG = _LLSM_HOME / "panel.log"
+_CHAT_LOG = _LLSM_HOME / "chat.log"
 
 
 class _Tee:
@@ -51,6 +52,30 @@ try:
 except Exception as _exc:
     # Best effort: if we can't open the log, fall through to plain stdio.
     print(f"[panel] could not open panel.log: {_exc}", file=sys.__stderr__)
+
+# Chat log: user messages + LLM replies + system lines, with timestamps. Plain
+# text, structured-ish ("USER:" / "LLSM:" / "SYS:" / "ERR:" prefix per line)
+# so a tail of this file is enough to reconstruct the conversation without
+# context-switching through panel.log's Tk noise.
+try:
+    _CHAT_LOG_FP = open(_CHAT_LOG, "a", encoding="utf-8", buffering=1)
+    _CHAT_LOG_FP.write(f"\n=== chat session start {datetime.now().isoformat()} pid={os.getpid()} ===\n")
+except Exception as _exc:
+    _CHAT_LOG_FP = None
+    print(f"[panel] could not open chat.log: {_exc}", file=sys.__stderr__)
+
+
+def _chat_log(role: str, text: str) -> None:
+    """Append a chat line to chat.log. Best-effort; never raises."""
+    if _CHAT_LOG_FP is None:
+        return
+    try:
+        ts = datetime.now().isoformat(timespec="seconds")
+        # Indent multi-line content for readability
+        body = text.rstrip().replace("\n", "\n    ")
+        _CHAT_LOG_FP.write(f"[{ts}] {role}: {body}\n")
+    except Exception:
+        pass
 
 # === Now safe to import project modules - failures land in panel.log ===
 import argparse
@@ -699,6 +724,7 @@ class LlsmPanel:
             return
         self.input_text.delete("1.0", "end")
         self._append("you", text, "user")
+        _chat_log("USER", text)
         self.busy = True
         self.send_btn.config(state="disabled", text="...")
         self.cancel_btn.config(state="normal")
@@ -726,10 +752,12 @@ class LlsmPanel:
                     self.cancel_btn.config(state="disabled")
                 elif kind == "error":
                     self._append("error", msg, "error")
+                    _chat_log("ERR", msg)
                 elif kind == "system":
-                    self._sysline(msg)
+                    self._sysline(msg)  # _sysline already calls _chat_log
                 else:
                     self._append("LLSM", msg, "assistant")
+                    _chat_log("LLSM", msg)
         except queue.Empty:
             pass
         self._safe_after(80, self._drain_outbox)
@@ -745,6 +773,7 @@ class LlsmPanel:
 
     def _sysline(self, text):
         print(f"[panel/sys] {text}", file=sys.stderr)
+        _chat_log("SYS", text)
         self.history.config(state="normal")
         self.history.insert("end", text + "\n\n", "system")
         self.history.see("end")
