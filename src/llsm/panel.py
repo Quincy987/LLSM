@@ -449,6 +449,59 @@ class LlsmPanel:
         except Exception:
             pass
 
+    # -------- Menu --------
+
+    def _build_menu(self):
+        """Tk menu bar. 'Tools > Restart MCP server' lets the user force-restart
+        without touching Task Manager when something looks wedged. Bound to
+        Ctrl+R as well for muscle memory.
+        """
+        menubar = tk.Menu(self.root)
+        tools = tk.Menu(menubar, tearoff=False)
+        # Disabled when backend has no MCP layer (api mode).
+        state = "normal" if self._backend_kind == "claude-code" else "disabled"
+        tools.add_command(
+            label="Restart MCP server  Ctrl+R",
+            command=self._on_menu_restart_mcp,
+            state=state,
+        )
+        tools.add_separator()
+        tools.add_command(label="Open panel.log folder", command=self._on_menu_open_log_folder)
+        menubar.add_cascade(label="Tools", menu=tools)
+        self.root.config(menu=menubar)
+        # Keyboard shortcut for the restart action.
+        if self._backend_kind == "claude-code":
+            self.root.bind_all("<Control-r>", lambda e: (self._on_menu_restart_mcp(), "break"))
+
+    def _on_menu_restart_mcp(self):
+        """User-requested MCP restart. Bypasses the watchdog cooldown but still
+        respects the max-restarts kill switch (so stuck-in-a-loop bugs don't
+        let the user spam restarts forever)."""
+        if self._closing:
+            return
+        # api backend has no MCP layer - menu item is normally disabled, but
+        # guard here too in case it gets clicked via keyboard shortcut.
+        if self._backend_kind != "claude-code":
+            self._sysline("backend=api has no MCP server")
+            return
+        if self._mcp_handle is None:
+            self._sysline("no MCP server to restart - try relaunching the panel")
+            return
+        if self._mcp_restart_disabled:
+            self._sysline("auto-restart kill switch is on; close + relaunch the panel")
+            return
+        # User explicitly asked, so reset the cooldown clock so this fires now
+        # rather than waiting through MCP_RESTART_COOLDOWN_S.
+        self._mcp_last_restart = 0.0
+        self._auto_restart_mcp(reason="user-requested")
+
+    def _on_menu_open_log_folder(self):
+        """Open ~/.llsm in Explorer so user can grab logs / state files easily."""
+        try:
+            os.startfile(str(_LLSM_HOME))
+        except Exception as exc:
+            self._sysline(f"could not open log folder: {exc}")
+
     # -------- UI (Item 2 reflow + Item 4 Enter binding + Item 6 Cancel) --------
 
     def _build_ui(self):
@@ -459,6 +512,7 @@ class LlsmPanel:
         self.root.title(f"LLSM - {self._backend_kind}")
         if self._always_on_top:
             self.root.attributes("-topmost", True)
+        self._build_menu()
         self.root.geometry(f"{PANEL_WIDTH}x800+0+0")
         self.root.minsize(360, 500)
 
