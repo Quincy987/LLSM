@@ -80,6 +80,10 @@ GWLP_HWNDPARENT = -8
 SCIA_PROC_NAMES = {"sciaengineer.exe"}
 POLL_INTERVAL_MS = 250
 HEALTH_PING_INTERVAL_MS = 30_000
+HEALTH_PING_FAST_INTERVAL_MS = 5_000  # ping faster after first failure
+MCP_HANG_RESTART_AFTER_FAILS = 6  # ~30 s of failures (5 s fast-ping x 6) before auto-restart
+MCP_RESTART_COOLDOWN_S = 60  # don't auto-restart again within this many seconds
+MCP_MAX_RESTARTS_PER_SESSION = 5  # then give up and ask the user
 HEARTBEAT_INTERVAL_MS = 10_000
 SIGNAL_PIPE_DRAIN_MS = 100
 PANEL_WIDTH = 460
@@ -127,6 +131,10 @@ class LlsmPanel:
         self._always_on_top = always_on_top
         self._mcp_handle = None  # mcp_supervisor.McpHandle | None
         self._mcp_status = "unknown"  # "up" | "down" | "unknown"
+        self._mcp_ping_fails = 0  # consecutive failures since last success
+        self._mcp_last_restart = 0.0  # time.monotonic() of last auto-restart
+        self._mcp_restart_count = 0  # total auto-restarts this session
+        self._mcp_restart_disabled = False  # set True after MAX_RESTARTS
 
         # Signal pipe (Item 1: Ctrl+C handling on Windows Tk).
         # socketpair, NOT os.pipe: signal.set_wakeup_fd on Windows requires
@@ -309,7 +317,10 @@ class LlsmPanel:
     def _schedule_health_ping(self):
         if self._closing:
             return
-        self._safe_after(HEALTH_PING_INTERVAL_MS, self._health_ping_tick)
+        # Once we've seen a single failure, ping faster so we either confirm
+        # recovery quickly or trip the auto-restart sooner.
+        interval = HEALTH_PING_FAST_INTERVAL_MS if self._mcp_ping_fails > 0 else HEALTH_PING_INTERVAL_MS
+        self._safe_after(interval, self._health_ping_tick)
 
     def _health_ping_tick(self):
         if self._closing:
@@ -317,12 +328,91 @@ class LlsmPanel:
         if self._mcp_handle is not None:
             ok = mcp_supervisor.health_ping(self._mcp_handle)
             new_status = "up" if ok else "down"
+            if ok:
+                self._mcp_ping_fails = 0
+            else:
+                self._mcp_ping_fails += 1
             if new_status != self._mcp_status:
                 print(f"[panel] mcp health: {self._mcp_status} -> {new_status}", file=sys.stderr)
                 self._mcp_status = new_status
                 self._refresh_status_bar()
                 if not ok:
                     self._sysline("MCP server unreachable; will keep pinging")
+            # Auto-restart trigger: enough consecutive failures + cooldown ok
+            if (
+                not ok
+                and self._mcp_ping_fails >= MCP_HANG_RESTART_AFTER_FAILS
+                and not self._mcp_restart_disabled
+            ):
+                if self._mcp_restart_count >= MCP_MAX_RESTARTS_PER_SESSION:
+                    self._mcp_restart_disabled = True
+                    self._sysline(
+                        f"MCP has hung {self._mcp_restart_count} times this session - "
+                        "giving up auto-restart. Close and relaunch the panel manually."
+                    )
+                else:
+                    now = time.monotonic()
+                    if now - self._mcp_last_restart >= MCP_RESTART_COOLDOWN_S:
+                        self._auto_restart_mcp(reason="ping-timeout")
+                        return  # _auto_restart_mcp reschedules
+        self._schedule_health_ping()
+
+    def _auto_restart_mcp(self, *, reason: str) -> None:
+        """Watchdog action: kill the hung supervisor + stranded claude subprocess,
+        respawn fresh. Conversation continues via the persisted session-id.
+        """
+        self._mcp_last_restart = time.monotonic()
+        self._mcp_restart_count += 1
+        self._sysline(
+            f"MCP server appears hung ({reason}); auto-restart "
+            f"#{self._mcp_restart_count}/{MCP_MAX_RESTARTS_PER_SESSION}..."
+        )
+        # Cancel any in-flight chat (strands the user's claude subprocess too,
+        # since it's blocked waiting on the hung MCP).
+        if self._backend is not None:
+            try:
+                self._backend.cancel()
+            except Exception as exc:
+                print(f"[panel] backend.cancel during restart failed: {exc}", file=sys.stderr)
+        # Force-kill any orphan claudes still holding our session-id lock.
+        if self._backend is not None and getattr(self._backend, "session_id", None):
+            try:
+                mcp_supervisor.kill_orphan_claudes(self._backend.session_id, verbose=True)
+            except Exception as exc:
+                print(f"[panel] kill_orphan_claudes during restart failed: {exc}", file=sys.stderr)
+        # Force-kill the hung supervisor (don't try graceful - admin route is wedged).
+        if self._mcp_handle is not None:
+            try:
+                mcp_supervisor.force_kill(self._mcp_handle, verbose=True)
+            except Exception as exc:
+                print(f"[panel] force_kill during restart failed: {exc}", file=sys.stderr)
+            self._mcp_handle = None
+        # Respawn.
+        try:
+            self._mcp_handle = mcp_supervisor.spawn(verbose=True)
+            self._mcp_status = "up"
+            self._mcp_ping_fails = 0
+            # Inherit persisted session_id so the conversation continues.
+            persisted = mcp_supervisor.read_session_id()
+            if persisted:
+                self._mcp_handle.session_id = persisted
+            # Discard the stale backend so the next chat reconstructs with the
+            # new mcp_config_json (port may have changed) and the (possibly
+            # rotated) session_id.
+            self._backend = None
+            self.busy = False
+            self.send_btn.config(state="normal", text="Send (Enter)")
+            self.cancel_btn.config(state="disabled")
+            self._sysline(
+                f"MCP server restarted at {self._mcp_handle.url}; "
+                "conversation continues via session-id. Re-send your last message if needed."
+            )
+            self._refresh_status_bar()
+        except Exception as exc:
+            self._sysline(f"MCP restart FAILED: {type(exc).__name__}: {exc}")
+            self._mcp_status = "down"
+            self._refresh_status_bar()
+        # Resume polling either way (will catch the new server's health).
         self._schedule_health_ping()
 
     def _refresh_status_bar(self):
@@ -331,6 +421,8 @@ class LlsmPanel:
             else "SCIA: not detected"
         )
         mcp_part = f"MCP: {self._mcp_status}"
+        if self._mcp_restart_count > 0:
+            mcp_part += f" (restarts: {self._mcp_restart_count})"
         self.status_var.set(f"{scia_part}    |    {mcp_part}")
 
     # -------- Close handler --------

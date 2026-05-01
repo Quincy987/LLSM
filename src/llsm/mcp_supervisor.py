@@ -463,3 +463,37 @@ def health_ping(handle: McpHandle, timeout_s: float = 1.5) -> bool:
             return resp.status == 200
     except Exception:
         return False
+
+
+def force_kill(handle: McpHandle, verbose: bool = False) -> None:
+    """Hard-kill a hung supervisor: skip the graceful shutdown layers.
+
+    Called by the panel-side watchdog when /admin/ping has been failing for
+    too long - at that point the admin route can't respond and CTRL_BREAK
+    won't help (process is wedged inside a SCIA call). Just terminate the
+    tree and clean up state files so the next spawn() starts clean.
+    """
+    proc = handle.proc
+    pid_to_kill = None
+    if proc is not None:
+        pid_to_kill = proc.pid
+    else:
+        # Reattached path: find the pid via the pid-file.
+        data = _read_pid_file(handle.pid_file)
+        if data is not None:
+            cand = data.get("pid")
+            if isinstance(cand, int):
+                pid_to_kill = cand
+    if pid_to_kill is not None:
+        if verbose:
+            print(f"[mcp-supervisor] force-killing hung MCP server pid={pid_to_kill}", file=sys.stderr)
+        try:
+            _kill_tree(pid_to_kill)
+        except Exception:
+            pass
+    # Always clear state files so the next spawn doesn't false-positive on stale.
+    for f in (handle.pid_file, handle.port_file):
+        try:
+            f.unlink(missing_ok=True)
+        except Exception:
+            pass
