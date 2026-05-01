@@ -106,7 +106,13 @@ SCIA_PROC_NAMES = {"sciaengineer.exe"}
 POLL_INTERVAL_MS = 250
 HEALTH_PING_INTERVAL_MS = 30_000
 HEALTH_PING_FAST_INTERVAL_MS = 5_000  # ping faster after first failure
-MCP_HANG_RESTART_AFTER_FAILS = 6  # ~30 s of failures (5 s fast-ping x 6) before auto-restart
+# Watchdog tolerance. We previously had 6 (~30 s) but launch_scia takes
+# 30-60 s and blocks the FastMCP event loop while SCIA's HubServer comes up,
+# tripping a false-positive auto-restart that force-kills SCIA mid-launch.
+# Bumped to 18 (~90 s) as a band-aid; the proper fix is to run MCP tool
+# bodies on a thread pool so /admin/ping always responds, removing the
+# need for a long timeout. Tracked in the todo list.
+MCP_HANG_RESTART_AFTER_FAILS = 18  # ~90 s of failures before auto-restart
 MCP_RESTART_COOLDOWN_S = 60  # don't auto-restart again within this many seconds
 MCP_MAX_RESTARTS_PER_SESSION = 5  # then give up and ask the user
 HEARTBEAT_INTERVAL_MS = 10_000
