@@ -218,6 +218,21 @@ class ModelBuilder:
             raise
         return node
 
+    def get_node_position(self, name: str) -> tuple[float, float, float]:
+        """Return (x, y, z) of the named node in millimetres.
+
+        Reads from the in-memory ADM model — useful for diagnosing whether
+        an edit landed in the model (separate from the question of whether
+        SCIA's display refreshed). Raises KeyError if the node isn't found.
+        """
+        node = self.get(name)
+        # node.X/Y/Z are UnitsNet.Length values; convert to mm explicitly.
+        return (
+            float(node.X.As(self._un.Units.LengthUnit.Millimeter)),
+            float(node.Y.As(self._un.Units.LengthUnit.Millimeter)),
+            float(node.Z.As(self._un.Units.LengthUnit.Millimeter)),
+        )
+
     def set_line_load_magnitude(self, name: str, magnitude_kn_per_m: float) -> Any:
         """Adjust the magnitude of an existing line load (kN/m)."""
         load = self.get(name)

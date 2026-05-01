@@ -271,6 +271,24 @@ def update_node(ctx: LlsmContext, name: str, x_mm: float, y_mm: float, z_mm: flo
     )
 
 
+def get_node_position(ctx: LlsmContext, name: str) -> dict:
+    """Read the (x, y, z) position of a node from the in-memory ADM model.
+
+    Useful for the LLM to verify its own edits ('did update_node actually
+    land?') and for human/diagnostic introspection without leaving SCIA's
+    UI as the only source of truth.
+    """
+    if ctx.builder is None:
+        return {"ok": False, "error": "no builder - call new_model first"}
+    try:
+        x, y, z = ctx.builder.get_node_position(name)
+    except KeyError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    return {"ok": True, "name": name, "xyz_mm": [x, y, z]}
+
+
 def delete_object(ctx: LlsmContext, name: str, cascade: bool = False) -> dict:
     """Delete an ADM object by name.
 

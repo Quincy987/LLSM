@@ -165,6 +165,15 @@ def _register_common_tools(mcp: FastMCP) -> None:
                                         magnitude_kn_per_m=magnitude_kn_per_m, direction=direction)
 
     @mcp.tool()
+    def get_node_position(name: str) -> dict:
+        """Return (x, y, z) of a node in mm from the in-memory ADM model.
+
+        Use this to verify update_node landed (or to inspect any node's
+        coordinates without scrolling around in SCIA).
+        """
+        return scia_tools.get_node_position(_ctx, name=name)
+
+    @mcp.tool()
     def model_summary() -> dict:
         """Return item count + names of everything currently in the in-memory ADM model."""
         return scia_tools.model_summary(_ctx)
