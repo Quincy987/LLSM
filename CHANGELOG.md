@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.2.4 — claude session recovery (2026-05-03)
+
+### Fixed
+- `ClaudeCodeBackend._is_unknown_session()` now recognises the wording
+  used by current `claude` CLI versions: `"No conversation found with
+  session ID: ..."`. The previous detector only matched
+  `"session not found"` / `"unknown session"` / `"no such session"`,
+  so when claude rejected a stale persisted session id, the panel raised
+  `RuntimeError: claude exit 1: ...` instead of rotating to a fresh
+  session and retrying. Surfaced during a v0.2.2 launch test on a panel
+  that resumed an old session id from disk.
+  `src/llsm/llm/claude_code_backend.py:_is_unknown_session`.
+
 ## v0.2.3 — Double-click launcher (2026-05-03)
 
 ### Added

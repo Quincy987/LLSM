@@ -146,10 +146,24 @@ class ClaudeCodeBackend:
 
     @staticmethod
     def _is_unknown_session(stderr: str) -> bool:
+        """True if claude CLI reports the session id is gone / not recognised.
+
+        We accept several wordings because claude CLI has changed the message
+        between versions. Currently observed:
+          - "session not found"
+          - "unknown session"
+          - "No such session"
+          - "No conversation found with session ID: ..."   (current claude CLI)
+
+        The substring `'session' in s and 'not found' in s` does NOT match
+        the last variant because 'no' and 'found' are separated by
+        'conversation' - which is why we add the explicit alternative.
+        """
         s = stderr.lower()
         return (
             ("session" in s and ("not found" in s or "unknown" in s))
             or "no such session" in s
+            or "no conversation found" in s
         )
 
     def _rotate_session_id(self) -> str:
