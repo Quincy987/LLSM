@@ -1116,16 +1116,24 @@ class LlsmPanel:
     # -------- Sidebar toggle + async fetch (Phase C) --------
 
     def _on_toggle_sidebar(self):
-        """View menu checkbutton handler — show/hide the sidebar frame."""
+        """View menu checkbutton handler — show/hide the sidebar frame.
+
+        Subtlety: pack_forget+pack appends the slave to the END of the pack
+        order. Re-packing without `before=self.history` would put sidebar
+        AFTER history, but history has fill=BOTH+expand=True and would
+        already have claimed all the cavity — sidebar would render with
+        zero size. Using before=self.history inserts sidebar at its
+        original position in the pack list so the layout matches the
+        initial build_ui order.
+        """
         want = bool(self._sidebar_visible_var.get())
         if want == self._sidebar_visible:
             return
         self._sidebar_visible = want
         try:
             if want:
-                # Re-pack on the right; the chat history (already packed
-                # side=TOP, fill=BOTH, expand=True) reflows around it.
-                self.sidebar_frame.pack(side=tk.RIGHT, fill=tk.Y)
+                self.sidebar_frame.pack(side=tk.RIGHT, fill=tk.Y,
+                                        before=self.history)
             else:
                 self.sidebar_frame.pack_forget()
         except Exception as exc:
