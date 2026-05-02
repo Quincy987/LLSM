@@ -6,6 +6,93 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Status pill above the chat: live indicator that cycles
+  `● Idle` → `◐ Thinking…` → `▶ Running: <tool>(args)` → `● Idle`,
+  driven by `tool_start` / `tool_end` / `__done__` events on the existing
+  outbox queue. Tool-error flashes `⚠ Error` for 3 s. Implemented as a
+  `tk.Label` (not `ttk.Label`) so the bg color renders on Windows
+  `vista`/`winnative` themes. `panel.py:_set_pill`.
+- Collapsible right-side model sidebar (`ttk.Treeview`) with eight
+  pre-populated categories (materials, sections, nodes, beams, supports,
+  load groups, load cases, loads). Toggleable via `View → Show Model
+  Sidebar`. `panel.py:_build_ui`, `_on_toggle_sidebar`.
+- Async sidebar refresh path that keeps the Tk main thread non-blocking
+  even when claude-code mode would issue MCP I/O: `_request_sidebar_refresh`
+  spawns a daemon thread, the result returns via outbox as a
+  `('snapshot_ready', payload)` event, repopulation runs on the Tk thread.
+  An `_sidebar_fetch_inflight` flag collapses redundant requests; a
+  `_sidebar_fetch_dirty` flag triggers a re-fetch on completion when
+  `__done__`s arrived during the in-flight call (avoids one-turn staleness).
+  `panel.py:_request_sidebar_refresh`, `_sidebar_fetch_thread`.
+- `ModelBuilder.snapshot()` returns the locked 8-key contract dict
+  (materials/sections/nodes/beams/supports/load_groups/load_cases/loads),
+  walking the live ADM model and tolerating partial state via per-object
+  try/except. `scia/builder.py:snapshot`.
+- `AnthropicBackend.model_snapshot()` (delegates to `ModelBuilder.snapshot`),
+  `AnthropicBackend.cancel()` (no-op for parity with `ClaudeCodeBackend`),
+  and an optional `on_tool_event(phase, name, payload)` callback fired
+  around every `_invoke_tool` so the panel pill can show live per-tool
+  status. `llm/anthropic_backend.py`.
+- `ClaudeCodeBackend.model_snapshot()` returns an empty-but-conformant
+  schema (degraded mode — accepted in plan since the builder lives in
+  the MCP subprocess we can't query directly today).
+  `llm/claude_code_backend.py`.
+- `[YOU] / [LLSM] / [ERROR] / [SYS]` chat badges with `▎` accent bar,
+  per-turn timestamp, role-tinted body color, and `─`-row separator
+  between turns. State is never conveyed by color alone — every role and
+  pill state has a glyph too (`● ◐ ▶ ⚠ ▎`) so colorblind users and dark
+  themes both stay legible. `panel.py:_append`, `_sysline`,
+  `_GLYPH_*`, `_THEME_REFERENCE`.
+- Auto-grow input (4–10 lines on `<KeyRelease>`) and a greyed
+  `"Describe your model... (Enter sends, Shift+Enter newline)"`
+  placeholder that hides on focus, restores on blur, and is suppressed
+  by `_send` so it never gets accidentally submitted. `panel.py`.
+
+### Changed
+- `_drain_outbox` rebuilt for chat-pipeline isolation: each event-kind
+  branch is wrapped in its own try/except via `_dispatch_outbox_event`,
+  and the `_safe_after(80, self._drain_outbox)` reschedule moved into a
+  `finally` block so a misbehaving handler (sidebar, snapshot, pill)
+  cannot freeze the chat heartbeat. `panel.py:_drain_outbox`,
+  `_dispatch_outbox_event`.
+- Theme handling extracted into `_tint()` and `_apply_theme()` helpers.
+  `_tint` resolves any Tk color spec (`#hex`, named, symbolic
+  `SystemFoo`) via `root.winfo_rgb()` to avoid the silent garbage-output
+  trap when `ttk.Style().lookup()` returns symbolic system color names
+  on Windows. `_apply_theme` covers BOTH chat tags AND `tk.Text` widget
+  surfaces (`background` / `foreground` / `insertbackground`), since
+  `tk.Text` does not inherit a `ttk` theme. `panel.py:_tint`,
+  `_apply_theme`, `_resolve_rgb`.
+- `_append` and `_sysline` now render each turn as a three-line block
+  (badge + timestamp / body / separator) instead of a flat
+  `"role: text\n\n"`, which is what made the previous chat look like a
+  console log. `panel.py`.
+- `AnthropicBackend._invoke_tool` emits paired `start`/`end` tool events
+  (success, exception, unknown-tool, and not-implemented all symmetric)
+  via `_emit_tool_event`. The panel's `_on_tool_event_from_worker`
+  bridges these onto the `outbox` queue from the worker thread.
+  `llm/anthropic_backend.py`.
+
+### Fixed
+- Sidebar category fail-fast: a single corrupt item used to drop every
+  later item in the same category while the count label still showed
+  the full count. Per-item insert is now isolated by its own try/except.
+  `panel.py:_refresh_sidebar_widget`.
+- `f'{None:g}'` `TypeError` when a snapshot has explicit `None` numeric
+  fields. Added `_num()` helper that collapses missing/None/non-numeric
+  inputs to `0.0`. Promoted `_format_sidebar_item` to a `classmethod`.
+  `panel.py:_num`, `_format_sidebar_item`.
+- Status pill auto-clear race: a 3-second error auto-clear could later
+  overwrite a fresh `running:tool` or `thinking` state from the next
+  turn. `_set_pill` now cancels any pending auto-clear when the new
+  state is anything other than `error`. `panel.py:_set_pill`.
+- Sidebar pack-order on toggle: `pack_forget()` followed by `pack(...)`
+  appends the slave to the END of the pack order, but `self.history`
+  has `fill=BOTH+expand=True` and would have already claimed the cavity
+  — the re-shown sidebar was being allocated zero size. Fixed by
+  passing `before=self.history` to the re-pack call. `panel.py:_on_toggle_sidebar`.
+
 ## v0.2.1 — dev-mode hot-reload (2026-05-02)
 
 ### Added
