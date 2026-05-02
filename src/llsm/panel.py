@@ -977,9 +977,21 @@ class LlsmPanel:
     # -------- Status pill (Phase B) --------
 
     def _set_pill(self, state, detail=""):
-        """Update the status pill to one of: idle / thinking / running / error."""
+        """Update the status pill to one of: idle / thinking / running / error.
+
+        Side effect: explicitly transitioning OUT of "error" cancels any
+        pending error auto-clear timer. Otherwise a stale 3-second clear
+        scheduled by an earlier failed tool would later overwrite a fresh
+        "running:tool" or "thinking" state from the next turn.
+        """
         if not hasattr(self, "status_pill"):
             return
+        if state != "error" and self._pill_error_after is not None:
+            try:
+                self.root.after_cancel(self._pill_error_after)
+            except Exception:
+                pass
+            self._pill_error_after = None
         c = self._theme_colors or {}
         if state == "idle":
             self.status_pill_var.set(f"{_GLYPH_PILL_IDLE} Idle")
@@ -1160,6 +1172,9 @@ class LlsmPanel:
         """Tk-thread: repopulate the Treeview from a snapshot dict.
 
         Tolerates extra/unknown keys per the schema's versioning rules.
+        Each item is inserted under its own try/except so one corrupt entry
+        cannot drop the rest of the category — count label, children clear,
+        and per-item insert are independently isolated.
         """
         if not isinstance(snapshot, dict):
             return
@@ -1170,26 +1185,51 @@ class LlsmPanel:
                 continue
             items = snapshot.get(key, []) or []
             count = len(items)
+            # Update the count label and clear existing children. If this
+            # fails we skip the whole category (likely the iid is gone).
             try:
                 tree.item(cat_iid, text=f"{label} ({count})")
-                # Clear existing children.
                 for child in tree.get_children(cat_iid):
                     tree.delete(child)
-                for it in items:
-                    tree.insert(cat_iid, "end", text=self._format_sidebar_item(key, it))
             except Exception:
                 continue
+            # Insert each item under its own try so a single bad entry
+            # (None field, missing key, etc.) doesn't silently drop the rest.
+            for it in items:
+                try:
+                    tree.insert(cat_iid, "end",
+                                text=self._format_sidebar_item(key, it))
+                except Exception:
+                    continue
 
     @staticmethod
-    def _format_sidebar_item(category, item):
-        """Render one row inside a category, robust to either str or dict items."""
+    def _num(item, key):
+        """Pull a numeric field from a snapshot item, defaulting to 0.0.
+
+        `dict.get(key, 0)` returns None when the key is present-but-None,
+        which then crashes `f"{None:g}"`. The `or 0` collapses both
+        missing-key and None-value cases to 0 (and is harmless for genuine
+        zero, since 0 == 0). Strings like "1500" survive via float()."""
+        v = item.get(key)
+        if v is None:
+            return 0.0
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+
+    @classmethod
+    def _format_sidebar_item(cls, category, item):
+        """Render one row inside a category, robust to str/dict/junk items."""
         if isinstance(item, str):
             return item
         if not isinstance(item, dict):
             return str(item)
         name = item.get("name", "?")
         if category == "nodes":
-            x = item.get("x_mm", 0); y = item.get("y_mm", 0); z = item.get("z_mm", 0)
+            x = cls._num(item, "x_mm")
+            y = cls._num(item, "y_mm")
+            z = cls._num(item, "z_mm")
             return f"{name}  ({x:g}, {y:g}, {z:g})"
         if category == "beams":
             n1 = item.get("n1", "?"); n2 = item.get("n2", "?"); sec = item.get("section", "")
@@ -1199,7 +1239,7 @@ class LlsmPanel:
         if category == "load_cases":
             return f"{name}  ({item.get('group', '?')})"
         if category == "loads":
-            mag = item.get("magnitude_kN_per_m", 0)
+            mag = cls._num(item, "magnitude_kN_per_m")
             d = item.get("direction", "?")
             return f"{name}  {mag:g} kN/m {d}"
         return name
