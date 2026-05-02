@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.2.1 — dev-mode hot-reload (2026-05-02)
+
+### Added
+- `llsm-panel --dev` flag for developer hot-reload: watches `src/llsm/`
+  for source changes and auto-restarts the MCP server on edits to
+  `scia/**` or `mcp_server.py`. Panel-side edits (panel.py, llm/**,
+  mcp_supervisor.py) emit a one-line SYS nudge ("restart panel manually")
+  debounced per-file so format-on-save doesn't spam chat.log. Off by
+  default; opt-in via `pip install -e .[dev]` to pull in the new
+  `watchdog` optional dependency. Colleagues running the POC install
+  without `[dev]` see a SYS warning and `--dev` becomes a no-op.
+- `src/llsm/dev_watcher.py`: standalone `_DevWatcher` with watchdog
+  Observer, 500 ms debounce that coalesces rapid save bursts, MCP-busy
+  defer (so dev reloads don't fight the existing watchdog), and a
+  per-file 30 s nudge cooldown.
+- `[project.optional-dependencies] dev = ["watchdog>=4.0"]` in
+  `pyproject.toml`.
+
+### Changed
+- `panel.py:_auto_restart_mcp` split into a watchdog wrapper plus a
+  shared `_restart_mcp_core` body. The dev hot-reload path reuses the
+  kill+respawn machinery without consuming the watchdog's per-session
+  `MCP_MAX_RESTARTS_PER_SESSION` budget. User/menu-triggered restarts
+  continue to count as before.
+
 ## v0.1.1 — Persistent MCP server (2026-04-29)
 
 ### Added

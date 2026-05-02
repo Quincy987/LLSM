@@ -150,7 +150,7 @@ def _find_scia_main_hwnd():
 
 
 class LlsmPanel:
-    def __init__(self, *, model=None, backend_kind="claude-code", connect_existing=False, always_on_top=False):
+    def __init__(self, *, model=None, backend_kind="claude-code", connect_existing=False, always_on_top=False, dev_mode=False):
         self.scia_hwnd = None
         self.outbox = queue.Queue()
         self.busy = False
@@ -160,12 +160,19 @@ class LlsmPanel:
         self._backend_kind = backend_kind
         self._connect_existing = connect_existing
         self._always_on_top = always_on_top
+        self._dev_mode = dev_mode
         self._mcp_handle = None  # mcp_supervisor.McpHandle | None
         self._mcp_status = "unknown"  # "up" | "down" | "unknown"
         self._mcp_ping_fails = 0  # consecutive failures since last success
         self._mcp_last_restart = 0.0  # time.monotonic() of last auto-restart
         self._mcp_restart_count = 0  # total auto-restarts this session
         self._mcp_restart_disabled = False  # set True after MAX_RESTARTS
+        # Tracking for --dev hot-reload coordination.
+        self._mcp_restart_in_progress = False  # set during _restart_mcp_core
+        self._mcp_spawn_wall = 0.0  # time.time() (wall clock) of last successful spawn;
+                                    # the dev watcher compares file mtimes against this
+                                    # to skip events the running MCP already loaded.
+        self._dev_watcher = None  # dev_watcher._DevWatcher | None
 
         # Signal pipe (Item 1: Ctrl+C handling on Windows Tk).
         # socketpair, NOT os.pipe: signal.set_wakeup_fd on Windows requires
@@ -177,6 +184,8 @@ class LlsmPanel:
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._install_sigint_pipe()
         self._start_mcp_server()
+        if self._dev_mode:
+            self._start_dev_watcher()
         self._poll_scia()
         self._drain_outbox()
         self._drain_signal_pipe()
@@ -318,6 +327,10 @@ class LlsmPanel:
                 if handle is not None:
                     self._mcp_handle = handle
                     self._mcp_status = "up"
+                    # We don't know when the OTHER panel spawned this MCP, so
+                    # use 'now' as a worst-case approximation: the dev watcher
+                    # will only restart on files modified AFTER reattach.
+                    self._mcp_spawn_wall = time.time()
                     self._sysline(
                         f"reattached to MCP server at {handle.url}"
                         + (f" (resuming session {handle.session_id[:8]}...)" if handle.session_id else "")
@@ -331,6 +344,7 @@ class LlsmPanel:
         try:
             self._mcp_handle = mcp_supervisor.spawn(verbose=True)
             self._mcp_status = "up"
+            self._mcp_spawn_wall = time.time()
             # Try to inherit a previously-persisted session_id (so a clean
             # exit + relaunch resumes the conversation).
             persisted = mcp_supervisor.read_session_id()
@@ -389,8 +403,14 @@ class LlsmPanel:
         self._schedule_health_ping()
 
     def _auto_restart_mcp(self, *, reason: str) -> None:
-        """Watchdog action: kill the hung supervisor + stranded claude subprocess,
-        respawn fresh. Conversation continues via the persisted session-id.
+        """Watchdog / user-requested MCP restart. Counts against the per-session
+        restart budget. The actual kill+respawn body lives in _restart_mcp_core
+        so the dev-mode hot-reload path can reuse it without consuming budget.
+
+        The watchdog path enters here from `_health_ping_tick`, which returns
+        early after this call — so we have to (re)schedule the next ping here.
+        The dev path (which calls `_restart_mcp_core` directly) does NOT
+        reschedule, since the regular ping loop is still ticking.
         """
         self._mcp_last_restart = time.monotonic()
         self._mcp_restart_count += 1
@@ -398,53 +418,145 @@ class LlsmPanel:
             f"MCP server appears hung ({reason}); auto-restart "
             f"#{self._mcp_restart_count}/{MCP_MAX_RESTARTS_PER_SESSION}..."
         )
-        # Cancel any in-flight chat (strands the user's claude subprocess too,
-        # since it's blocked waiting on the hung MCP).
-        if self._backend is not None:
-            try:
-                self._backend.cancel()
-            except Exception as exc:
-                print(f"[panel] backend.cancel during restart failed: {exc}", file=sys.stderr)
-        # Force-kill any orphan claudes still holding our session-id lock.
-        if self._backend is not None and getattr(self._backend, "session_id", None):
-            try:
-                mcp_supervisor.kill_orphan_claudes(self._backend.session_id, verbose=True)
-            except Exception as exc:
-                print(f"[panel] kill_orphan_claudes during restart failed: {exc}", file=sys.stderr)
-        # Force-kill the hung supervisor (don't try graceful - admin route is wedged).
-        if self._mcp_handle is not None:
-            try:
-                mcp_supervisor.force_kill(self._mcp_handle, verbose=True)
-            except Exception as exc:
-                print(f"[panel] force_kill during restart failed: {exc}", file=sys.stderr)
-            self._mcp_handle = None
-        # Respawn.
-        try:
-            self._mcp_handle = mcp_supervisor.spawn(verbose=True)
-            self._mcp_status = "up"
-            self._mcp_ping_fails = 0
-            # Inherit persisted session_id so the conversation continues.
-            persisted = mcp_supervisor.read_session_id()
-            if persisted:
-                self._mcp_handle.session_id = persisted
-            # Discard the stale backend so the next chat reconstructs with the
-            # new mcp_config_json (port may have changed) and the (possibly
-            # rotated) session_id.
-            self._backend = None
-            self.busy = False
-            self.send_btn.config(state="normal", text="Send (Enter)")
-            self.cancel_btn.config(state="disabled")
-            self._sysline(
-                f"MCP server restarted at {self._mcp_handle.url}; "
-                "conversation continues via session-id. Re-send your last message if needed."
-            )
-            self._refresh_status_bar()
-        except Exception as exc:
-            self._sysline(f"MCP restart FAILED: {type(exc).__name__}: {exc}")
-            self._mcp_status = "down"
-            self._refresh_status_bar()
-        # Resume polling either way (will catch the new server's health).
+        self._restart_mcp_core(reason=reason)
         self._schedule_health_ping()
+
+    def _restart_mcp_core(self, *, reason: str) -> None:
+        """Kill + respawn the MCP server. Shared body between the watchdog
+        (`_auto_restart_mcp`) and the dev hot-reload path.
+
+        Does NOT touch `_mcp_restart_count` or `_mcp_last_restart`; the caller
+        decides whether the restart should count against the watchdog's
+        per-session budget (it should for hangs and user-clicks; it should not
+        for source-code saves under --dev).
+
+        Sets `_mcp_restart_in_progress` for the duration so the dev watcher
+        can defer events that arrive mid-restart.
+        """
+        self._mcp_restart_in_progress = True
+        try:
+            # Cancel any in-flight chat (strands the user's claude subprocess too,
+            # since it's blocked waiting on the hung MCP).
+            if self._backend is not None:
+                try:
+                    self._backend.cancel()
+                except Exception as exc:
+                    print(f"[panel] backend.cancel during restart failed: {exc}", file=sys.stderr)
+            # Force-kill any orphan claudes still holding our session-id lock.
+            if self._backend is not None and getattr(self._backend, "session_id", None):
+                try:
+                    mcp_supervisor.kill_orphan_claudes(self._backend.session_id, verbose=True)
+                except Exception as exc:
+                    print(f"[panel] kill_orphan_claudes during restart failed: {exc}", file=sys.stderr)
+            # Force-kill the hung supervisor (don't try graceful - admin route is wedged).
+            if self._mcp_handle is not None:
+                try:
+                    mcp_supervisor.force_kill(self._mcp_handle, verbose=True)
+                except Exception as exc:
+                    print(f"[panel] force_kill during restart failed: {exc}", file=sys.stderr)
+                self._mcp_handle = None
+            # Respawn.
+            try:
+                self._mcp_handle = mcp_supervisor.spawn(verbose=True)
+                self._mcp_status = "up"
+                self._mcp_ping_fails = 0
+                self._mcp_spawn_wall = time.time()
+                # Inherit persisted session_id so the conversation continues.
+                persisted = mcp_supervisor.read_session_id()
+                if persisted:
+                    self._mcp_handle.session_id = persisted
+                # Discard the stale backend so the next chat reconstructs with the
+                # new mcp_config_json (port may have changed) and the (possibly
+                # rotated) session_id.
+                self._backend = None
+                self.busy = False
+                self.send_btn.config(state="normal", text="Send (Enter)")
+                self.cancel_btn.config(state="disabled")
+                self._sysline(
+                    f"MCP server restarted at {self._mcp_handle.url}; "
+                    "conversation continues via session-id. Re-send your last message if needed."
+                )
+                self._refresh_status_bar()
+            except Exception as exc:
+                self._sysline(f"MCP restart FAILED: {type(exc).__name__}: {exc}")
+                self._mcp_status = "down"
+                self._refresh_status_bar()
+        finally:
+            self._mcp_restart_in_progress = False
+        # Note: caller is responsible for (re)scheduling health pings.
+        # `_auto_restart_mcp` does so because `_health_ping_tick` returned
+        # early. The dev hot-reload path does NOT, because the ping loop
+        # has been ticking continuously and would double up.
+
+    # -------- Dev-mode hot-reload (--dev) --------
+
+    def _start_dev_watcher(self):
+        """Spin up the file watcher for `--dev` hot-reload.
+
+        No-op (with a SYS warning) when `watchdog` isn't installed or when
+        the backend has no MCP layer. The watcher runs in its own thread;
+        all callbacks are marshaled back here via `root.after(0, ...)`.
+        """
+        if self._backend_kind != "claude-code":
+            self._sysline("--dev: backend=api has no MCP layer; hot-reload disabled")
+            return
+        try:
+            from .dev_watcher import _DevWatcher
+        except ImportError as exc:
+            missing = getattr(exc, "name", None) or str(exc)
+            self._sysline(
+                f"--dev: 'watchdog' package not available ({missing}); "
+                "hot-reload disabled. Run: pip install -e .[dev]"
+            )
+            return
+        src_root = Path(__file__).resolve().parent
+        try:
+            self._dev_watcher = _DevWatcher(
+                src_root=src_root,
+                tk_call=lambda fn: self.root.after(0, fn),
+                on_mcp_change=self._on_dev_mcp_change,
+                on_panel_change=self._on_dev_panel_change,
+                is_mcp_busy=lambda: self._mcp_restart_in_progress,
+                spawn_wall_time=lambda: self._mcp_spawn_wall,
+            )
+            self._dev_watcher.start()
+            self._sysline(f"--dev: watching {src_root} for source changes")
+        except Exception as exc:
+            self._dev_watcher = None
+            self._sysline(f"--dev: failed to start watcher: {type(exc).__name__}: {exc}")
+
+    @staticmethod
+    def _format_dev_files_label(files):
+        """Format a file-list for a dev-mode SYS line: top-3 names + "(+N more)"."""
+        label = ", ".join(files[:3])
+        if len(files) > 3:
+            label += f" (+{len(files) - 3} more)"
+        return label
+
+    def _on_dev_mcp_change(self, files):
+        """Tk-thread callback when MCP-side source files were edited.
+
+        Silent-skip when MCP is unavailable (no running supervisor) or the
+        watchdog kill switch is on — emitting a SYS line per save would spam
+        chat.log on every Ctrl+S during a "MCP can't start" debug session,
+        and there's nothing the user can do from the message anyway.
+        """
+        if self._closing:
+            return
+        if self._mcp_handle is None or self._mcp_restart_disabled:
+            return
+        label = self._format_dev_files_label(files)
+        self._sysline(f"code change in {label} - restarting MCP server")
+        self._restart_mcp_core(reason=f"dev hot-reload: {label}")
+
+    def _on_dev_panel_change(self, files):
+        """Tk-thread callback when panel-side source files were edited."""
+        if self._closing:
+            return
+        label = self._format_dev_files_label(files)
+        self._sysline(
+            f"code change in {label} - restart panel manually to pick up changes"
+        )
 
     def _refresh_status_bar(self):
         scia_part = (
@@ -462,7 +574,15 @@ class LlsmPanel:
         if self._closing:
             return
         self._closing = True
-        # Cancel any in-flight chat first.
+        # Stop the dev watcher first so it can't fire mid-shutdown and try
+        # to schedule callbacks against a Tk root that's about to be destroyed.
+        if self._dev_watcher is not None:
+            try:
+                self._dev_watcher.stop()
+            except Exception as exc:
+                print(f"[panel] dev watcher stop failed: {exc}", file=sys.stderr)
+            self._dev_watcher = None
+        # Cancel any in-flight chat before tearing down MCP.
         if self._backend is not None:
             try:
                 self._backend.cancel()
@@ -836,6 +956,9 @@ def main():
                     help="Reattach to a running MCP supervisor instead of spawning fresh")
     ap.add_argument("--always-on-top", action="store_true",
                     help="Keep the panel above other windows (still independent of SCIA's lifecycle)")
+    ap.add_argument("--dev", action="store_true",
+                    help="Watch src/llsm for source changes; auto-restart MCP on edits "
+                         "to scia/** or mcp_server.py (requires `pip install -e .[dev]`)")
     args = ap.parse_args()
 
     # Item 3: enforce single instance.
@@ -862,6 +985,7 @@ def main():
             backend_kind=args.backend,
             connect_existing=args.connect_to_existing,
             always_on_top=args.always_on_top,
+            dev_mode=args.dev,
         ).run()
         return 0
     finally:
