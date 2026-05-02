@@ -64,6 +64,12 @@ class AnthropicBackend:
     model: str = DEFAULT_MODEL
     max_tokens: int = 4096
     verbose: bool = True
+    # Optional callback fired around each tool invocation. Signature:
+    #   on_tool_event(phase: "start"|"end", name: str, payload: Any)
+    # phase=="start": payload is the args dict.
+    # phase=="end":   payload is True/False (ok flag).
+    # Runs synchronously on whatever thread invokes _invoke_tool.
+    on_tool_event: Any = None
 
     _client: Anthropic = field(init=False)
     _messages: list[dict] = field(default_factory=list, init=False)
@@ -116,20 +122,69 @@ class AnthropicBackend:
     def close(self) -> None:
         self._ctx.close()
 
+    def cancel(self) -> bool:
+        """Hook for the panel's Cancel button — no-op for the API backend.
+
+        The API backend runs synchronously inside chat(); there is no
+        separate process to kill. Returning False matches ClaudeCodeBackend's
+        contract for "nothing was running".
+        """
+        return False
+
+    def model_snapshot(self) -> dict:
+        """Return a structured snapshot of the in-memory ADM model.
+
+        Used by the panel's sidebar. Schema is the locked contract in the
+        plan (eight top-level keys). When no model has been built yet,
+        returns the eight keys with empty lists (sidebar still renders
+        zero-count rows consistently).
+        """
+        empty = {k: [] for k in (
+            "materials", "sections", "nodes", "beams",
+            "supports", "load_groups", "load_cases", "loads",
+        )}
+        builder = getattr(self._ctx, "builder", None)
+        if builder is None:
+            return empty
+        try:
+            return builder.snapshot()
+        except Exception as e:
+            # Don't leak builder internals to the panel; panel will _sysline.
+            raise RuntimeError(f"snapshot failed: {type(e).__name__}: {e}") from e
+
     # --- Internals ---------------------------------------------------------
+
+    def _emit_tool_event(self, phase: str, name: str, payload) -> None:
+        """Best-effort callback dispatch — must never break tool execution."""
+        cb = self.on_tool_event
+        if cb is None:
+            return
+        try:
+            cb(phase, name, payload)
+        except Exception:
+            pass
 
     def _invoke_tool(self, name: str, args: dict) -> dict:
         if name not in TOOL_NAMES:
+            self._emit_tool_event("start", name, args)
+            self._emit_tool_event("end", name, False)
             return {"ok": False, "error": f"unknown tool {name!r}"}
         fn = getattr(scia_tools, name, None)
         if fn is None:
+            self._emit_tool_event("start", name, args)
+            self._emit_tool_event("end", name, False)
             return {"ok": False, "error": f"tool {name!r} not implemented"}
         if self.verbose:
             print(f"[tool] {name}({args})")
+        self._emit_tool_event("start", name, args)
         try:
-            return fn(self._ctx, **args)
+            result = fn(self._ctx, **args)
         except Exception as e:
+            self._emit_tool_event("end", name, False)
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        ok = bool(result.get("ok", True)) if isinstance(result, dict) else True
+        self._emit_tool_event("end", name, ok)
+        return result
 
     @staticmethod
     def _extract_text(blocks: list) -> str:

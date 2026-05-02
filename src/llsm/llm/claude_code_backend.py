@@ -210,6 +210,30 @@ class ClaudeCodeBackend:
                     return str(data[key])
         return out
 
+    def model_snapshot(self) -> dict:
+        """Return an empty-but-conformant snapshot.
+
+        The real ADM model lives in the MCP subprocess we don't have
+        bidirectional access to from here. The panel sidebar shows zero
+        counts in claude-code mode — accepted degradation per the plan
+        (section 4: "Acceptable degradation: in claude-code mode the
+        sidebar may show counts only, not per-object detail").
+
+        A future improvement would be to issue an out-of-band MCP
+        `model_summary` call and parse the result; that needs a proper
+        MCP client which we don't have here yet.
+        """
+        return {
+            "materials":   [],
+            "sections":    [],
+            "nodes":       [],
+            "beams":       [],
+            "supports":    [],
+            "load_groups": [],
+            "load_cases":  [],
+            "loads":       [],
+        }
+
     def close(self) -> None:
         # Subprocess-per-call; nothing persistent to close.
         pass
