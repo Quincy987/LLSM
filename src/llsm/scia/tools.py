@@ -219,6 +219,14 @@ def _propagate_edit(ctx: LlsmContext) -> str | None:
 
     Skips the SCIA sync when no project is open yet: edits live in the
     builder and the next push_model will carry them across.
+
+    Diagnosed bug (q-388): bare RefreshModel_ToSCIAEngineer() does NOT push
+    in-place mutations of existing ADM objects to SCIA's data store. It only
+    appears to flush newly-created objects (the push_model path queues them
+    via CreateAdmObject before refreshing). For updates, we use
+    TrySynchronizeModel(adm_model) which does a diff-aware full-model sync
+    and can propagate changes to existing items. RefreshModel is still
+    called as a belt-and-suspenders flush after.
     """
     ctx.mesh_dirty = True
     if not ctx.project_opened or ctx.session is None:
@@ -227,10 +235,23 @@ def _propagate_edit(ctx: LlsmContext) -> str | None:
     proj = sess.project
     if proj is None:
         return None
+    if ctx.builder is None:
+        return None
+    adm_model = ctx.builder.model
+    def _sync():
+        # TrySynchronizeModel does a diff-and-sync of the WHOLE model to
+        # SCIA's data store, including in-place mutations. Returns Boolean
+        # indicating success.
+        ok = proj.Model.TrySynchronizeModel(adm_model)
+        # Belt-and-suspenders: flush any pending changes to the UI as well.
+        proj.Model.RefreshModel_ToSCIAEngineer()
+        return ok
     try:
-        sess.submit(lambda: proj.Model.RefreshModel_ToSCIAEngineer())
+        ok = sess.submit(_sync)
     except Exception as e:
         return f"ADM updated but SCIA sync failed: {type(e).__name__}: {e}"
+    if ok is False:
+        return "TrySynchronizeModel returned False — SCIA may not have applied the edit"
     return None
 
 
@@ -269,6 +290,25 @@ def update_node(ctx: LlsmContext, name: str, x_mm: float, y_mm: float, z_mm: flo
         {"ok": True, "name": name, "xyz_mm": [x_mm, y_mm, z_mm], "mesh_dirty": True},
         warn,
     )
+
+
+def refresh_from_scia(ctx: LlsmContext) -> dict:
+    """Pull SCIA's data store INTO the in-memory ADM model.
+
+    Diagnostic primitive: lets the caller see what SCIA actually has, by
+    overwriting the in-memory ADM with SCIA's state. Use sparingly — it
+    discards any pending edits in ADM. After this call, get_node_position
+    reflects SCIA's truth, not the LLM's last edit attempt.
+    """
+    if ctx.session is None or ctx.session.project is None:
+        return {"ok": False, "error": "no project open"}
+    sess = ctx.session
+    proj = sess.project
+    try:
+        sess.submit(lambda: proj.Model.RefreshModel_FromSCIAEngineer())
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    return {"ok": True, "info": "ADM now reflects SCIA's data store"}
 
 
 def get_node_position(ctx: LlsmContext, name: str) -> dict:

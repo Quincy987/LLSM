@@ -174,6 +174,15 @@ def _register_common_tools(mcp: FastMCP) -> None:
         return scia_tools.get_node_position(_ctx, name=name)
 
     @mcp.tool()
+    def refresh_from_scia() -> dict:
+        """Diagnostic: pull SCIA's data store into the in-memory ADM model.
+
+        Use to verify that an edit actually propagated to SCIA — after a
+        refresh_from_scia, get_node_position reflects SCIA's truth, not the
+        local ADM's. Discards any pending in-memory edits."""
+        return scia_tools.refresh_from_scia(_ctx)
+
+    @mcp.tool()
     def model_summary() -> dict:
         """Return item count + names of everything currently in the in-memory ADM model."""
         return scia_tools.model_summary(_ctx)
