@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.2.1 — dev-mode hot-reload (2026-05-02)
+
 ### Added
 - `llsm-panel --dev` flag for developer hot-reload: watches `src/llsm/`
   for source changes and auto-restarts the MCP server on edits to
