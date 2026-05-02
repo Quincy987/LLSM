@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.2.3 — Double-click launcher (2026-05-03)
+
 ### Added
 - `LLSM Panel.bat` at the repo root: double-click launcher that `cd`s
   to the repo, verifies `.venv\Scripts\pythonw.exe` exists (with a
