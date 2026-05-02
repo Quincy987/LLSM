@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- `LLSM Panel.bat` at the repo root: double-click launcher that `cd`s
+  to the repo, verifies `.venv\Scripts\pythonw.exe` exists (with a
+  one-line setup hint + `pause` if not), and spawns the panel via
+  `start "" pythonw -m llsm.panel %*` so no console window lingers
+  and CLI args still pass through. Pin to taskbar or drop into
+  `shell:startup` for a one-tap launch.
+
 ## v0.2.2 — panel UX overhaul (2026-05-02)
 
 ### Added
