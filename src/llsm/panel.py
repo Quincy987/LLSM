@@ -169,8 +169,9 @@ class LlsmPanel:
         self._mcp_restart_disabled = False  # set True after MAX_RESTARTS
         # Tracking for --dev hot-reload coordination.
         self._mcp_restart_in_progress = False  # set during _restart_mcp_core
-        self._mcp_spawn_time = 0.0  # time.monotonic() of last successful spawn
-        self._mcp_spawn_wall = 0.0  # time.time() (wall clock) of last successful spawn
+        self._mcp_spawn_wall = 0.0  # time.time() (wall clock) of last successful spawn;
+                                    # the dev watcher compares file mtimes against this
+                                    # to skip events the running MCP already loaded.
         self._dev_watcher = None  # dev_watcher._DevWatcher | None
 
         # Signal pipe (Item 1: Ctrl+C handling on Windows Tk).
@@ -329,7 +330,6 @@ class LlsmPanel:
                     # We don't know when the OTHER panel spawned this MCP, so
                     # use 'now' as a worst-case approximation: the dev watcher
                     # will only restart on files modified AFTER reattach.
-                    self._mcp_spawn_time = time.monotonic()
                     self._mcp_spawn_wall = time.time()
                     self._sysline(
                         f"reattached to MCP server at {handle.url}"
@@ -344,7 +344,6 @@ class LlsmPanel:
         try:
             self._mcp_handle = mcp_supervisor.spawn(verbose=True)
             self._mcp_status = "up"
-            self._mcp_spawn_time = time.monotonic()
             self._mcp_spawn_wall = time.time()
             # Try to inherit a previously-persisted session_id (so a clean
             # exit + relaunch resumes the conversation).
@@ -461,7 +460,6 @@ class LlsmPanel:
                 self._mcp_handle = mcp_supervisor.spawn(verbose=True)
                 self._mcp_status = "up"
                 self._mcp_ping_fails = 0
-                self._mcp_spawn_time = time.monotonic()
                 self._mcp_spawn_wall = time.time()
                 # Inherit persisted session_id so the conversation continues.
                 persisted = mcp_supervisor.read_session_id()
@@ -527,6 +525,14 @@ class LlsmPanel:
             self._dev_watcher = None
             self._sysline(f"--dev: failed to start watcher: {type(exc).__name__}: {exc}")
 
+    @staticmethod
+    def _format_dev_files_label(files):
+        """Format a file-list for a dev-mode SYS line: top-3 names + "(+N more)"."""
+        label = ", ".join(files[:3])
+        if len(files) > 3:
+            label += f" (+{len(files) - 3} more)"
+        return label
+
     def _on_dev_mcp_change(self, files):
         """Tk-thread callback when MCP-side source files were edited.
 
@@ -539,9 +545,7 @@ class LlsmPanel:
             return
         if self._mcp_handle is None or self._mcp_restart_disabled:
             return
-        label = ", ".join(files[:3])
-        if len(files) > 3:
-            label += f" (+{len(files) - 3} more)"
+        label = self._format_dev_files_label(files)
         self._sysline(f"code change in {label} - restarting MCP server")
         self._restart_mcp_core(reason=f"dev hot-reload: {label}")
 
@@ -549,9 +553,7 @@ class LlsmPanel:
         """Tk-thread callback when panel-side source files were edited."""
         if self._closing:
             return
-        label = ", ".join(files[:3])
-        if len(files) > 3:
-            label += f" (+{len(files) - 3} more)"
+        label = self._format_dev_files_label(files)
         self._sysline(
             f"code change in {label} - restart panel manually to pick up changes"
         )

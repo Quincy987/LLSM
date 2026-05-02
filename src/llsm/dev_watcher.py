@@ -139,8 +139,8 @@ class _DevWatcher:
         try:
             self._observer.stop()
             self._observer.join(timeout=2.0)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[dev-watcher] observer stop failed: {exc}", file=sys.stderr)
         with self._lock:
             if self._timer is not None:
                 self._timer.cancel()
