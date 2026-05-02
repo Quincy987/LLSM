@@ -407,6 +407,11 @@ class LlsmPanel:
         """Watchdog / user-requested MCP restart. Counts against the per-session
         restart budget. The actual kill+respawn body lives in _restart_mcp_core
         so the dev-mode hot-reload path can reuse it without consuming budget.
+
+        The watchdog path enters here from `_health_ping_tick`, which returns
+        early after this call — so we have to (re)schedule the next ping here.
+        The dev path (which calls `_restart_mcp_core` directly) does NOT
+        reschedule, since the regular ping loop is still ticking.
         """
         self._mcp_last_restart = time.monotonic()
         self._mcp_restart_count += 1
@@ -415,6 +420,7 @@ class LlsmPanel:
             f"#{self._mcp_restart_count}/{MCP_MAX_RESTARTS_PER_SESSION}..."
         )
         self._restart_mcp_core(reason=reason)
+        self._schedule_health_ping()
 
     def _restart_mcp_core(self, *, reason: str) -> None:
         """Kill + respawn the MCP server. Shared body between the watchdog
@@ -479,8 +485,10 @@ class LlsmPanel:
                 self._refresh_status_bar()
         finally:
             self._mcp_restart_in_progress = False
-        # Resume polling either way (will catch the new server's health).
-        self._schedule_health_ping()
+        # Note: caller is responsible for (re)scheduling health pings.
+        # `_auto_restart_mcp` does so because `_health_ping_tick` returned
+        # early. The dev hot-reload path does NOT, because the ping loop
+        # has been ticking continuously and would double up.
 
     # -------- Dev-mode hot-reload (--dev) --------
 
@@ -520,14 +528,16 @@ class LlsmPanel:
             self._sysline(f"--dev: failed to start watcher: {type(exc).__name__}: {exc}")
 
     def _on_dev_mcp_change(self, files):
-        """Tk-thread callback when MCP-side source files were edited."""
+        """Tk-thread callback when MCP-side source files were edited.
+
+        Silent-skip when MCP is unavailable (no running supervisor) or the
+        watchdog kill switch is on — emitting a SYS line per save would spam
+        chat.log on every Ctrl+S during a "MCP can't start" debug session,
+        and there's nothing the user can do from the message anyway.
+        """
         if self._closing:
             return
-        if self._mcp_handle is None:
-            self._sysline("dev hot-reload skipped: no MCP server is running")
-            return
-        if self._mcp_restart_disabled:
-            self._sysline("dev hot-reload skipped: auto-restart kill switch is on")
+        if self._mcp_handle is None or self._mcp_restart_disabled:
             return
         label = ", ".join(files[:3])
         if len(files) > 3:
@@ -570,7 +580,7 @@ class LlsmPanel:
             except Exception as exc:
                 print(f"[panel] dev watcher stop failed: {exc}", file=sys.stderr)
             self._dev_watcher = None
-        # Cancel any in-flight chat first.
+        # Cancel any in-flight chat before tearing down MCP.
         if self._backend is not None:
             try:
                 self._backend.cancel()

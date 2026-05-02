@@ -173,45 +173,55 @@ class _DevWatcher:
             self._timer.start()
 
     def _fire(self) -> None:
+        # Hold the lock for the whole snapshot+decide step so a concurrent
+        # _fire (reachable when a new event arrives between scheduling the
+        # tk_call and the timer thread waking up) can't race on
+        # _last_panel_nudge, and so events arriving during the act of
+        # snapshotting can't be silently dropped.
         with self._lock:
             self._timer = None
-            mcp_pending = dict(self._pending_mcp)
-            panel_pending = dict(self._pending_panel)
+            # If watchdog is mid-restart, defer: leave pending untouched and
+            # re-arm. The next fire will see whether the watchdog is done.
+            if self._is_mcp_busy():
+                self._timer = threading.Timer(DEBOUNCE_S, self._fire)
+                self._timer.daemon = True
+                self._timer.start()
+                return
+            # Snapshot AND clear pending atomically. New events arriving after
+            # this point go into a fresh dict and trigger their own debounce.
+            mcp_pending = self._pending_mcp
+            panel_pending = self._pending_panel
+            self._pending_mcp = {}
+            self._pending_panel = {}
 
-        # If watchdog is mid-restart, defer (re-arm). Don't clear pending.
-        if self._is_mcp_busy():
-            with self._lock:
-                if self._timer is None:
-                    self._timer = threading.Timer(DEBOUNCE_S, self._fire)
-                    self._timer.daemon = True
-                    self._timer.start()
-            return
+            # MCP-side: skip files whose mtime is older than the last spawn
+            # time (the running MCP already loaded them). Wall-clock vs
+            # wall-clock — both from time.time() / os.stat.
+            mcp_action_files: list[str] | None = None
+            if mcp_pending:
+                spawn_wall = self._spawn_wall_time()
+                fresh = sorted(rel for rel, mt in mcp_pending.items() if mt > spawn_wall)
+                if fresh:
+                    mcp_action_files = fresh
 
-        # MCP-side: skip files whose mtime is older than the last spawn time
-        # (the running MCP already loaded them). Compare wall-clock against
-        # wall-clock — both come from time.time()/os.stat.
-        if mcp_pending:
-            spawn_wall = self._spawn_wall_time()
-            fresh = sorted(rel for rel, mt in mcp_pending.items() if mt > spawn_wall)
-            if fresh:
-                self._tk_call(lambda files=fresh: self._on_mcp_change(files))
-            with self._lock:
-                for rel in mcp_pending:
-                    self._pending_mcp.pop(rel, None)
-
-        # Panel-side: nudge per-file at most once every NUDGE_COOLDOWN_S so
-        # format-on-save doesn't spam chat.log.
-        if panel_pending:
-            now = time.monotonic()
-            to_nudge: list[str] = []
-            for rel in panel_pending:
-                last = self._last_panel_nudge.get(rel, 0.0)
-                if now - last >= NUDGE_COOLDOWN_S:
-                    to_nudge.append(rel)
-                    self._last_panel_nudge[rel] = now
-            if to_nudge:
-                to_nudge.sort()
-                self._tk_call(lambda files=to_nudge: self._on_panel_change(files))
-            with self._lock:
+            # Panel-side: nudge per-file at most once every NUDGE_COOLDOWN_S
+            # so format-on-save doesn't spam chat.log.
+            panel_action_files: list[str] | None = None
+            if panel_pending:
+                now = time.monotonic()
+                to_nudge: list[str] = []
                 for rel in panel_pending:
-                    self._pending_panel.pop(rel, None)
+                    last = self._last_panel_nudge.get(rel, 0.0)
+                    if now - last >= NUDGE_COOLDOWN_S:
+                        to_nudge.append(rel)
+                        self._last_panel_nudge[rel] = now
+                if to_nudge:
+                    to_nudge.sort()
+                    panel_action_files = to_nudge
+
+        # tk_call dispatches asynchronously (root.after(0, ...)), safe
+        # outside the lock.
+        if mcp_action_files is not None:
+            self._tk_call(lambda files=mcp_action_files: self._on_mcp_change(files))
+        if panel_action_files is not None:
+            self._tk_call(lambda files=panel_action_files: self._on_panel_change(files))
