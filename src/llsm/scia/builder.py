@@ -418,6 +418,156 @@ class ModelBuilder:
     def names(self) -> list[str]:
         return [obj.Name for obj in self._model]
 
+    def snapshot(self) -> dict:
+        """Structured dict of the current model, per the panel sidebar contract.
+
+        Returns exactly these eight top-level keys (empty list if a category
+        has no objects). All names are strings; distances are millimetres;
+        line-load magnitudes are kN/m, signed (negative = downward in Z).
+
+        Implementation walks the live ADM model so we don't drift from
+        whatever the C# layer actually thinks is in there. Each per-object
+        accessor is wrapped in try/except: pythonnet attribute reads can
+        raise on partially-constructed objects, and the panel sidebar must
+        survive that — better to show a name with missing fields than to
+        crash the whole snapshot.
+        """
+        out: dict[str, list] = {
+            "materials":   [],
+            "sections":    [],
+            "nodes":       [],
+            "beams":       [],
+            "supports":    [],
+            "load_groups": [],
+            "load_cases":  [],
+            "loads":       [],
+        }
+
+        un = self._un
+        adm = self._adm
+
+        def _name(obj):
+            try:
+                return obj.Name
+            except Exception:
+                return "?"
+
+        def _mm(length):
+            try:
+                return float(length.As(un.Units.LengthUnit.Millimeter))
+            except Exception:
+                return 0.0
+
+        def _knpm(force):
+            try:
+                return float(force.As(un.Units.ForcePerLengthUnit.KilonewtonPerMeter))
+            except Exception:
+                return 0.0
+
+        # Heuristic kind classification: Rigid in all 3 trans + 3 rot = fixed,
+        # Rigid in 3 trans + Free in 3 rot = pinned, otherwise roller (or unknown).
+        def _support_kind(s):
+            try:
+                rigid_t = adm.Enums.ConstraintType.Rigid
+                free_r  = adm.Enums.ConstraintType.Free
+                tx, ty, tz = s.TranslationX.Type, s.TranslationY.Type, s.TranslationZ.Type
+                rx, ry, rz = s.RotationX.Type, s.RotationY.Type, s.RotationZ.Type
+                all_t_rigid = (tx == rigid_t and ty == rigid_t and tz == rigid_t)
+                all_r_rigid = (rx == rigid_t and ry == rigid_t and rz == rigid_t)
+                all_r_free  = (rx == free_r  and ry == free_r  and rz == free_r)
+                if all_t_rigid and all_r_rigid:
+                    return "fixed"
+                if all_t_rigid and all_r_free:
+                    return "pinned"
+                return "roller"
+            except Exception:
+                return "?"
+
+        for obj in self._model:
+            try:
+                t = type(obj).__name__
+            except Exception:
+                continue
+            try:
+                if t == "StructuralMaterial":
+                    out["materials"].append(_name(obj))
+                elif t == "StructuralParametricCrossSection":
+                    out["sections"].append(_name(obj))
+                elif t == "StructuralPointConnection":
+                    out["nodes"].append({
+                        "name": _name(obj),
+                        "x_mm": _mm(obj.X), "y_mm": _mm(obj.Y), "z_mm": _mm(obj.Z),
+                    })
+                elif t == "StructuralCurveMember":
+                    n1 = n2 = "?"
+                    sec = ""
+                    try:
+                        # Curves[0].Nodes are the two endpoints for a straight line.
+                        first_curve = next(iter(obj.Curves))
+                        nodes = list(first_curve.Nodes)
+                        if len(nodes) >= 2:
+                            n1, n2 = _name(nodes[0]), _name(nodes[-1])
+                    except Exception:
+                        pass
+                    try:
+                        sec = _name(obj.CrossSection)
+                    except Exception:
+                        pass
+                    out["beams"].append({
+                        "name": _name(obj), "n1": n1, "n2": n2, "section": sec,
+                    })
+                elif t == "StructuralPointSupport":
+                    node_name = "?"
+                    try:
+                        node_name = _name(obj.Node)
+                    except Exception:
+                        pass
+                    out["supports"].append({
+                        "name": _name(obj), "node": node_name, "kind": _support_kind(obj),
+                    })
+                elif t == "StructuralLoadGroup":
+                    out["load_groups"].append(_name(obj))
+                elif t == "StructuralLoadCase":
+                    grp = "?"
+                    try:
+                        grp = _name(obj.LoadGroup)
+                    except Exception:
+                        pass
+                    out["load_cases"].append({"name": _name(obj), "group": grp})
+                elif t.startswith("StructuralCurveAction"):
+                    case_name = "?"
+                    target = "?"
+                    direction = "?"
+                    mag = 0.0
+                    try:
+                        case_name = _name(obj.LoadCase)
+                    except Exception:
+                        pass
+                    try:
+                        target = _name(obj.Reference.Beam)
+                    except Exception:
+                        pass
+                    try:
+                        direction = obj.Direction.ToString()
+                    except Exception:
+                        pass
+                    try:
+                        mag = _knpm(obj.Value)
+                    except Exception:
+                        pass
+                    out["loads"].append({
+                        "name": _name(obj),
+                        "case": case_name,
+                        "kind": "line",
+                        "target": target,
+                        "magnitude_kN_per_m": mag,
+                        "direction": direction,
+                    })
+            except Exception:
+                # Skip objects we can't classify; sidebar tolerates partial state.
+                continue
+        return out
+
     def validate(self) -> None:
         self._svc.ValidateModel(self._model)
 
