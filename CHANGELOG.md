@@ -6,6 +6,76 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.2.7 — chat history + recent models (2026-05-03)
+
+### Added
+- File menu in the LLSM panel: New Chat (Ctrl+N), Recent Chats (last 10),
+  Open Chat History… (Ctrl+H, searchable picker with rename/pin/delete),
+  Switch Model (recent first then full backend catalog).
+  `src/llsm/conversation/menu.py:FileMenuBuilder`, `HistoryDialog`.
+- Click-to-rename conversation title bar showing the active conversation
+  title and model. Renders `(unavailable)` when the active model is no
+  longer in the backend's catalog.
+  `src/llsm/panel.py:_refresh_status_title`, `_on_rename_active_conv`.
+- Per-conversation persistence under `~/.llsm/conversations/`:
+  `<id>/meta.json` is the source of truth, `index.json` is a derived
+  cache (atomic write + rebuild-from-meta on parse failure, mutations
+  patch in place rather than re-scanning every meta), `active.json`
+  is the one-line active-conv pointer, `transcript.jsonl` is append-only.
+  `src/llsm/history/store.py:ConversationStore`.
+- `~/.llsm/model_usage.json` tracking last-used model per
+  `(backend_kind, model_id)`, capped at 50 entries.
+  `src/llsm/history/model_usage.py:ModelUsage`.
+- Backend Protocol: `available_models()` on each backend (instance method
+  delegates to a module-level function so the catalog can query without
+  instantiating, which avoids requiring `ANTHROPIC_API_KEY` just to render
+  a menu). `AnthropicBackend.restore_messages()` replays a transcript on
+  resume (best-effort: tool_use blocks are not persisted).
+  `src/llsm/llm/base.py`, `src/llsm/llm/claude_code_backend.py:available_models`,
+  `src/llsm/llm/anthropic_backend.py:available_models`, `restore_messages`.
+- One-shot migration from legacy `chat.log` + `mcp.session-id` to the
+  new per-conversation layout: imports user/llsm/error lines (SYS lines
+  are panel-internal noise and skipped) and unlinks the legacy session-id
+  file. Idempotent on re-launch.
+  `src/llsm/history/migration.py:migrate_legacy`.
+
+### Changed
+- `ConversationStore` is now authoritative for the claude session id.
+  `mcp_supervisor.read_session_id` / `write_session_id` /
+  `clear_session_id` / `SESSION_ID_FILE` and `McpHandle.session_id` are
+  removed; the four panel call sites (`_start_mcp_server` spawn +
+  reattach, `_restart_mcp_core`, `_ensure_backend`,
+  `_on_session_rotated`) read and write through the store. Rotations are
+  pinned to the in-flight conv id rather than the currently-active one,
+  so a mid-flight conversation switch can't contaminate the new conv
+  with the old conv's rotated session id.
+  `src/llsm/mcp_supervisor.py`, `src/llsm/panel.py:_ensure_backend`,
+  `_on_session_rotated`.
+- `_send` now materialises the backend on the Tk thread and passes the
+  reference into the chat worker. Without this, a "New Chat" click
+  immediately after sending would cause the worker's `_ensure_backend`
+  to construct a backend for the NEW conversation and send the user's
+  message into a freshly-created claude session for it.
+  `src/llsm/panel.py:_send`, `_chat_thread`.
+- Mid-flight conversation switches are guarded by `_inflight_conv_id`.
+  Replies that arrive after a switch are not rendered into the now-
+  active conv's chat widget, not recorded into its transcript, and a
+  discreet sysline notes the discard.
+  `src/llsm/panel.py:_dispatch_outbox_event`, `_reply_belongs_to_active`.
+- Transcript replay now uses each message's ORIGINAL timestamp instead
+  of "now"; `_append` accepts an optional `ts` argument.
+  `src/llsm/panel.py:_append`, `_render_replay_message`.
+
+### Internal
+- New `llsm.history` package (pure-data layer, no Tk imports, no `llm/`
+  imports) and new `llsm.conversation` package (headless
+  `ConversationSession` + thin Tk `ConversationView` + `FileMenuBuilder`
+  / `HistoryDialog`).
+- Shared `now_iso` and `atomic_write_json` in `llsm/history/_io.py`.
+- `ModelCatalog` accepts a providers map (`backend_kind -> callable`) at
+  construction so the history layer never imports llm modules.
+  `src/llsm/history/model_catalog.py`.
+
 ## v0.2.6 — UTF-8 panel output (2026-05-03)
 
 ### Fixed

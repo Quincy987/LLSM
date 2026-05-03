@@ -96,9 +96,20 @@ import win32process
 import winerror
 
 from . import mcp_supervisor
+from .conversation.menu import FileMenuBuilder, HistoryDialog
+from .conversation.session import ConversationSession
+from .conversation.view import ConversationView
+from .history import ConversationStore, ModelCatalog, ModelUsage
+from .history.migration import migrate_legacy
 from .llm.anthropic_backend import AnthropicBackend
+from .llm.anthropic_backend import DEFAULT_MODEL as _ANTHROPIC_DEFAULT_MODEL
 from .llm.claude_code_backend import ClaudeCodeBackend
+from .llm.claude_code_backend import DEFAULT_MODEL as _CLAUDE_CODE_DEFAULT_MODEL
 from .scia.loader import load as load_scia
+
+
+def _default_model_for(backend_kind: str) -> str:
+    return _CLAUDE_CODE_DEFAULT_MODEL if backend_kind == "claude-code" else _ANTHROPIC_DEFAULT_MODEL
 
 
 GWLP_HWNDPARENT = -8
@@ -252,6 +263,54 @@ class LlsmPanel:
         self._sidebar_fetch_inflight = False
         self._sidebar_fetch_dirty = False
 
+        # Set in _send before each chat, read in _dispatch_outbox_event so a
+        # mid-flight conversation switch can drop the reply rather than write
+        # it into the new active conversation.
+        self._inflight_conv_id: str | None = None
+
+        # --- Conversation history (store/session/view + one-shot migration) ---
+        self._conv_store = ConversationStore(_LLSM_HOME / "conversations")
+        self._model_usage = ModelUsage(_LLSM_HOME / "model_usage.json")
+        # Register each backend's static `available_models()` with the catalog
+        # so the model list is queryable BEFORE any backend has been
+        # instantiated (api backend requires ANTHROPIC_API_KEY just to
+        # construct). Keeps the history/ layer free of llm/ imports.
+        from .llm.claude_code_backend import available_models as _cc_models
+        from .llm.anthropic_backend import available_models as _api_models
+        self._model_catalog = ModelCatalog(providers={
+            "claude-code": _cc_models,
+            "api":         _api_models,
+        })
+        try:
+            migrate_legacy(
+                store=self._conv_store,
+                legacy_session_id_file=mcp_supervisor.LEGACY_SESSION_ID_FILE,
+                legacy_chat_log=_CHAT_LOG,
+                backend_kind=self._backend_kind,
+                default_model=self._model or _default_model_for(self._backend_kind),
+            )
+        except Exception as exc:
+            print(f"[panel] migration failed: {exc}", file=sys.stderr)
+        self._conv_session = ConversationSession(
+            store=self._conv_store,
+            usage=self._model_usage,
+            catalog=self._model_catalog,
+            cancel_in_flight=self._cancel_inflight_for_switch,
+        )
+        # ConversationView is a thin Tk adapter constructed AFTER _build_ui
+        # since it needs the chat-history widget and the title StringVar.
+        # Constructed below in _build_ui.
+        self._conv_view: ConversationView | None = None
+        # Ensure there's always an active conversation so first-send works
+        # even on a clean install where migration found nothing to import.
+        try:
+            self._conv_session.ensure_active(
+                backend_kind=self._backend_kind,
+                model=self._model or _default_model_for(self._backend_kind),
+            )
+        except Exception as exc:
+            print(f"[panel] ensure_active failed: {exc}", file=sys.stderr)
+
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._install_sigint_pipe()
@@ -267,6 +326,33 @@ class LlsmPanel:
         # initial (likely empty) model state so users can confirm the panel
         # is wired to the backend.
         self._safe_after(500, self._kick_startup_sidebar_refresh)
+
+    # -------- Conversation switching helpers --------
+
+    def _cancel_inflight_for_switch(self):
+        """Cancel any in-flight chat so the next backend resume starts clean.
+
+        Wired into ConversationSession so `new_conversation()` and `switch_to()`
+        can cancel without importing Tk or knowing about backends.
+        """
+        if self._backend is not None:
+            try:
+                self._backend.cancel()
+            except Exception:
+                pass
+
+    def _reply_belongs_to_active(self) -> bool:
+        """True if the active conversation is still the one chat was started in.
+
+        ClaudeCodeBackend.cancel() kills the subprocess so its reply never
+        arrives, but AnthropicBackend.cancel() is a no-op — the api request
+        finishes, the worker thread enqueues the reply, and without this
+        guard the Tk dispatch would write that reply into whichever
+        conversation is now active.
+        """
+        if self._inflight_conv_id is None:
+            return True
+        return self._conv_session.current_id() == self._inflight_conv_id
 
     def _kick_startup_sidebar_refresh(self):
         # Materialize the backend so we have something to query, then refresh.
@@ -415,9 +501,11 @@ class LlsmPanel:
                     # use 'now' as a worst-case approximation: the dev watcher
                     # will only restart on files modified AFTER reattach.
                     self._mcp_spawn_wall = time.time()
+                    cur_conv = self._conv_session.current()
+                    sid = (cur_conv.session_id if cur_conv else "") or ""
                     self._sysline(
                         f"reattached to MCP server at {handle.url}"
-                        + (f" (resuming session {handle.session_id[:8]}...)" if handle.session_id else "")
+                        + (f" (resuming session {sid[:8]}...)" if sid else "")
                     )
                     return
                 self._sysline("--connect-to-existing: no live supervisor found, spawning fresh")
@@ -429,11 +517,6 @@ class LlsmPanel:
             self._mcp_handle = mcp_supervisor.spawn(verbose=True)
             self._mcp_status = "up"
             self._mcp_spawn_wall = time.time()
-            # Try to inherit a previously-persisted session_id (so a clean
-            # exit + relaunch resumes the conversation).
-            persisted = mcp_supervisor.read_session_id()
-            if persisted:
-                self._mcp_handle.session_id = persisted
             self._sysline(f"MCP server up at {self._mcp_handle.url}")
         except Exception as exc:
             self._mcp_status = "down"
@@ -545,10 +628,6 @@ class LlsmPanel:
                 self._mcp_status = "up"
                 self._mcp_ping_fails = 0
                 self._mcp_spawn_wall = time.time()
-                # Inherit persisted session_id so the conversation continues.
-                persisted = mcp_supervisor.read_session_id()
-                if persisted:
-                    self._mcp_handle.session_id = persisted
                 # Discard the stale backend so the next chat reconstructs with the
                 # new mcp_config_json (port may have changed) and the (possibly
                 # rotated) session_id.
@@ -692,6 +771,20 @@ class LlsmPanel:
         Ctrl+R as well for muscle memory.
         """
         menubar = tk.Menu(self.root)
+        # File menu first (left-most), built lazily so cascades repopulate
+        # each time the user opens the menu.
+        file_builder = FileMenuBuilder(
+            root=self.root,
+            session=self._conv_session,
+            catalog=self._model_catalog,
+            usage=self._model_usage,
+            backend_provider=lambda: self._backend,
+            on_new=self._on_menu_new_chat,
+            on_resume=self._on_menu_resume,
+            on_switch_model=self._on_menu_switch_model,
+            on_open_history=self._on_menu_open_history,
+        )
+        menubar.add_cascade(label="File", menu=file_builder.build(menubar))
         tools = tk.Menu(menubar, tearoff=False)
         # Disabled when backend has no MCP layer (api mode).
         state = "normal" if self._backend_kind == "claude-code" else "disabled"
@@ -770,6 +863,123 @@ class LlsmPanel:
         # Schedule the close on Tk idle so this menu callback returns first.
         self.root.after(0, self._on_close)
 
+    # -------- File menu callbacks --------
+
+    def _refresh_status_title(self):
+        """Refresh the title bar via the ConversationView.
+
+        Defers all formatting to the view; the panel only resolves whether
+        the active model is still in the backend's catalog.
+        """
+        if self._conv_view is None:
+            return
+        try:
+            available = self._conv_session.is_active_model_available(self._backend)
+        except Exception:
+            available = True
+        try:
+            self._conv_view.refresh_status_title(model_available=available)
+        except Exception:
+            pass
+
+    def _clear_chat_history_widget(self):
+        try:
+            self.history.config(state="normal")
+            self.history.delete("1.0", "end")
+            self.history.config(state="disabled")
+        except Exception:
+            pass
+
+    def _render_replay_message(self, role: str, text: str, ts: str) -> None:
+        """ConversationView callback — render one historical message into the chat widget.
+
+        System entries (only present in transcripts imported by an older
+        version of the migration that didn't filter them) are skipped on
+        replay rather than re-rendered + re-logged to chat.log.
+        """
+        if role == "user":
+            self._append("you", text, "user", ts=ts)
+        elif role == "llsm":
+            self._append("LLSM", text, "assistant", ts=ts)
+        elif role == "error":
+            self._append("error", text, "error", ts=ts)
+
+    def _on_menu_new_chat(self, _model_id):
+        if self._closing:
+            return
+        try:
+            cur = self._conv_session.current()
+            backend_kind = cur.backend_kind if cur else self._backend_kind
+            model = (cur.model if cur else None) or self._model or _default_model_for(self._backend_kind)
+            self._conv_session.new_conversation(backend_kind=backend_kind, model=model)
+        except Exception as exc:
+            self._sysline(f"new chat failed: {exc}")
+            return
+        self._backend = None  # next chat reconstructs with no session_id
+        if self._conv_view is not None:
+            self._conv_view.replay([])
+        self._sysline("started a new chat")
+        self._refresh_status_title()
+
+    def _on_menu_resume(self, conv_id):
+        if self._closing:
+            return
+        try:
+            conv, msgs = self._conv_session.switch_to(conv_id)
+        except Exception as exc:
+            self._sysline(f"resume failed: {exc}")
+            return
+        self._backend = None  # next chat reconstructs with conv's session_id
+        if self._conv_view is not None:
+            self._conv_view.replay(msgs)
+        self._sysline(f"resumed: {conv.title}")
+        self._refresh_status_title()
+
+    def _on_menu_switch_model(self, backend_kind, model_id):
+        if self._closing:
+            return
+        if backend_kind != self._backend_kind:
+            self._sysline(
+                f"cannot switch to {model_id}: that's a {backend_kind} model "
+                f"and panel is in {self._backend_kind} mode. Relaunch with --backend {backend_kind}."
+            )
+            return
+        try:
+            self._conv_session.update_model(model_id)
+        except Exception as exc:
+            self._sysline(f"switch_model failed: {exc}")
+            return
+        self._backend = None  # rebuild on next chat with the new model
+        self._sysline(f"switched model to {model_id}")
+        self._refresh_status_title()
+
+    def _on_menu_open_history(self):
+        if self._closing:
+            return
+        HistoryDialog(
+            self.root,
+            session=self._conv_session,
+            on_resume=self._on_menu_resume,
+            on_state_changed=self._refresh_status_title,
+        )
+
+    def _on_rename_active_conv(self):
+        from tkinter import simpledialog
+        cur = self._conv_session.current()
+        if cur is None:
+            return
+        new_title = simpledialog.askstring(
+            "Rename chat", "New title:", initialvalue=cur.title, parent=self.root
+        )
+        if new_title is None:
+            return
+        try:
+            self._conv_store.rename(cur.id, new_title)
+        except Exception as exc:
+            self._sysline(f"rename failed: {exc}")
+            return
+        self._refresh_status_title()
+
     # -------- UI (Item 2 reflow + Item 4 Enter binding + Item 6 Cancel) --------
 
     def _build_ui(self):
@@ -791,6 +1001,16 @@ class LlsmPanel:
         ttk.Label(self.root, textvariable=self.status_var, anchor="w",
                   padding=(8, 4)).pack(side=tk.TOP, fill=tk.X)
         ttk.Separator(self.root, orient="horizontal").pack(fill=tk.X)
+
+        # Conversation title bar. Shows active conversation title + model.
+        # Click to rename.
+        self.conv_title_var = tk.StringVar(value="")
+        self.conv_title_label = tk.Label(
+            self.root, textvariable=self.conv_title_var, anchor="w",
+            padx=10, pady=2, font=("Segoe UI", 9), cursor="hand2",
+        )
+        self.conv_title_label.pack(side=tk.TOP, fill=tk.X)
+        self.conv_title_label.bind("<Button-1>", lambda e: self._on_rename_active_conv())
 
         # Status pill: live indicator of LLSM activity. Glyph + text first,
         # color second. State machine driven via outbox events from the
@@ -857,6 +1077,17 @@ class LlsmPanel:
             font=("Segoe UI", 10), padx=10, pady=10,
         )
         self.history.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=4, pady=4)
+
+        # ConversationView is the only thing that touches BOTH the chat
+        # widget and the title StringVar — keeps the panel free of the
+        # replay-and-render loop and keeps ConversationSession headless.
+        self._conv_view = ConversationView(
+            session=self._conv_session,
+            clear_history=self._clear_chat_history_widget,
+            render_message=self._render_replay_message,
+            set_status_title=self.conv_title_var.set,
+        )
+        self._refresh_status_title()
 
         # Apply the theme: configure tags AND set tk.Text widget surfaces
         # explicitly (tk.Text does not inherit ttk theme — see plan).
@@ -1344,42 +1575,64 @@ class LlsmPanel:
     def _ensure_backend(self):
         if self._backend is None:
             kwargs = {"verbose": False}
-            if self._model:
-                kwargs["model"] = self._model
+            cur_conv = self._conv_session.current()
+            # Conversation's recorded model wins over the panel-default; lets
+            # a resumed conversation keep the model it was last using.
+            chosen_model = (cur_conv.model if cur_conv else None) or self._model
+            if chosen_model:
+                kwargs["model"] = chosen_model
             if self._backend_kind == "api":
-                # Pass a tool-event callback so the pill shows live per-tool status.
-                # Callback runs on the worker thread and must do nothing but enqueue.
                 kwargs["on_tool_event"] = self._on_tool_event_from_worker
                 self._backend = AnthropicBackend(**kwargs)
+                if cur_conv is not None:
+                    try:
+                        self._backend.restore_messages(self._conv_store.read_transcript(cur_conv.id))
+                    except Exception as exc:
+                        print(f"[panel] api restore_messages failed: {exc}", file=sys.stderr)
             else:
                 if self._mcp_handle is not None:
                     kwargs["mcp_config_json"] = self._mcp_handle.mcp_config_json
-                    if self._mcp_handle.session_id:
-                        kwargs["session_id"] = self._mcp_handle.session_id
-                        # If we have a session_id at all, it ALREADY exists in
-                        # claude's storage - either because we reattached to a
-                        # live supervisor or because a previous panel persisted
-                        # it on disk. Either way, the FIRST chat must use
-                        # --resume <id>, not --session-id <id> (which would
-                        # collide and trigger our recovery path on every fresh
-                        # launch with a prior conversation on disk).
-                        kwargs["session_started"] = True
-                # Item 7: callbacks for orphan-cleanup + session rotation.
+                # ConversationStore is authoritative for session_id. Reading
+                # from the active conversation means "New Chat" gets
+                # session_id="" (so claude generates a fresh one) while
+                # resumed/migrated conversations get their stored id.
+                conv_sid = (cur_conv.session_id if cur_conv else "") or ""
+                if conv_sid:
+                    kwargs["session_id"] = conv_sid
+                    # Non-empty conv.session_id always came from a prior
+                    # claude run (migration-imported, persisted on rotation,
+                    # or written by a previous `_ensure_backend` call), so
+                    # the session ALREADY exists in claude's storage and
+                    # the first chat must use --resume.
+                    kwargs["session_started"] = True
                 kwargs["on_session_rotated"] = self._on_session_rotated
                 kwargs["on_orphan_cleanup"] = self._on_orphan_cleanup
                 self._backend = ClaudeCodeBackend(**kwargs)
-                # Persist whatever id we ended up with so a relaunch can resume.
-                try:
-                    mcp_supervisor.write_session_id(self._backend.session_id)
-                except Exception as exc:
-                    print(f"[panel] write_session_id failed: {exc}", file=sys.stderr)
+                # Persist the freshly-minted (or inherited) session_id back to
+                # the SPECIFIC conv we read from, not via the session's active-
+                # conv path. _ensure_backend can run on the chat worker thread
+                # (chat path) or Tk thread (startup sidebar refresh); either
+                # way, the active conv may change between the cur_conv read
+                # above and this write, and we don't want to contaminate the
+                # new conv with the old conv's id.
+                if cur_conv is not None:
+                    try:
+                        self._conv_store.update_session_id(cur_conv.id, self._backend.session_id)
+                    except Exception as exc:
+                        print(f"[panel] update_session_id failed: {exc}", file=sys.stderr)
         return self._backend
 
     def _on_session_rotated(self, new_session_id):
-        try:
-            mcp_supervisor.write_session_id(new_session_id)
-        except Exception as exc:
-            print(f"[panel] write_session_id (rotated) failed: {exc}", file=sys.stderr)
+        # Pin the rotation to the conversation that was active when this
+        # chat started — if the user switched mid-flight, the active conv
+        # may now be a different one and we must not write the rotated id
+        # to it.
+        target = self._inflight_conv_id or self._conv_session.current_id()
+        if target is not None:
+            try:
+                self._conv_store.update_session_id(target, new_session_id)
+            except Exception as exc:
+                print(f"[panel] update_session_id (rotated) failed: {exc}", file=sys.stderr)
         self.outbox.put((
             "system",
             "prior conversation lost; SCIA state intact (LLM may need model_summary to re-orient)",
@@ -1432,16 +1685,47 @@ class LlsmPanel:
             pass
         self._append("you", text, "user")
         _chat_log("USER", text)
+        # Ensure an active conv exists before recording — covers the edge
+        # where the user deleted the active conv from the History dialog.
+        try:
+            self._conv_session.ensure_active(
+                backend_kind=self._backend_kind,
+                model=self._model or _default_model_for(self._backend_kind),
+            )
+        except Exception as exc:
+            print(f"[panel] ensure_active before record failed: {exc}", file=sys.stderr)
+        try:
+            self._conv_session.record_user(text)
+            # Auto-title may have just fired (first user message); refresh.
+            self._refresh_status_title()
+        except Exception as exc:
+            print(f"[panel] record_user failed: {exc}", file=sys.stderr)
         self.busy = True
         self.send_btn.config(state="disabled", text="...")
         self.cancel_btn.config(state="normal")
         # Pill: immediately Thinking; tool_start events will refine this.
         self._set_pill("thinking")
-        threading.Thread(target=self._chat_thread, args=(text,), daemon=True).start()
-
-    def _chat_thread(self, prompt):
+        # Capture the conversation we're chatting in. If the user switches
+        # mid-flight (api backend can't be cancelled mid-request), the reply
+        # would otherwise land in the new conversation's transcript.
+        self._inflight_conv_id = self._conv_session.current_id()
+        # Materialise the backend on Tk thread BEFORE spawning the worker.
+        # If the user switches conversations after this point, `self._backend`
+        # gets reset to None — but the local reference passed to the worker
+        # still targets the ORIGINAL conversation's session. Without this,
+        # the worker would call _ensure_backend() AFTER the switch and build
+        # a backend for the wrong conv, sending the user's message to a
+        # freshly-created claude session for the new conv.
         try:
             backend = self._ensure_backend()
+        except Exception as exc:
+            self.outbox.put(("error", f"{type(exc).__name__}: {exc}"))
+            self.outbox.put(("__done__", ""))
+            return
+        threading.Thread(target=self._chat_thread, args=(text, backend), daemon=True).start()
+
+    def _chat_thread(self, prompt, backend):
+        try:
             reply = backend.chat(prompt)
             self.outbox.put(("assistant", reply))
         except Exception as exc:
@@ -1489,6 +1773,7 @@ class LlsmPanel:
         """One outbox event -> one Tk-thread side effect. Wrapped by drain caller."""
         if kind == "__done__":
             self.busy = False
+            self._inflight_conv_id = None
             self.send_btn.config(state="normal", text="Send (Enter)")
             self.cancel_btn.config(state="disabled")
             # Authoritative reset for the pill: clear any per-tool tracking
@@ -1500,9 +1785,20 @@ class LlsmPanel:
             # Kick a sidebar refresh on every turn boundary.
             self._request_sidebar_refresh()
         elif kind == "error":
-            self._append("error", msg, "error")
             _chat_log("ERR", msg)
-            self._flash_pill_error(msg[:40] if isinstance(msg, str) else "")
+            # If the user switched conversations mid-flight, don't render the
+            # stale error into the now-active conv's chat widget — show a
+            # discreet sysline instead, and don't record it into the new
+            # conv's transcript either.
+            if self._reply_belongs_to_active():
+                self._append("error", msg, "error")
+                try:
+                    self._conv_session.record_error(str(msg))
+                except Exception:
+                    pass
+                self._flash_pill_error(msg[:40] if isinstance(msg, str) else "")
+            else:
+                self._sysline(f"error from prior chat (discarded): {str(msg)[:80]}")
         elif kind == "system":
             self._sysline(msg)
         elif kind == "tool_start":
@@ -1549,8 +1845,22 @@ class LlsmPanel:
                     self._request_sidebar_refresh()
         else:
             # Default: assistant reply.
-            self._append("LLSM", msg, "assistant")
             _chat_log("LLSM", msg)
+            if self._reply_belongs_to_active():
+                self._append("LLSM", msg, "assistant")
+                try:
+                    self._conv_session.record_assistant(str(msg))
+                except Exception:
+                    pass
+                try:
+                    self._refresh_status_title()
+                except Exception:
+                    pass
+            else:
+                # Don't render the stale reply into the now-active conv's
+                # chat widget; just note that the in-flight chat completed
+                # and went nowhere.
+                self._sysline("reply discarded: conversation switched mid-flight")
 
     # -------- Helpers --------
 
@@ -1558,11 +1868,14 @@ class LlsmPanel:
     def _now_stamp():
         return datetime.now().isoformat(timespec="seconds").replace("T", " ")
 
-    def _append(self, who, text, tag):
+    def _append(self, who, text, tag, ts=None):
         """Render a chat turn as a badge + timestamp + body + separator block.
 
         `tag` selects the body color (user / assistant / error / system).
         Badge surface uses the matching badge_<role> tag (bold + bg + ▎).
+        `ts` (optional) lets transcript replay show the message's ORIGINAL
+        timestamp instead of "now"; live messages pass None and get the
+        current time.
         """
         # Map body tag -> badge tag + glyph.
         if tag == "user":
@@ -1574,7 +1887,16 @@ class LlsmPanel:
         else:
             badge_tag, glyph = "badge_sys", _GLYPH_SYS
 
-        ts = self._now_stamp()
+        if ts is None:
+            ts = self._now_stamp()
+        else:
+            # Normalise transcript ISO timestamps ("2025-01-01T00:00:00+00:00"
+            # or legacy "2025-01-01T00:00:00") to the same "YYYY-MM-DD HH:MM:SS"
+            # format _now_stamp produces. Skip TZ math; the date is the
+            # informative bit when re-reading old conversations.
+            ts = (ts or "").replace("T", " ").split("+", 1)[0].rstrip("Z").strip()
+            if not ts:
+                ts = self._now_stamp()
         body = (text or "").rstrip()
 
         self.history.config(state="normal")

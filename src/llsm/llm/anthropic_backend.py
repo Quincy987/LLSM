@@ -24,6 +24,21 @@ from .tools import TOOL_DEFS, TOOL_NAMES
 DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 MAX_TOOL_ITERATIONS = 40
 
+
+def available_models():
+    """Single source of truth for the api backend's model list.
+
+    Module-level so ModelCatalog can call it without instantiating the
+    backend (which requires an ANTHROPIC_API_KEY). The instance method
+    `AnthropicBackend.available_models` delegates here.
+    """
+    from ..history.models import ModelRef
+    return [
+        ModelRef("api", "claude-opus-4-5",            display_name="Opus 4.5"),
+        ModelRef("api", DEFAULT_MODEL,                display_name="Sonnet 4.5"),
+        ModelRef("api", "claude-haiku-4-5-20251001",  display_name="Haiku 4.5"),
+    ]
+
 SYSTEM_PROMPT = """You are LLSM, an AI assistant that drives SCIA Engineer (a structural engineering FEM program) to create and analyse structural models from natural-language requests by structural engineers.
 
 You have tools available to:
@@ -130,6 +145,25 @@ class AnthropicBackend:
         contract for "nothing was running".
         """
         return False
+
+    def available_models(self):
+        return available_models()
+
+    def restore_messages(self, transcript) -> None:
+        """Replay a transcript into the in-memory message list.
+
+        Best-effort fidelity: the JSONL transcript only carries user/llsm role
+        + text, so any tool_use blocks from the original turns are lost. The
+        model can re-orient from the conversational context. For a fully
+        accurate replay we'd need to persist tool_use/tool_result blocks too.
+        """
+        msgs = []
+        for m in transcript:
+            role = "user" if m.role == "user" else "assistant" if m.role == "llsm" else None
+            if role is None or not m.text:
+                continue
+            msgs.append({"role": role, "content": m.text})
+        self._messages = msgs
 
     def model_snapshot(self) -> dict:
         """Return a structured snapshot of the in-memory ADM model.
