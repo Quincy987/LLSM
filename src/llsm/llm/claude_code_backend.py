@@ -107,6 +107,8 @@ class ClaudeCodeBackend:
                 cwd=self.cwd,
                 shell=False,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
             )
         except FileNotFoundError:
             raise RuntimeError(

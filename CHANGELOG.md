@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Panel chat no longer mojibakes non-ASCII characters from Claude CLI
+  output (em-dash, arrows, minus, etc. showed as `â€"`, `â†'`). Root
+  cause: `subprocess.Popen(..., text=True)` on Windows decodes via
+  `locale.getpreferredencoding()` (cp1252) while the Claude CLI emits
+  UTF-8. Now passes `encoding="utf-8", errors="replace"` explicitly.
+  `src/llsm/llm/claude_code_backend.py:_run_once`.
+
 ## v0.2.5 — restart-app menu item (2026-05-03)
 
 ### Added
