@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.2.5 — restart-app menu item (2026-05-03)
+
+### Added
+- `Tools > Restart app  Ctrl+Shift+R` menu item. Closes the running
+  panel cleanly (releases the single-instance mutex, shuts down MCP)
+  and spawns a fresh panel process with the same CLI args, so a user
+  can apply a code update with one click instead of manually closing
+  and relaunching. The respawn happens inside `main()`'s `finally`
+  AFTER the mutex release so the child doesn't bounce off
+  `ERROR_ALREADY_EXISTS`. Spawned with `DETACHED_PROCESS |
+  CREATE_NEW_PROCESS_GROUP` on Windows so the child outlives us with
+  no inherited console.
+  `src/llsm/panel.py:_on_menu_restart_app`, `main`.
+
 ## v0.2.4 — claude session recovery (2026-05-03)
 
 ### Fixed

@@ -232,6 +232,9 @@ class LlsmPanel:
                                     # the dev watcher compares file mtimes against this
                                     # to skip events the running MCP already loaded.
         self._dev_watcher = None  # dev_watcher._DevWatcher | None
+        # Tools > Restart app: when True, main() spawns a fresh panel
+        # process AFTER releasing the single-instance mutex.
+        self._restart_requested = False
 
         # Signal pipe (Item 1: Ctrl+C handling on Windows Tk).
         # socketpair, NOT os.pipe: signal.set_wakeup_fd on Windows requires
@@ -699,6 +702,14 @@ class LlsmPanel:
         )
         tools.add_separator()
         tools.add_command(label="Open panel.log folder", command=self._on_menu_open_log_folder)
+        tools.add_separator()
+        tools.add_command(label="Restart app  Ctrl+Shift+R",
+                          command=self._on_menu_restart_app)
+        # Global keyboard shortcut for restart-app, regardless of focus.
+        self.root.bind_all("<Control-Shift-R>",
+                           lambda e: (self._on_menu_restart_app(), "break"))
+        self.root.bind_all("<Control-Shift-r>",
+                           lambda e: (self._on_menu_restart_app(), "break"))
         menubar.add_cascade(label="Tools", menu=tools)
         # View menu: sidebar toggle.
         view = tk.Menu(menubar, tearoff=False)
@@ -743,6 +754,21 @@ class LlsmPanel:
             os.startfile(str(_LLSM_HOME))
         except Exception as exc:
             self._sysline(f"could not open log folder: {exc}")
+
+    def _on_menu_restart_app(self):
+        """Tools > Restart app: spawn a fresh panel process after this one exits.
+
+        Sets the `_restart_requested` flag and triggers a clean close. The
+        actual respawn happens in main()'s finally block AFTER the
+        single-instance mutex has been released - otherwise the child would
+        bounce off ERROR_ALREADY_EXISTS.
+        """
+        if self._closing:
+            return
+        self._sysline("restart requested - closing panel; a fresh instance will start in a moment")
+        self._restart_requested = True
+        # Schedule the close on Tk idle so this menu callback returns first.
+        self.root.after(0, self._on_close)
 
     # -------- UI (Item 2 reflow + Item 4 Enter binding + Item 6 Cancel) --------
 
@@ -1655,15 +1681,17 @@ def main():
             pass
         return 1
 
+    panel_instance = None
     try:
         load_scia()
-        LlsmPanel(
+        panel_instance = LlsmPanel(
             model=args.model,
             backend_kind=args.backend,
             connect_existing=args.connect_to_existing,
             always_on_top=args.always_on_top,
             dev_mode=args.dev,
-        ).run()
+        )
+        panel_instance.run()
         return 0
     finally:
         # Releasing the mutex on exit lets a relaunch proceed.
@@ -1672,6 +1700,25 @@ def main():
                 win32event.ReleaseMutex(mutex_handle)
             except Exception:
                 pass
+        # Tools > Restart app: respawn AFTER the mutex release so the child
+        # doesn't bounce off ERROR_ALREADY_EXISTS.
+        if panel_instance is not None and getattr(panel_instance, "_restart_requested", False):
+            try:
+                import subprocess
+                creationflags = 0
+                if hasattr(subprocess, "DETACHED_PROCESS"):
+                    creationflags |= subprocess.DETACHED_PROCESS
+                if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+                    creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP
+                subprocess.Popen(
+                    [sys.executable, "-m", "llsm.panel", *sys.argv[1:]],
+                    cwd=os.getcwd(),
+                    creationflags=creationflags,
+                    close_fds=True,
+                )
+                print("[panel] restart: spawned fresh instance", file=sys.stderr)
+            except Exception as exc:
+                print(f"[panel] restart spawn failed: {exc}", file=sys.stderr)
 
 
 if __name__ == "__main__":
