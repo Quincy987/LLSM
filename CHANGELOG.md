@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.2.7 — chat history + recent models (2026-05-03)
+
 ### Added
 - File menu in the LLSM panel: New Chat (Ctrl+N), Recent Chats (last 10),
   Open Chat History… (Ctrl+H, searchable picker with rename/pin/delete),
