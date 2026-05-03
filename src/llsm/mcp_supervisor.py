@@ -26,7 +26,10 @@ import psutil
 LLSM_HOME = Path.home() / ".llsm"
 PID_FILE = LLSM_HOME / "mcp.pid"
 PORT_FILE = LLSM_HOME / "mcp.port"
-SESSION_ID_FILE = LLSM_HOME / "mcp.session-id"
+# Legacy session-id file. Owned and migrated by llsm.history; this module no
+# longer reads or writes it. Kept here only as a path constant so the
+# migration code can locate it.
+LEGACY_SESSION_ID_FILE = LLSM_HOME / "mcp.session-id"
 LOG_FILE = LLSM_HOME / "mcp.log"
 CMDLINE_MARKER = "llsm.mcp_server"
 
@@ -46,7 +49,6 @@ class McpHandle:
     shutdown_token: str
     pid_file: Path
     port_file: Path
-    session_id: str = ""
     reattached: bool = False  # True if connect_to_existing() returned this handle
 
     @property
@@ -345,44 +347,6 @@ def shutdown(handle: McpHandle, verbose: bool = False) -> None:
             pass
 
 
-# --- Session-id persistence (alongside pid-file) ---
-
-def _atomic_write(path: Path, content: str) -> None:
-    """Atomic write: write to <path>.tmp then os.replace."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(content, encoding="utf-8")
-    try:
-        os.chmod(tmp, 0o600)
-    except Exception:
-        pass
-    os.replace(tmp, path)
-
-
-def write_session_id(session_id: str) -> None:
-    """Persist the panel's claude session_id so a relaunched panel can resume."""
-    LLSM_HOME.mkdir(parents=True, exist_ok=True)
-    _atomic_write(SESSION_ID_FILE, session_id.strip())
-
-
-def read_session_id() -> str | None:
-    """Read a previously-persisted session_id, or None if absent/empty."""
-    try:
-        raw = SESSION_ID_FILE.read_text(encoding="utf-8").strip()
-    except FileNotFoundError:
-        return None
-    except Exception:
-        return None
-    return raw or None
-
-
-def clear_session_id() -> None:
-    try:
-        SESSION_ID_FILE.unlink(missing_ok=True)
-    except Exception:
-        pass
-
-
 def kill_orphan_claudes(session_id: str, verbose: bool = False) -> int:
     """Kill any live claude processes whose command line carries session_id.
 
@@ -438,7 +402,6 @@ def connect_to_existing(verbose: bool = False) -> McpHandle | None:
     token = pid_data.get("shutdown_token", "")
     if not token:
         return None
-    session_id = read_session_id() or ""
     if verbose:
         print(f"[mcp-supervisor] reattached to running MCP server pid={pid} port={port}", file=sys.stderr)
     return McpHandle(
@@ -447,7 +410,6 @@ def connect_to_existing(verbose: bool = False) -> McpHandle | None:
         shutdown_token=token,
         pid_file=PID_FILE,
         port_file=PORT_FILE,
-        session_id=session_id,
         reattached=True,
     )
 

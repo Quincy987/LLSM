@@ -27,6 +27,21 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent  # src/llsm/llm/ -> repo
 DEFAULT_MODEL = "opus"  # alias for latest Opus (currently 4.7)
 
+
+def available_models():
+    """Single source of truth for the claude-code model list.
+
+    ModelCatalog imports this when no live backend is around to query
+    (e.g. at panel startup before the first chat materialises the backend).
+    The instance method `ClaudeCodeBackend.available_models` delegates here.
+    """
+    from ..history.models import ModelRef
+    return [
+        ModelRef("claude-code", "opus",   display_name="Opus (latest)"),
+        ModelRef("claude-code", "sonnet", display_name="Sonnet (latest)"),
+        ModelRef("claude-code", "haiku",  display_name="Haiku (latest)"),
+    ]
+
 # System-prompt snippet that runs ON TOP of the MCP server's instructions when
 # the persistent server is in use. Centralised here so this backend and
 # mcp_server.py don't drift on persistence/edit semantics.
@@ -225,6 +240,9 @@ class ClaudeCodeBackend:
                 if key in data:
                     return str(data[key])
         return out
+
+    def available_models(self):
+        return available_models()
 
     def model_snapshot(self) -> dict:
         """Return an empty-but-conformant snapshot.
