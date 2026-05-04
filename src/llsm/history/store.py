@@ -185,7 +185,12 @@ class ConversationStore:
         title: str = DEFAULT_TITLE,
         session_id: str = "",
         conv_id: str | None = None,
+        tools_enabled: bool = True,
     ) -> Conversation:
+        """Create a new conversation. `tools_enabled` should be sourced from
+        `PROVIDERS[backend_kind].default_tools_enabled` by callers that know
+        about the registry — that's the seeding rule from B4. Internal
+        helpers without that context get the default `True`."""
         cid = conv_id or uuid.uuid4().hex
         now = now_iso()
         conv = Conversation(
@@ -198,8 +203,18 @@ class ConversationStore:
             session_id=session_id,
             message_count=0,
             preview="",
+            tools_enabled=bool(tools_enabled),
         )
         self._conv_dir(cid).mkdir(parents=True, exist_ok=True)
+        self.write_meta(conv)
+        self._index_upsert(conv)
+        return conv
+
+    def update_tools_enabled(self, conv_id: str, value: bool) -> Conversation | None:
+        conv = self.get(conv_id)
+        if conv is None:
+            return None
+        conv.tools_enabled = bool(value)
         self.write_meta(conv)
         self._index_upsert(conv)
         return conv

@@ -6,6 +6,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.1 — SCIA tool-use parity for OpenAI / Gemini / OpenAI-compatible (2026-05-04)
+
+### Added
+- **Phase B: SCIA tool-use across all providers.** OpenAI, Google Gemini,
+  and OpenAI-compatible backends can now drive SCIA the same way the
+  Anthropic API and Claude Code backends do — full 14-tool surface
+  (new_model, add_material, add_node, add_beam, supports, load groups,
+  load cases, line loads, launch_scia, push_model, run_analysis, etc.).
+- New `src/llsm/llm/tool_loop.py` — provider-neutral tool dispatch and
+  format adapters. Owns `MAX_TOOL_ITERATIONS = 40` (single source of
+  truth, was previously a private constant in anthropic_backend) and
+  `invoke_tool(name, args, ctx, on_tool_event)`. Provider-format
+  adapters: `to_openai_tools()`, `to_gemini_tools()`,
+  `extract_*_tool_calls()`, `format_*_tool_result()`. SDK types are
+  imported lazily inside each function (CR-1).
+- Anthropic backend refactored FIRST to use the shared `invoke_tool`
+  helper before adding new providers (B1 ordering: validate the seam
+  against a known-working backend).
+- Per-conversation **`tools_enabled`** flag on `Conversation` (default
+  `True`). Seeded from `PROVIDERS[backend_kind].default_tools_enabled`
+  by the panel when creating a new conversation under a different
+  provider — so openai-compatible new chats default to tools-off.
+  `ConversationStore.create()` takes the flag; `update_tools_enabled()`
+  persists user toggles. Existing v0.2.x meta.json files load with
+  `True` via the dataclass default + `Conversation.from_dict` filter.
+- **Tools menu → "Enable SCIA tools for this chat"** check-button.
+  Synced from the active conversation each time the menu opens (via
+  postcommand). Toggling forces a backend rebuild on the next chat
+  so the new flag takes effect.
+- For the openai-compatible backend, the tool-use call wraps a clear
+  fallback message when the local server doesn't support OpenAI-style
+  tool calls: *"\<host\> doesn't support OpenAI-style tool calls. Disable
+  'Enable SCIA tools for this chat' under Tools."* No panel crash.
+
+### Changed
+- `MAX_TOOL_ITERATIONS` moved out of `anthropic_backend.py` into
+  `tool_loop.py`; both Anthropic and the new backends import from there.
+- The new backends' `model_snapshot()` now surfaces the live ADM model
+  when `tools_enabled=True` (matches AnthropicBackend behaviour),
+  empty 8-key shape otherwise.
+
+### Notes
+- Anthropic API backend cancel granularity is unchanged in v0.3.1
+  (between-iteration only, `messages.create` non-streaming). Streaming
+  upgrade for parity with OpenAI / Gemini / openai-compatible's mid-call
+  abort is a deferred follow-up tracked under DD #9 in the plan.
+- Headless multi-provider (CLI `--provider openai/gemini/...`) is still
+  scoped out — landing in v0.3.2 with `build_backend_headless()`.
+
 ## v0.3.0 — multi-provider LLM support + credentials wizard (2026-05-04)
 
 ### Added

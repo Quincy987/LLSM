@@ -1,4 +1,4 @@
-﻿"""LLSM panel - Tkinter chat window owned by SCIA Engineer.
+"""LLSM panel - Tkinter chat window owned by SCIA Engineer.
 
 Critical ordering: panel.log MUST be opened before any project imports so that
 import-time failures (DLL loads in pythonnet, missing pywin32, etc.) land
@@ -812,11 +812,20 @@ class LlsmPanel:
             open_wizard_cb=self._on_menu_setup_credentials,
         )
         menubar.add_cascade(label="File", menu=file_builder.build(menubar))
-        tools = tk.Menu(menubar, tearoff=False)
+        tools = tk.Menu(menubar, tearoff=False, postcommand=self._refresh_tools_menu)
         tools.add_command(label="Set up credentials…",
                           command=self._on_menu_setup_credentials)
         tools.add_command(label="Manage providers…",
                           command=self._on_menu_manage_providers)
+        # Per-conversation SCIA tools toggle (Phase B / B4). The variable is
+        # synced from the active conversation each time the menu opens via
+        # postcommand=_refresh_tools_menu.
+        self._tools_enabled_var = tk.BooleanVar(value=True)
+        tools.add_checkbutton(
+            label="Enable SCIA tools for this chat",
+            variable=self._tools_enabled_var,
+            command=self._on_toggle_tools_enabled,
+        )
         tools.add_separator()
         # Disabled when backend has no MCP layer (api / openai / gemini / etc.).
         state = "normal" if self._backend_kind == "claude-code" else "disabled"
@@ -908,6 +917,41 @@ class LlsmPanel:
             self.root,
             on_changed=self._on_credentials_saved,
         )
+
+    def _refresh_tools_menu(self):
+        """Sync the 'Enable SCIA tools' checkmark with the active conv state."""
+        if self._closing:
+            return
+        try:
+            cur = self._conv_session.current()
+            val = bool(getattr(cur, "tools_enabled", True)) if cur is not None else True
+            self._tools_enabled_var.set(val)
+        except Exception:
+            pass
+
+    def _on_toggle_tools_enabled(self):
+        """User toggled SCIA tool-use for the active chat. Persist + rebuild."""
+        if self._closing:
+            return
+        cur = self._conv_session.current()
+        if cur is None:
+            return
+        new_val = bool(self._tools_enabled_var.get())
+        try:
+            self._conv_store.update_tools_enabled(cur.id, new_val)
+        except Exception as exc:
+            self._sysline(f"could not update tools_enabled: {exc}")
+            return
+        # Force a backend rebuild on next chat so the new flag takes effect.
+        old = self._backend
+        if old is not None:
+            try: old.cancel()
+            except Exception: pass
+            try: old.close()
+            except Exception: pass
+        self._backend = None
+        state = "enabled" if new_val else "disabled"
+        self._sysline(f"SCIA tools {state} for this chat")
 
     def _on_credentials_saved(self, kind: str | None):
         """Wizard / Manage-providers callback: invalidate the catalog cache for
@@ -1041,24 +1085,30 @@ class LlsmPanel:
                 pass
         self._backend = None
 
-        # Resolve the new provider's display name for the title rule.
+        # Resolve the new provider's display name + default_tools_enabled.
+        display = backend_kind
+        default_tools = True
         try:
             from .llm.providers import PROVIDERS
             spec = PROVIDERS.get(backend_kind)
-            display = spec.display_name if spec else backend_kind
+            if spec is not None:
+                display = spec.display_name
+                default_tools = bool(spec.default_tools_enabled)
         except Exception:
-            display = backend_kind
+            pass
 
-        # Auto-create a fresh conversation under the new provider.
+        # Auto-create a fresh conversation under the new provider, seeded
+        # with the provider's default tools_enabled (B4 seeding rule).
         try:
-            new_conv = self._conv_session.new_conversation(
+            self._conv_session._cancel()  # explicit pre-cancel for safety
+            new_conv = self._conv_store.create(
                 backend_kind=backend_kind,
                 model=model_id,
+                title=f"New chat ({display})",
+                tools_enabled=default_tools,
             )
-            # Override the default title to include the provider — auto-title
-            # logic in store.append_message overwrites it from the first user
-            # message via DEFAULT_TITLE check, which we update below.
-            self._conv_store.rename(new_conv.id, f"New chat ({display})")
+            self._conv_store.set_active(new_conv.id)
+            self._model_usage.record(backend_kind, model_id)
         except Exception as exc:
             self._sysline(f"could not start new chat: {exc}")
             self._backend_kind = backend_kind

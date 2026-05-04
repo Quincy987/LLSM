@@ -13,12 +13,18 @@ class Conversation:
     title: str
     created_at: str
     last_used_at: str
-    backend_kind: str          # "claude-code" | "api"
+    backend_kind: str          # "claude-code" | "api" | "openai" | "gemini" | "openai-compatible"
     model: str
-    session_id: str = ""       # claude-code: claude CLI session id; api: unused
+    session_id: str = ""       # claude-code: claude CLI session id; others: unused
     message_count: int = 0
     preview: str = ""
     pinned: bool = False
+    # Phase B: per-conversation toggle for SCIA tool-use. Default True for
+    # API-style backends; openai-compatible and the panel reset this from
+    # PROVIDERS[backend_kind].default_tools_enabled when creating a new
+    # conversation. Existing v0.2.x meta.json files have no field; the
+    # `from_dict` filter below + the `True` default here keeps them loading.
+    tools_enabled: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

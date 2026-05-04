@@ -1,4 +1,4 @@
-﻿"""Anthropic chat backend with tool-use loop.
+"""Anthropic chat backend with tool-use loop.
 
 Runs the classic agentic loop:
   1. send user message + tool defs
@@ -16,13 +16,12 @@ from typing import Any
 
 from anthropic import Anthropic
 
-from ..scia import tools as scia_tools
 from ..scia.tools import LlsmContext
-from .tools import TOOL_DEFS, TOOL_NAMES
+from .tools import TOOL_DEFS
+from .tool_loop import MAX_TOOL_ITERATIONS, invoke_tool
 
 
 DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
-MAX_TOOL_ITERATIONS = 40
 
 
 def available_models():
@@ -83,7 +82,7 @@ class AnthropicBackend:
     #   on_tool_event(phase: "start"|"end", name: str, payload: Any)
     # phase=="start": payload is the args dict.
     # phase=="end":   payload is True/False (ok flag).
-    # Runs synchronously on whatever thread invokes _invoke_tool.
+    # Runs synchronously on whatever thread the tool loop runs on.
     on_tool_event: Any = None
 
     _client: Anthropic = field(init=False)
@@ -117,12 +116,15 @@ class AnthropicBackend:
             if response.stop_reason != "tool_use":
                 return self._extract_text(assistant_blocks)
 
-            # Execute each tool_use block
+            # Execute each tool_use block via the shared dispatcher.
             tool_results = []
             for block in assistant_blocks:
                 if block.type != "tool_use":
                     continue
-                result = self._invoke_tool(block.name, block.input)
+                result = invoke_tool(
+                    block.name, block.input,
+                    self._ctx, self.on_tool_event, verbose=self.verbose,
+                )
                 if self.verbose:
                     print(f"  -> {result}")
                 tool_results.append({
@@ -187,38 +189,6 @@ class AnthropicBackend:
             raise RuntimeError(f"snapshot failed: {type(e).__name__}: {e}") from e
 
     # --- Internals ---------------------------------------------------------
-
-    def _emit_tool_event(self, phase: str, name: str, payload) -> None:
-        """Best-effort callback dispatch — must never break tool execution."""
-        cb = self.on_tool_event
-        if cb is None:
-            return
-        try:
-            cb(phase, name, payload)
-        except Exception:
-            pass
-
-    def _invoke_tool(self, name: str, args: dict) -> dict:
-        if name not in TOOL_NAMES:
-            self._emit_tool_event("start", name, args)
-            self._emit_tool_event("end", name, False)
-            return {"ok": False, "error": f"unknown tool {name!r}"}
-        fn = getattr(scia_tools, name, None)
-        if fn is None:
-            self._emit_tool_event("start", name, args)
-            self._emit_tool_event("end", name, False)
-            return {"ok": False, "error": f"tool {name!r} not implemented"}
-        if self.verbose:
-            print(f"[tool] {name}({args})")
-        self._emit_tool_event("start", name, args)
-        try:
-            result = fn(self._ctx, **args)
-        except Exception as e:
-            self._emit_tool_event("end", name, False)
-            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
-        ok = bool(result.get("ok", True)) if isinstance(result, dict) else True
-        self._emit_tool_event("end", name, ok)
-        return result
 
     @staticmethod
     def _extract_text(blocks: list) -> str:

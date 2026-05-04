@@ -18,8 +18,16 @@ from urllib.parse import urlparse
 
 from openai import OpenAI
 
+from ..scia.tools import LlsmContext
 from .base import CancelledError
 from .credentials import get_credential
+from .tool_loop import (
+    MAX_TOOL_ITERATIONS,
+    invoke_tool,
+    to_openai_tools,
+    extract_openai_tool_calls,
+    format_openai_tool_result,
+)
 
 
 # No DEFAULT_MODEL — there is nothing universal here. Caller must set one.
@@ -35,10 +43,19 @@ def available_models():
     return []
 
 
-_PHASE_A_SYSTEM_PROMPT = (
+_SYSTEM_PROMPT_CHAT_ONLY = (
     "You are LLSM, an AI assistant for structural engineers using SCIA Engineer. "
     "In this conversation you are running in chat-only mode — you cannot drive "
     "SCIA directly. Answer the user's questions clearly and concisely."
+)
+
+_SYSTEM_PROMPT_WITH_TOOLS = (
+    "You are LLSM, an AI assistant that drives SCIA Engineer. Use the SCIA "
+    "tools to build models. Workflow: new_model -> add_material -> "
+    "add_rectangular_section -> add_node -> add_beam -> supports -> "
+    "load_group -> load_case -> add_line_load -> launch_scia -> push_model "
+    "-> run_analysis -> close_scia. Lengths in mm; line loads in kN/m; "
+    "Z up; gravity = direction='Z' with NEGATIVE magnitude."
 )
 
 
@@ -71,12 +88,15 @@ class OpenAICompatibleBackend:
     max_tokens: int = 4096
     verbose: bool = True
     on_tool_event: Any = None
+    # Default off per ProviderSpec (small local models often misuse tools).
+    tools_enabled: bool = False
 
     _client: OpenAI = field(init=False)
     _messages: list[dict] = field(default_factory=list, init=False)
     _cancelled: threading.Event = field(default_factory=threading.Event, init=False)
     _current_stream: Any = field(default=None, init=False)
     _host_label: str = field(default="", init=False)
+    _ctx: LlsmContext = field(default_factory=LlsmContext, init=False)
 
     def __post_init__(self) -> None:
         base_url = self.base_url or get_credential("openai-compatible", "base_url") or ""
@@ -92,18 +112,74 @@ class OpenAICompatibleBackend:
         self._host_label = _host_label(base_url)
 
     def chat(self, user_message: str) -> str:
+        import json as _json
         self._cancelled.clear()
         self._messages.append({"role": "user", "content": user_message})
 
+        if not self.tools_enabled:
+            return self._chat_no_tools()
+
+        # Best-effort tool loop. If the server doesn't support OpenAI's
+        # tools=[...] schema, the .create() call raises and we surface a
+        # clean message instead of crashing the panel.
+        for _ in range(MAX_TOOL_ITERATIONS):
+            if self._cancelled.is_set():
+                raise CancelledError()
+            try:
+                resp = self._client.chat.completions.create(
+                    model=self.model,
+                    max_tokens=self.max_tokens,
+                    messages=[
+                        {"role": "system", "content": _SYSTEM_PROMPT_WITH_TOOLS},
+                        *self._messages,
+                    ],
+                    tools=to_openai_tools(),
+                )
+            except Exception as exc:
+                msg = (
+                    f"{self._host_label} doesn't support OpenAI-style tool calls "
+                    f"(or another error occurred): {type(exc).__name__}: {exc}. "
+                    "Disable 'Enable SCIA tools for this chat' under Tools."
+                )
+                raise RuntimeError(msg) from exc
+            if self._cancelled.is_set():
+                raise CancelledError()
+
+            choice = resp.choices[0]
+            msg = choice.message
+            calls = extract_openai_tool_calls(msg)
+            assistant_msg = {"role": "assistant", "content": msg.content or ""}
+            if calls:
+                assistant_msg["tool_calls"] = [
+                    {"id": c.id, "type": "function",
+                     "function": {"name": c.name, "arguments": _json.dumps(c.arguments)}}
+                    for c in calls
+                ]
+            self._messages.append(assistant_msg)
+
+            if not calls:
+                return (msg.content or "").strip()
+
+            for tc in calls:
+                if self._cancelled.is_set():
+                    raise CancelledError()
+                result = invoke_tool(
+                    tc.name, tc.arguments, self._ctx,
+                    self.on_tool_event, verbose=self.verbose,
+                )
+                self._messages.append(format_openai_tool_result(tc.id, result))
+
+        return "[ERROR] Hit max tool-use iterations without a final response."
+
+    def _chat_no_tools(self) -> str:
         if self._cancelled.is_set():
             raise CancelledError()
-
         try:
             stream = self._client.chat.completions.create(
                 model=self.model,
                 max_tokens=self.max_tokens,
                 messages=[
-                    {"role": "system", "content": _PHASE_A_SYSTEM_PROMPT},
+                    {"role": "system", "content": _SYSTEM_PROMPT_CHAT_ONLY},
                     *self._messages,
                 ],
                 stream=True,
@@ -150,6 +226,10 @@ class OpenAICompatibleBackend:
 
     def close(self) -> None:
         try:
+            self._ctx.close()
+        except Exception:
+            pass
+        try:
             self._client.close()
         except Exception:
             pass
@@ -184,19 +264,30 @@ class OpenAICompatibleBackend:
         self._messages = msgs
 
     def model_snapshot(self) -> dict:
-        return {k: [] for k in (
+        empty = {k: [] for k in (
             "materials", "sections", "nodes", "beams",
             "supports", "load_groups", "load_cases", "loads",
         )}
+        if not self.tools_enabled:
+            return empty
+        builder = getattr(self._ctx, "builder", None)
+        if builder is None:
+            return empty
+        try:
+            return builder.snapshot()
+        except Exception:
+            return empty
 
 
 def build_backend(panel) -> OpenAICompatibleBackend:
     cur = panel._conv_session.current()
     model = (cur.model if cur else None) or panel._model or _FALLBACK_MODEL
+    tools_enabled = bool(getattr(cur, "tools_enabled", False)) if cur else False
     backend = OpenAICompatibleBackend(
         model=model,
         verbose=False,
         on_tool_event=panel._on_tool_event_from_worker,
+        tools_enabled=tools_enabled,
     )
     if cur is not None:
         try:
