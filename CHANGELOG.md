@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.2 — SCIA/MCP reliability fixes for long-running tool calls (2026-05-04)
+
 ### Reliability
 - **MCP async tool execution.** SCIA tool bodies now run in a single-worker
   `ThreadPoolExecutor` instead of directly on FastMCP's asyncio event loop.
