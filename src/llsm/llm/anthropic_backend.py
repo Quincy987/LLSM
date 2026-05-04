@@ -227,3 +227,29 @@ class AnthropicBackend:
             if getattr(b, "type", None) == "text":
                 parts.append(b.text)
         return "\n".join(parts).strip()
+
+
+# ---------- Registry hook (CR-5) ----------
+
+def build_backend(panel) -> "AnthropicBackend":
+    """Panel-coupled factory used by `providers._resolve(...)`.
+
+    Replaces the inline `if self._backend_kind == "api"` branch in
+    `panel._ensure_backend`. Reads the active conversation's model and
+    transcript off the panel and constructs the backend with the panel's
+    tool-event callback wired in.
+    """
+    cur = panel._conv_session.current()
+    model = (cur.model if cur else None) or panel._model or DEFAULT_MODEL
+    backend = AnthropicBackend(
+        model=model,
+        verbose=False,
+        on_tool_event=panel._on_tool_event_from_worker,
+    )
+    if cur is not None:
+        try:
+            backend.restore_messages(panel._conv_store.read_transcript(cur.id))
+        except Exception as exc:
+            import sys as _sys
+            print(f"[panel] api restore_messages failed: {exc}", file=_sys.stderr)
+    return backend

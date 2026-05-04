@@ -277,9 +277,35 @@ class LlsmPanel:
         # construct). Keeps the history/ layer free of llm/ imports.
         from .llm.claude_code_backend import available_models as _cc_models
         from .llm.anthropic_backend import available_models as _api_models
+        # New providers registered via lazy thunks: importing
+        # `openai_backend.available_models` would force `import openai` even
+        # when the user hasn't installed it. Wrap in a thunk that imports on
+        # call. _resolve in providers.py would also work but threading the
+        # spec through here is heavier than the inline lambda.
+        def _openai_models():
+            try:
+                from .llm.openai_backend import available_models
+            except ImportError:
+                return []
+            return available_models()
+        def _gemini_models():
+            try:
+                from .llm.gemini_backend import available_models
+            except ImportError:
+                return []
+            return available_models()
+        def _openai_compat_models():
+            try:
+                from .llm.openai_compatible_backend import available_models
+            except ImportError:
+                return []
+            return available_models()
         self._model_catalog = ModelCatalog(providers={
-            "claude-code": _cc_models,
-            "api":         _api_models,
+            "claude-code":       _cc_models,
+            "api":               _api_models,
+            "openai":            _openai_models,
+            "gemini":            _gemini_models,
+            "openai-compatible": _openai_compat_models,
         })
         try:
             migrate_legacy(
@@ -783,10 +809,16 @@ class LlsmPanel:
             on_resume=self._on_menu_resume,
             on_switch_model=self._on_menu_switch_model,
             on_open_history=self._on_menu_open_history,
+            open_wizard_cb=self._on_menu_setup_credentials,
         )
         menubar.add_cascade(label="File", menu=file_builder.build(menubar))
         tools = tk.Menu(menubar, tearoff=False)
-        # Disabled when backend has no MCP layer (api mode).
+        tools.add_command(label="Set up credentials…",
+                          command=self._on_menu_setup_credentials)
+        tools.add_command(label="Manage providers…",
+                          command=self._on_menu_manage_providers)
+        tools.add_separator()
+        # Disabled when backend has no MCP layer (api / openai / gemini / etc.).
         state = "normal" if self._backend_kind == "claude-code" else "disabled"
         tools.add_command(
             label="Restart MCP server  Ctrl+R",
@@ -847,6 +879,45 @@ class LlsmPanel:
             os.startfile(str(_LLSM_HOME))
         except Exception as exc:
             self._sysline(f"could not open log folder: {exc}")
+
+    def _on_menu_setup_credentials(self):
+        """Open the credential wizard. Lazy import keeps panel startup snappy
+        and lets a user without `keyring` still launch the panel."""
+        if self._closing:
+            return
+        try:
+            from .conversation.credential_wizard import CredentialWizard
+        except Exception as exc:
+            self._sysline(f"credential wizard unavailable: {exc}")
+            return
+        wiz = CredentialWizard(
+            self.root,
+            on_saved=self._on_credentials_saved,
+        )
+        # Modal — don't block Tk; the dialog grabs focus itself.
+
+    def _on_menu_manage_providers(self):
+        if self._closing:
+            return
+        try:
+            from .conversation.credential_wizard import ManageProvidersDialog
+        except Exception as exc:
+            self._sysline(f"manage-providers dialog unavailable: {exc}")
+            return
+        ManageProvidersDialog(
+            self.root,
+            on_changed=self._on_credentials_saved,
+        )
+
+    def _on_credentials_saved(self, kind: str | None):
+        """Wizard / Manage-providers callback: invalidate the catalog cache for
+        that provider so the next menu cascade re-fetches with the new key."""
+        try:
+            self._model_catalog.invalidate(kind)
+        except Exception as exc:
+            print(f"[panel] catalog invalidate failed: {exc}", file=sys.stderr)
+        if kind:
+            self._sysline(f"credentials updated for {kind}")
 
     def _on_menu_restart_app(self):
         """Tools > Restart app: spawn a fresh panel process after this one exits.
@@ -938,20 +1009,152 @@ class LlsmPanel:
     def _on_menu_switch_model(self, backend_kind, model_id):
         if self._closing:
             return
-        if backend_kind != self._backend_kind:
-            self._sysline(
-                f"cannot switch to {model_id}: that's a {backend_kind} model "
-                f"and panel is in {self._backend_kind} mode. Relaunch with --backend {backend_kind}."
-            )
+        # Same-provider switch: just record the model and rebuild backend.
+        if backend_kind == self._backend_kind:
+            try:
+                self._conv_session.update_model(model_id)
+            except Exception as exc:
+                self._sysline(f"switch_model failed: {exc}")
+                return
+            self._backend = None  # rebuild on next chat with the new model
+            self._sysline(f"switched model to {model_id}")
+            self._refresh_status_title()
             return
+
+        # Cross-provider switch: confirm (one-time, suppressible), close the
+        # current backend, reset SCIA model state, auto-create a new
+        # conversation under the new (kind, model_id), swap to it.
+        if not self._confirm_provider_switch(backend_kind, model_id):
+            return
+
+        # Close the current backend so its resources (streaming HTTP,
+        # subprocess, ADM model) are released cleanly.
+        old_backend = self._backend
+        if old_backend is not None:
+            try:
+                old_backend.cancel()
+            except Exception:
+                pass
+            try:
+                old_backend.close()
+            except Exception:
+                pass
+        self._backend = None
+
+        # Resolve the new provider's display name for the title rule.
         try:
-            self._conv_session.update_model(model_id)
+            from .llm.providers import PROVIDERS
+            spec = PROVIDERS.get(backend_kind)
+            display = spec.display_name if spec else backend_kind
+        except Exception:
+            display = backend_kind
+
+        # Auto-create a fresh conversation under the new provider.
+        try:
+            new_conv = self._conv_session.new_conversation(
+                backend_kind=backend_kind,
+                model=model_id,
+            )
+            # Override the default title to include the provider — auto-title
+            # logic in store.append_message overwrites it from the first user
+            # message via DEFAULT_TITLE check, which we update below.
+            self._conv_store.rename(new_conv.id, f"New chat ({display})")
         except Exception as exc:
-            self._sysline(f"switch_model failed: {exc}")
+            self._sysline(f"could not start new chat: {exc}")
+            self._backend_kind = backend_kind
             return
-        self._backend = None  # rebuild on next chat with the new model
-        self._sysline(f"switched model to {model_id}")
+
+        # Update panel-level kind so the title bar / Tools menu reflect it.
+        self._backend_kind = backend_kind
+        # Replay an empty transcript into the chat widget.
+        if self._conv_view is not None:
+            try:
+                self._conv_view.replay([])
+            except Exception:
+                pass
+
+        # Refresh title + sidebar; toast confirms the switch.
         self._refresh_status_title()
+        try:
+            self._kick_startup_sidebar_refresh()
+        except Exception:
+            pass
+        self._sysline(f"new conversation started for {display} {model_id}")
+
+    # -------- Cross-provider confirm (one-time, suppressible) --------
+
+    def _ui_settings_path(self):
+        return _LLSM_HOME / "ui_settings.json"
+
+    def _ui_settings_get(self, key, default=None):
+        try:
+            import json as _json
+            data = _json.loads(self._ui_settings_path().read_text(encoding="utf-8"))
+            return data.get(key, default) if isinstance(data, dict) else default
+        except Exception:
+            return default
+
+    def _ui_settings_set(self, key, value):
+        try:
+            import json as _json
+            path = self._ui_settings_path()
+            try:
+                data = _json.loads(path.read_text(encoding="utf-8"))
+                if not isinstance(data, dict):
+                    data = {}
+            except Exception:
+                data = {}
+            data[key] = value
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(_json.dumps(data, indent=2), encoding="utf-8")
+        except Exception as exc:
+            print(f"[panel] could not write ui_settings: {exc}", file=sys.stderr)
+
+    def _confirm_provider_switch(self, new_kind: str, new_model: str) -> bool:
+        """Show a one-time confirm with 'Don't ask again'. Returns True to proceed."""
+        if self._ui_settings_get("switch_provider_confirm_suppressed", False):
+            return True
+        try:
+            from .llm.providers import PROVIDERS
+            display = PROVIDERS[new_kind].display_name if new_kind in PROVIDERS else new_kind
+        except Exception:
+            display = new_kind
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Switch provider")
+        dlg.transient(self.root)
+        dlg.grab_set()
+        dlg.geometry("420x180")
+        ttk.Label(
+            dlg,
+            text=f"Switching to {display} starts a new chat.\n"
+                 "Your current chat is saved in History.",
+            wraplength=380,
+            justify="left",
+            padding=(16, 16),
+        ).pack(side=tk.TOP, anchor="w")
+
+        dont_ask = tk.BooleanVar(value=False)
+        ttk.Checkbutton(dlg, text="Don't ask me again",
+                        variable=dont_ask).pack(side=tk.TOP, anchor="w", padx=16)
+
+        result = {"ok": False}
+        def _ok():
+            result["ok"] = True
+            if dont_ask.get():
+                self._ui_settings_set("switch_provider_confirm_suppressed", True)
+            dlg.destroy()
+        def _cancel():
+            dlg.destroy()
+
+        btnrow = ttk.Frame(dlg, padding=(16, 12))
+        btnrow.pack(side=tk.BOTTOM, fill=tk.X)
+        ttk.Button(btnrow, text="Cancel", command=_cancel).pack(side=tk.RIGHT)
+        ttk.Button(btnrow, text="Switch", command=_ok).pack(side=tk.RIGHT, padx=(0, 6))
+        dlg.protocol("WM_DELETE_WINDOW", _cancel)
+
+        self.root.wait_window(dlg)
+        return result["ok"]
 
     def _on_menu_open_history(self):
         if self._closing:
@@ -1573,53 +1776,37 @@ class LlsmPanel:
     # -------- Backend wiring (Item 7 callbacks) --------
 
     def _ensure_backend(self):
-        if self._backend is None:
-            kwargs = {"verbose": False}
-            cur_conv = self._conv_session.current()
-            # Conversation's recorded model wins over the panel-default; lets
-            # a resumed conversation keep the model it was last using.
-            chosen_model = (cur_conv.model if cur_conv else None) or self._model
-            if chosen_model:
-                kwargs["model"] = chosen_model
-            if self._backend_kind == "api":
-                kwargs["on_tool_event"] = self._on_tool_event_from_worker
-                self._backend = AnthropicBackend(**kwargs)
-                if cur_conv is not None:
-                    try:
-                        self._backend.restore_messages(self._conv_store.read_transcript(cur_conv.id))
-                    except Exception as exc:
-                        print(f"[panel] api restore_messages failed: {exc}", file=sys.stderr)
-            else:
-                if self._mcp_handle is not None:
-                    kwargs["mcp_config_json"] = self._mcp_handle.mcp_config_json
-                # ConversationStore is authoritative for session_id. Reading
-                # from the active conversation means "New Chat" gets
-                # session_id="" (so claude generates a fresh one) while
-                # resumed/migrated conversations get their stored id.
-                conv_sid = (cur_conv.session_id if cur_conv else "") or ""
-                if conv_sid:
-                    kwargs["session_id"] = conv_sid
-                    # Non-empty conv.session_id always came from a prior
-                    # claude run (migration-imported, persisted on rotation,
-                    # or written by a previous `_ensure_backend` call), so
-                    # the session ALREADY exists in claude's storage and
-                    # the first chat must use --resume.
-                    kwargs["session_started"] = True
-                kwargs["on_session_rotated"] = self._on_session_rotated
-                kwargs["on_orphan_cleanup"] = self._on_orphan_cleanup
-                self._backend = ClaudeCodeBackend(**kwargs)
-                # Persist the freshly-minted (or inherited) session_id back to
-                # the SPECIFIC conv we read from, not via the session's active-
-                # conv path. _ensure_backend can run on the chat worker thread
-                # (chat path) or Tk thread (startup sidebar refresh); either
-                # way, the active conv may change between the cur_conv read
-                # above and this write, and we don't want to contaminate the
-                # new conv with the old conv's id.
-                if cur_conv is not None:
-                    try:
-                        self._conv_store.update_session_id(cur_conv.id, self._backend.session_id)
-                    except Exception as exc:
-                        print(f"[panel] update_session_id failed: {exc}", file=sys.stderr)
+        """Build the active conversation's backend via the registry (CR-5).
+
+        All five kinds dispatch through `providers._resolve(spec.build_backend_path)(panel)`.
+        The factories live in their respective backend modules
+        (`anthropic_backend.build_backend`, `claude_code_backend.build_backend`,
+        `openai_backend.build_backend`, etc.) and read everything they need
+        — model, transcript, callbacks, MCP handle — off `self`.
+        """
+        if self._backend is not None:
+            return self._backend
+
+        # Honor the active conversation's backend_kind over panel default —
+        # a runtime switch may have written a different kind into the active
+        # conversation (see _on_menu_switch_model auto-new-chat).
+        cur_conv = self._conv_session.current()
+        kind = cur_conv.backend_kind if cur_conv else self._backend_kind
+        # Keep panel.backend_kind in sync (used by the title / Tools menu state).
+        self._backend_kind = kind
+
+        from .llm.providers import PROVIDERS, build_backend as _build_via_registry
+        spec = PROVIDERS.get(kind)
+        if spec is None:
+            raise RuntimeError(f"unknown backend_kind {kind!r}")
+        try:
+            self._backend = _build_via_registry(spec, self)
+        except ImportError as exc:
+            hint = spec.sdk_install_hint or "install the missing SDK"
+            raise RuntimeError(
+                f"{spec.display_name} SDK is not installed. {hint}.\n"
+                f"  ({type(exc).__name__}: {exc})"
+            ) from exc
         return self._backend
 
     def _on_session_rotated(self, new_session_id):
@@ -1975,7 +2162,9 @@ def main():
         description="LLSM chat panel docked to SCIA Engineer")
     ap.add_argument("--model", default=None,
                     help="Override LLM model (e.g. opus, sonnet, claude-opus-4-7)")
-    ap.add_argument("--backend", choices=["claude-code", "api"], default="claude-code",
+    ap.add_argument("--backend",
+                    choices=["claude-code", "api", "openai", "gemini", "openai-compatible"],
+                    default="claude-code",
                     help="LLM backend (default: claude-code)")
     ap.add_argument("--connect-to-existing", action="store_true",
                     help="Reattach to a running MCP supervisor instead of spawning fresh")

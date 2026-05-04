@@ -272,3 +272,48 @@ class ClaudeCodeBackend:
         # Subprocess-per-call; nothing persistent to close.
         pass
 
+
+# ---------- Registry hook (CR-5) ----------
+
+def build_backend(panel) -> "ClaudeCodeBackend":
+    """Panel-coupled factory used by `providers._resolve(...)`.
+
+    Replaces the inline claude-code branch in `panel._ensure_backend`. Reads
+    the live MCP handle, session-rotation / orphan-cleanup callbacks, and the
+    active conversation's session_id off the panel.
+    """
+    cur = panel._conv_session.current()
+    model = (cur.model if cur else None) or panel._model or DEFAULT_MODEL
+    kwargs: dict = {
+        "model": model,
+        "verbose": False,
+        "on_session_rotated": panel._on_session_rotated,
+        "on_orphan_cleanup": panel._on_orphan_cleanup,
+    }
+    if panel._mcp_handle is not None:
+        kwargs["mcp_config_json"] = panel._mcp_handle.mcp_config_json
+
+    # ConversationStore is authoritative for session_id.
+    conv_sid = (cur.session_id if cur else "") or ""
+    if conv_sid:
+        kwargs["session_id"] = conv_sid
+        # Non-empty conv.session_id always came from a prior claude run, so
+        # the session ALREADY exists in claude's storage and the first chat
+        # must use --resume.
+        kwargs["session_started"] = True
+
+    backend = ClaudeCodeBackend(**kwargs)
+
+    # Persist the freshly-minted (or inherited) session_id back to the
+    # SPECIFIC conv we read from (panel._ensure_backend can run on the chat
+    # worker thread or the Tk thread; the active conv may change between the
+    # cur read above and this write).
+    if cur is not None:
+        try:
+            panel._conv_store.update_session_id(cur.id, backend.session_id)
+        except Exception as exc:
+            import sys as _sys
+            print(f"[panel] update_session_id failed: {exc}", file=_sys.stderr)
+
+    return backend
+

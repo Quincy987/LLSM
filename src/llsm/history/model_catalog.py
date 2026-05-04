@@ -61,5 +61,16 @@ class ModelCatalog:
     def contains(self, backend_kind: str, model_id: str) -> bool:
         return any(m.model_id == model_id for m in self.for_backend(backend_kind))
 
-    def invalidate(self) -> None:
-        self._cache.clear()
+    def invalidate(self, backend_kind: str | None = None) -> None:
+        """Drop the cached model list for one provider, or all of them.
+
+        Called from the credential wizard's Save handler and the
+        manage-providers Remove action so the next menu cascade re-fetches
+        live `/v1/models` (or the static fallback) using the new credential.
+        Calling with no kind drops every cache entry — used by tests and as
+        the legacy single-arg shape.
+        """
+        if backend_kind is None:
+            self._cache.clear()
+            return
+        self._cache.pop(backend_kind, None)

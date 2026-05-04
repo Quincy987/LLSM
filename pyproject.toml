@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llsm"
-version = "0.2.7"
+version = "0.3.0"
 description = "LLM-driven automation for SCIA Engineer"
 requires-python = ">=3.11"
 dependencies = [
@@ -15,7 +15,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["watchdog>=4.0"]
+dev = ["watchdog>=4.0", "pytest>=7.4", "pytest-mock>=3.12"]
+openai = ["openai>=1.50"]
+gemini = ["google-genai>=0.3"]
+wizard = ["keyring>=25"]
+all = ["openai>=1.50", "google-genai>=0.3", "keyring>=25"]
 
 [project.scripts]
 llsm = "llsm.cli:main"

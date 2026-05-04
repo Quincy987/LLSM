@@ -1,11 +1,17 @@
-﻿"""LLSM CLI — drives SCIA via the Anthropic tool-use loop.
+"""LLSM CLI — drives SCIA via the Anthropic tool-use loop.
 
 Usage:
     llsm "build a 3m simply supported beam with a 10 kN point load at midspan"
-    llsm --visible "..."   # show the SCIA window instead of minimized
-    llsm --model opus-4.6 "..."  # override the model
+    llsm --visible "..."          # show the SCIA window
+    llsm --model opus-4.6 "..."   # override the model
 
-Requires ANTHROPIC_API_KEY env var.
+In v0.3.0 the CLI's `--provider` flag is scoped to `api` only. The new
+multi-provider factory in `llsm.llm.providers` is panel-coupled (reads
+transcripts, MCP handle, callbacks off the panel object); headless
+construction will land in v0.3.2 alongside `build_backend_headless` factories.
+
+Default install requires ANTHROPIC_API_KEY (env var) or a stored credential
+via the panel's Tools -> Set up credentials wizard.
 """
 from __future__ import annotations
 import argparse
@@ -19,9 +25,22 @@ def main() -> int:
     ap = argparse.ArgumentParser(prog="llsm", description="LLM-driven SCIA Engineer automation.")
     ap.add_argument("prompt", nargs="+", help="Natural-language request for the LLM.")
     ap.add_argument("--model", default=None, help="Override Anthropic model.")
+    ap.add_argument("--provider", default="api",
+                    help="Provider kind (v0.3.0: only 'api' is supported headless; "
+                         "use the panel for openai/gemini/etc.).")
     ap.add_argument("--visible", action="store_true", help="Show SCIA window normally (default: minimized).")
     ap.add_argument("--verbose", action="store_true", help="Print every tool call + result.")
     args = ap.parse_args()
+
+    if args.provider != "api":
+        print(
+            f"[llsm] error: --provider {args.provider!r} is not supported "
+            "headless in v0.3.0. Use the panel (`llsm-panel`) for "
+            "openai/gemini/openai-compatible/claude-code; headless "
+            "multi-provider lands in v0.3.2.",
+            file=sys.stderr,
+        )
+        return 2
 
     prompt = " ".join(args.prompt)
 

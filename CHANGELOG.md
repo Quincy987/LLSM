@@ -6,6 +6,69 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.0 — multi-provider LLM support + credentials wizard (2026-05-04)
+
+### Added
+- **OpenAI** backend (`backend_kind="openai"`, default model `gpt-5`).
+  Streaming chat with mid-call cancel. Live `/v1/models` filtered to chat-
+  capable families. SDK is an optional extra (`pip install llsm[openai]`).
+  `src/llsm/llm/openai_backend.py`.
+- **Google Gemini** backend (`backend_kind="gemini"`, default
+  `gemini-2.5-pro`). Uses the new `google-genai` SDK. Streaming chat.
+  Optional extra (`pip install llsm[gemini]`).
+  `src/llsm/llm/gemini_backend.py`.
+- **OpenAI-compatible** backend (`backend_kind="openai-compatible"`):
+  one backend covers Ollama, LM Studio, llama.cpp server, vLLM, OpenRouter,
+  Groq, Together, DeepSeek, Mistral. Configurable `base_url` + optional
+  `api_key`. ModelRefs prefix the host (e.g. `[ollama] llama3.1:70b`) so
+  they don't collide with cloud providers in the menu.
+  `src/llsm/llm/openai_compatible_backend.py`.
+- **Provider registry** (`src/llsm/llm/providers.py`) — data-driven specs
+  for all five backend kinds. Lazy SDK imports via dotted-path resolve
+  (CR-1): importing the registry does NOT pull in `openai`, `google.genai`,
+  or `anthropic`. SDKs declared as optional extras.
+- **Credential storage** (`src/llsm/llm/credentials.py`) — keyring (Windows
+  Credential Manager) primary, DPAPI-encrypted file fallback, env-var
+  legacy. Profile-keyed schema (`<provider>:<profile>:<field>`) reserves
+  the slot for future named profiles without a migration.
+- **Credentials wizard** under Tools → "Set up credentials…" — three-step
+  Tk modal: provider → auth method → key/login/base_url. Test button
+  validates via a worker thread (UI stays responsive). Subscription-login
+  path streams `claude setup-token` output to a scrolling log.
+  `src/llsm/conversation/credential_wizard.py`.
+- **Manage providers…** dialog with Edit / Remove for each configured
+  provider.
+- **Cascading Switch Model menu** by provider. Providers with missing SDKs
+  show their `sdk_install_hint` inline; providers without configured
+  credentials show static fallback or "(set up credentials first)".
+- **Cross-provider runtime switching**: picking a model from a different
+  provider auto-creates a fresh conversation under that provider after a
+  one-time confirm modal ("Don't ask again" suppression in
+  `~/.llsm/ui_settings.json`). New chats default-titled
+  `"New chat ({display_name})"` until the first user turn auto-titles.
+- `ModelCatalog.invalidate(kind)` method called by the wizard's Save
+  handler so the next menu cascade re-fetches with the new credential.
+- Five-way `--backend` choices on `llsm-panel`
+  (`claude-code|api|openai|gemini|openai-compatible`).
+
+### Changed
+- Re-exported `concurrent.futures.CancelledError` from `llsm.llm.base`
+  and `llsm.llm.providers` (CR-4) so every backend and the panel worker
+  catch the same canonical symbol.
+- Existing `anthropic_backend.py` and `claude_code_backend.py` grew
+  `build_backend(panel)` / `static_models()` registry wrappers (A4d /
+  CR-5) so `_ensure_backend` is now a single
+  `_resolve(spec.build_backend_path)(panel)` call regardless of kind.
+- Auto-title logic recognises both `"New chat"` and provider-tagged
+  variants (e.g. `"New chat (OpenAI)"`) so cross-provider auto-new-chats
+  also get titled from their first user turn.
+- `llsm` CLI now accepts `--provider` but scopes it to `api` only in
+  v0.3.0 (the registry factory is panel-coupled; headless construction
+  lands in v0.3.2).
+
+### Documentation
+- README updated with the provider lineup and install extras.
+
 ## v0.2.7 — chat history + recent models (2026-05-03)
 
 ### Added

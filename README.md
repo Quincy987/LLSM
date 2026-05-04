@@ -25,9 +25,35 @@ A Tk chat window appears. Launch SCIA (manually or via the panel asking for it),
 By default the panel uses **Claude Code as the LLM backend** via subprocess (`claude -p` with your Max subscription) — no API key needed, Opus 4.7 by default. It auto-loads the LLSM MCP server from `.mcp.json` so all 18 SCIA tools are available.
 
 ```powershell
-.venv\Scripts\llsm-panel --backend api    # fall back to direct Anthropic API (needs key)
-.venv\Scripts\llsm-panel --model sonnet   # pick a different model
+.venv\Scripts\llsm-panel --backend api          # direct Anthropic API (needs key)
+.venv\Scripts\llsm-panel --model sonnet         # pick a different model
+.venv\Scripts\llsm-panel --backend openai       # OpenAI (chat-only in v0.3.0)
+.venv\Scripts\llsm-panel --backend gemini       # Google Gemini (chat-only)
+.venv\Scripts\llsm-panel --backend openai-compatible  # Ollama / LM Studio / etc.
 ```
+
+### Multiple LLM providers (v0.3.0+)
+
+Open **Tools → Set up credentials…** in the panel for a 3-step wizard
+(provider → auth method → key/login/base_url). Stored credentials live in
+Windows Credential Manager (or a DPAPI-encrypted file fallback under
+`~/.llsm/credentials.dat`). Already-set env vars (`ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY`, `GOOGLE_API_KEY`/`GEMINI_API_KEY`) are picked up
+automatically as a legacy fallback.
+
+Provider lineup:
+
+| Provider              | SDK install                   | tool-use (SCIA driving) |
+|-----------------------|-------------------------------|-------------------------|
+| Claude Code (CLI)     | (claude CLI on PATH)          | ✅ via MCP              |
+| Anthropic API         | base install                  | ✅ native               |
+| OpenAI                | `pip install llsm[openai]`    | Phase B (v0.3.1)        |
+| Google Gemini         | `pip install llsm[gemini]`    | Phase B (v0.3.1)        |
+| OpenAI-compatible     | `pip install llsm[openai]`    | Phase B (v0.3.1, off by default) |
+
+Switching provider mid-session is a one-click **Switch Model → \<provider\> →
+\<model\>** away. The panel asks once before starting a new chat under the
+new provider; tick "Don't ask again" to suppress the prompt.
 
 ### 2. Claude Code CLI directly (no UI)
 
@@ -61,7 +87,15 @@ python -m venv .venv
 .venv\Scripts\pip install "mcp[cli]"
 ```
 
-Then set `$env:ANTHROPIC_API_KEY` if you want the built-in CLI; skip it if you're using Claude Code (which handles auth itself).
+For multi-provider support (v0.3.0+):
+
+```powershell
+.venv\Scripts\pip install -e .[all]   # openai + gemini + keyring (Tools wizard)
+# or pick individually:
+.venv\Scripts\pip install -e .[openai,wizard]
+```
+
+Then set `$env:ANTHROPIC_API_KEY` if you want the built-in CLI; skip it if you're using Claude Code (which handles auth itself), or use Tools → Set up credentials… in the panel.
 
 ## Project layout
 

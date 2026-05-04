@@ -282,7 +282,14 @@ class ConversationStore:
         if msg.role in ("user", "llsm") and msg.text:
             conv.preview = truncate(msg.text, PREVIEW_MAX)
         # Auto-title from the first user message.
-        if conv.title == DEFAULT_TITLE and msg.role == "user" and msg.text:
+        # Recognise both the bare default and provider-tagged variants
+        # (e.g. "New chat (OpenAI)") so cross-provider auto-new-chats also
+        # get titled from their first user turn.
+        is_default_title = (
+            conv.title == DEFAULT_TITLE
+            or (conv.title.startswith(DEFAULT_TITLE + " (") and conv.title.endswith(")"))
+        )
+        if is_default_title and msg.role == "user" and msg.text:
             conv.title = truncate(msg.text, TITLE_MAX)
         self.write_meta(conv)
         self._index_upsert(conv)

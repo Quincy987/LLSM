@@ -44,6 +44,7 @@ class FileMenuBuilder:
         on_resume: Callable[[str], None],
         on_switch_model: Callable[[str, str], None],  # (backend_kind, model_id)
         on_open_history: Callable[[], None],
+        open_wizard_cb: Callable[[], None] | None = None,
     ) -> None:
         self.root = root
         self.session = session
@@ -54,6 +55,7 @@ class FileMenuBuilder:
         self.on_resume = on_resume
         self.on_switch_model = on_switch_model
         self.on_open_history = on_open_history
+        self.open_wizard_cb = open_wizard_cb
 
     def build(self, menubar: tk.Menu) -> tk.Menu:
         m = tk.Menu(menubar, tearoff=False, postcommand=self._refresh_dynamic)
@@ -96,43 +98,152 @@ class FileMenuBuilder:
             m.add_command(label=label, command=lambda cid=c.id: self.on_resume(cid))
 
     def _populate_models(self) -> None:
+        """Cascade by provider; only show providers whose SDK + creds are present.
+
+        Top-level layout:
+            Recent ▸  (across all providers; empty when no usage yet)
+            ─────
+            <Provider 1> ▸ models
+            <Provider 2> ▸ models
+            ...
+            ─────
+            Set up new provider...    <- shortcut to wizard
+        """
         m = self._models_menu
         m.delete(0, "end")
         cur = self.session.current()
-        backend_kind = cur.backend_kind if cur else "claude-code"
-        backend = None
-        try:
-            backend = self.backend_provider()
-        except Exception:
-            backend = None
-        catalog_models = self.catalog.for_backend(backend_kind, backend)
-        recent = self.usage.recent(backend_kind, limit=_RECENT_MODELS_LIMIT)
-        # Show recent first (those that are still in the catalog), then the
-        # rest of the catalog. Models in usage but no longer in the catalog
-        # are dropped — `available_models()` is the source of truth for what
-        # the active backend can serve.
-        catalog_ids = [r.model_id for r in catalog_models]
-        ordered: list[ModelRef] = []
-        seen: set[str] = set()
-        for r in recent:
-            if r.model_id in catalog_ids and r.model_id not in seen:
-                ordered.append(r)
-                seen.add(r.model_id)
-        for r in catalog_models:
-            if r.model_id not in seen:
-                ordered.append(r)
-                seen.add(r.model_id)
-        if not ordered:
-            m.add_command(label="(no models available)", state="disabled")
-            return
+        active_kind = cur.backend_kind if cur else None
         active_model = cur.model if cur else None
-        for r in ordered:
-            check = "● " if r.model_id == active_model else "  "
-            label = f"{check}{r.display_name or r.model_id}"
-            m.add_command(
-                label=label,
-                command=lambda kind=r.backend_kind, mid=r.model_id: self.on_switch_model(kind, mid),
+
+        # --- Recent (across all providers) -------------------------------
+        recent_all = self.usage.recent(limit=_RECENT_MODELS_LIMIT)
+        if recent_all:
+            recent_menu = tk.Menu(m, tearoff=False)
+            for r in recent_all:
+                check = "● " if (r.backend_kind == active_kind and r.model_id == active_model) else "  "
+                label = f"{check}{r.display_name or r.model_id}"
+                recent_menu.add_command(
+                    label=label,
+                    command=lambda kind=r.backend_kind, mid=r.model_id: self.on_switch_model(kind, mid),
+                )
+            m.add_cascade(label="Recent", menu=recent_menu)
+            m.add_separator()
+
+        # --- Per-provider cascades ---------------------------------------
+        # Lazy import to avoid pulling providers into history dialogs etc.
+        try:
+            from ..llm.providers import PROVIDERS, _resolve
+            from ..llm.credentials import has_credential
+        except Exception:
+            PROVIDERS = {}  # type: ignore[assignment]
+            _resolve = None  # type: ignore[assignment]
+            has_credential = lambda *a, **k: False  # type: ignore[assignment]
+
+        # When a provider has missing SDK we still show its row but with the
+        # install hint; the user can click "Set up new provider..." to get
+        # a clearer experience.
+        any_shown = False
+        for kind, spec in (PROVIDERS or {}).items():
+            sub = tk.Menu(m, tearoff=False)
+            # Probe SDK availability lazily.
+            sdk_missing_hint = ""
+            if spec.sdk_install_hint:
+                try:
+                    _resolve(spec.build_backend_path)  # type: ignore[misc]
+                except ImportError:
+                    sdk_missing_hint = spec.sdk_install_hint
+                except Exception:
+                    pass
+
+            if sdk_missing_hint:
+                sub.add_command(label=f"({sdk_missing_hint} to enable)", state="disabled")
+                m.add_cascade(label=spec.display_name, menu=sub)
+                any_shown = True
+                continue
+
+            # If credentials aren't configured for a provider that needs them,
+            # show a hint row and skip the live fetch (CR-2 lazy + cred-gated).
+            needs_creds = any(am.value == "api_key" for am in spec.auth_methods) or spec.requires_base_url
+            has_any = (
+                has_credential(kind, "api_key") or
+                (spec.requires_base_url and has_credential(kind, "base_url")) or
+                has_credential(kind, "subscription")
             )
+            if needs_creds and not has_any:
+                # Use static_models() if non-empty, else show empty-state.
+                static_list: list[ModelRef] = []
+                try:
+                    if _resolve is not None:
+                        static_list = list(_resolve(spec.static_models_path)())
+                except Exception:
+                    static_list = []
+                if static_list:
+                    for r in static_list:
+                        sub.add_command(
+                            label=r.display_name or r.model_id,
+                            command=lambda kk=kind, mid=r.model_id:
+                                self.on_switch_model(kk, mid),
+                        )
+                    sub.add_separator()
+                    sub.add_command(label="(set up credentials to use)", state="disabled")
+                else:
+                    sub.add_command(label="(set up credentials first)", state="disabled")
+                m.add_cascade(label=spec.display_name, menu=sub)
+                any_shown = True
+                continue
+
+            # Otherwise: ask the catalog (which handles live + static fallback).
+            backend = None
+            if active_kind == kind:
+                # Pass the live backend so we get the live model list.
+                try:
+                    backend = self.backend_provider()
+                except Exception:
+                    backend = None
+            try:
+                models = self.catalog.for_backend(kind, backend)
+            except Exception:
+                models = []
+            if not models:
+                sub.add_command(label="(no models available)", state="disabled")
+            else:
+                for r in models:
+                    check = "● " if (kind == active_kind and r.model_id == active_model) else "  "
+                    label = f"{check}{r.display_name or r.model_id}"
+                    sub.add_command(
+                        label=label,
+                        command=lambda kk=kind, mid=r.model_id:
+                            self.on_switch_model(kk, mid),
+                    )
+            m.add_cascade(label=spec.display_name, menu=sub)
+            any_shown = True
+
+        if not any_shown:
+            m.add_command(label="(no providers registered)", state="disabled")
+
+        # --- Setup shortcut ----------------------------------------------
+        m.add_separator()
+        m.add_command(label="Set up new provider…",
+                      command=self._on_open_wizard_safe)
+
+    def _on_open_wizard_safe(self):
+        """Open the credential wizard via the panel callback if it's wired up."""
+        cb = getattr(self, "open_wizard_cb", None)
+        if cb is None:
+            try:
+                from tkinter import messagebox
+                messagebox.showinfo(
+                    "Set up provider",
+                    "Use Tools → Set up credentials… to add or change a provider.",
+                    parent=self.root,
+                )
+            except Exception:
+                pass
+            return
+        try:
+            cb()
+        except Exception:
+            pass
 
 
 class HistoryDialog(tk.Toplevel):
