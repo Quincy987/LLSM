@@ -1,4 +1,4 @@
-﻿"""DLL discovery and load for SCIA Engineer OpenAPI.
+"""DLL discovery and load for SCIA Engineer OpenAPI.
 
 Reads the SCIA install path from the Windows registry, resolves all required
 .NET assemblies, and loads them via pythonnet. Must be called exactly once,

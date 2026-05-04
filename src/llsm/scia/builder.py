@@ -1,4 +1,4 @@
-﻿"""ADM model builder — convenience wrappers around SCIA's ADM C# API.
+"""ADM model builder — convenience wrappers around SCIA's ADM C# API.
 
 Everything here runs off-SCIA-thread (pure model-in-memory construction),
 then gets pushed into SCIA via SciaSession.push_model().

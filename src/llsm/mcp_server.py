@@ -27,7 +27,9 @@ Usage
 """
 from __future__ import annotations
 import argparse
+import asyncio
 import atexit
+import functools
 import json
 import os
 import secrets
@@ -36,13 +38,42 @@ import socket
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Callable
 
 from mcp.server.fastmcp import FastMCP
 
 from .scia.loader import load as load_scia
 from .scia import tools as scia_tools
 from .scia.tools import LlsmContext
+
+
+# Single-worker executor for tool bodies. FastMCP runs sync tools directly on
+# its asyncio event loop, which means a long SCIA call (launch_scia takes
+# 30-60 s, push_model can hang on AdmToAdm errors) blocks /admin/ping too —
+# the panel watchdog then false-trips and force-kills the server mid-launch.
+# Offloading to a worker thread keeps the loop responsive. max_workers=1 so
+# tool calls serialise around the shared LlsmContext (claude rarely fires
+# parallel MCP calls but we don't rely on that).
+_TOOL_EXEC = ThreadPoolExecutor(max_workers=1, thread_name_prefix="llsm-tool")
+
+
+def _async_tool(mcp: FastMCP, fn: Callable):
+    """Register `fn` as an MCP tool that runs in the worker executor.
+
+    Preserves the function's signature (via functools.wraps) so FastMCP can
+    derive the JSON schema from the original type hints — verified against
+    mcp 1.27 FuncMetadata which follows __wrapped__.
+    """
+    @functools.wraps(fn)
+    async def _wrapped(*args, **kwargs):
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _TOOL_EXEC, lambda: fn(*args, **kwargs)
+        )
+    mcp.tool()(_wrapped)
+    return _wrapped
 
 
 # --- Shared instructions string (used by both transports) ---
@@ -104,67 +135,60 @@ atexit.register(lambda: _teardown("atexit"))
 # --- Tool registration ---
 
 def _register_common_tools(mcp: FastMCP) -> None:
-    """Tools available in BOTH transports."""
+    """Tools available in BOTH transports.
 
-    @mcp.tool()
+    Every tool is registered via `_async_tool` so its sync body runs on a
+    worker thread instead of FastMCP's event loop. Without this, a 60 s
+    launch_scia call blocks /admin/ping and the panel's watchdog false-trips.
+    """
+
     def new_model(name: str = "LLSM_Model") -> dict:
         """Start a fresh in-memory ADM model. Call this FIRST before adding anything."""
         return scia_tools.new_model(_ctx, name=name)
 
-    @mcp.tool()
     def add_material(name: str, kind: str = "Steel") -> dict:
         """Add a material. kind: Steel, Concrete, Timber, or Aluminium."""
         return scia_tools.add_material(_ctx, name=name, kind=kind)
 
-    @mcp.tool()
     def add_rectangular_section(name: str, material: str, width_mm: float, height_mm: float) -> dict:
         """Add a rectangular cross-section (width x height, mm)."""
         return scia_tools.add_rectangular_section(_ctx, name=name, material=material,
                                                   width_mm=width_mm, height_mm=height_mm)
 
-    @mcp.tool()
     def add_node(name: str, x_mm: float, y_mm: float, z_mm: float) -> dict:
         """Add a structural point (node). X/Y horizontal, Z vertical up."""
         return scia_tools.add_node(_ctx, name=name, x_mm=x_mm, y_mm=y_mm, z_mm=z_mm)
 
-    @mcp.tool()
     def add_beam(name: str, node_a: str, node_b: str, cross_section: str) -> dict:
         """Add a straight 1D beam between two existing nodes."""
         return scia_tools.add_beam(_ctx, name=name, node_a=node_a, node_b=node_b, cross_section=cross_section)
 
-    @mcp.tool()
     def add_fixed_support(name: str, node: str) -> dict:
         """Add a fully-restrained (all 6 DOFs) support on a node."""
         return scia_tools.add_fixed_support(_ctx, name=name, node=node)
 
-    @mcp.tool()
     def add_pinned_support(name: str, node: str) -> dict:
         """Add a pinned support — translations restrained, rotations free."""
         return scia_tools.add_pinned_support(_ctx, name=name, node=node)
 
-    @mcp.tool()
     def add_roller_support(name: str, node: str, direction: str = "Z") -> dict:
         """Add a roller — rigid only in direction (X, Y, or Z), free elsewhere."""
         return scia_tools.add_roller_support(_ctx, name=name, node=node, direction=direction)
 
-    @mcp.tool()
     def add_load_group(name: str, kind: str = "Permanent") -> dict:
         """Add a load group. kind: Permanent, Variable, or Accidental."""
         return scia_tools.add_load_group(_ctx, name=name, kind=kind)
 
-    @mcp.tool()
     def add_load_case(name: str, group: str, kind: str = "Standard") -> dict:
         """Add a load case inside a group. kind: Standard or SelfWeight."""
         return scia_tools.add_load_case(_ctx, name=name, group=group, kind=kind)
 
-    @mcp.tool()
     def add_line_load(name: str, beam: str, load_case: str,
                       magnitude_kn_per_m: float, direction: str = "Z") -> dict:
         """Add a uniform line load on a beam, in kN/m. For gravity-downward, use direction='Z' with NEGATIVE magnitude."""
         return scia_tools.add_line_load(_ctx, name=name, beam=beam, load_case=load_case,
                                         magnitude_kn_per_m=magnitude_kn_per_m, direction=direction)
 
-    @mcp.tool()
     def get_node_position(name: str) -> dict:
         """Return (x, y, z) of a node in mm from the in-memory ADM model.
 
@@ -173,7 +197,6 @@ def _register_common_tools(mcp: FastMCP) -> None:
         """
         return scia_tools.get_node_position(_ctx, name=name)
 
-    @mcp.tool()
     def refresh_from_scia() -> dict:
         """Diagnostic: pull SCIA's data store into the in-memory ADM model.
 
@@ -182,13 +205,11 @@ def _register_common_tools(mcp: FastMCP) -> None:
         local ADM's. Discards any pending in-memory edits."""
         return scia_tools.refresh_from_scia(_ctx)
 
-    @mcp.tool()
     def model_summary() -> dict:
         """Return item count + names of everything currently in the in-memory ADM model."""
         return scia_tools.model_summary(_ctx)
 
     # --- Edit primitives ---
-    @mcp.tool()
     def update_node(name: str, x_mm: float, y_mm: float, z_mm: float) -> dict:
         """Move an existing node to new coordinates. Best-effort rollback if the
         write throws; the new geometry is validated later when SCIA meshes.
@@ -198,46 +219,38 @@ def _register_common_tools(mcp: FastMCP) -> None:
         automatically."""
         return scia_tools.update_node(_ctx, name=name, x_mm=x_mm, y_mm=y_mm, z_mm=z_mm)
 
-    @mcp.tool()
     def delete_object(name: str, cascade: bool = False) -> dict:
         """Delete an ADM object. Refuses if dependents exist (returns blockers).
         Pass cascade=True to delete dependents recursively."""
         return scia_tools.delete_object(_ctx, name=name, cascade=cascade)
 
-    @mcp.tool()
     def set_line_load_magnitude(name: str, magnitude_kn_per_m: float) -> dict:
         """Adjust the magnitude of an existing line load (kN/m)."""
         return scia_tools.set_line_load_magnitude(_ctx, name=name, magnitude_kn_per_m=magnitude_kn_per_m)
 
-    @mcp.tool()
     def set_member_cross_section(name: str, cross_section: str) -> dict:
         """Swap the cross-section of an existing curve member to one already in the model."""
         return scia_tools.set_member_cross_section(_ctx, name=name, cross_section=cross_section)
 
-    @mcp.tool()
     def set_member_endpoints(name: str, node_a: str, node_b: str) -> dict:
         """Re-route a beam between two existing nodes. Try-or-rollback."""
         return scia_tools.set_member_endpoints(_ctx, name=name, node_a=node_a, node_b=node_b)
 
     # --- SCIA-drive ---
-    @mcp.tool()
     def launch_scia(visible: bool = False) -> dict:
         """Launch SCIA Engineer. visible=false (default) runs it minimized without stealing focus."""
         return scia_tools.launch_scia(_ctx, visible=visible)
 
-    @mcp.tool()
     def push_model() -> dict:
         """Open an empty SCIA project and push the current in-memory ADM model.
         After edits, do NOT call this again — the edit tools auto-propagate; just call run_analysis."""
         return scia_tools.push_model(_ctx)
 
-    @mcp.tool()
     def run_analysis() -> dict:
         """Generate FE mesh (only when needed) and run linear analysis."""
         return scia_tools.run_analysis(_ctx)
 
     # --- Results ---
-    @mcp.tool()
     def get_beam_inner_forces(beam: str, load_case: str) -> dict:
         """Read beam internal forces (N, Vy, Vz, Mx, My, Mz) per section for a load case.
 
@@ -246,13 +259,24 @@ def _register_common_tools(mcp: FastMCP) -> None:
         """
         return scia_tools.get_beam_inner_forces(_ctx, beam=beam, load_case=load_case)
 
-    @mcp.tool()
     def get_beam_deflection(beam: str, load_case: str) -> dict:
         """Read beam deformation (Ux, Uy, Uz, Fix, Fiy, Fiz) per section for a load case.
 
         Translations in metres (multiply by 1000 for mm), rotations in radians.
         """
         return scia_tools.get_beam_deflection(_ctx, beam=beam, load_case=load_case)
+
+    for _fn in (
+        new_model, add_material, add_rectangular_section, add_node, add_beam,
+        add_fixed_support, add_pinned_support, add_roller_support,
+        add_load_group, add_load_case, add_line_load,
+        get_node_position, refresh_from_scia, model_summary,
+        update_node, delete_object, set_line_load_magnitude,
+        set_member_cross_section, set_member_endpoints,
+        launch_scia, push_model, run_analysis,
+        get_beam_inner_forces, get_beam_deflection,
+    ):
+        _async_tool(mcp, _fn)
 
 
 def _register_stdio_only_tools(mcp: FastMCP) -> None:
@@ -263,10 +287,10 @@ def _register_stdio_only_tools(mcp: FastMCP) -> None:
     tool is deliberately NOT registered.
     """
 
-    @mcp.tool()
     def close_scia() -> dict:
         """Close SCIA and clean up. Call at end of workflow or on fatal error."""
         return scia_tools.close_scia(_ctx)
+    _async_tool(mcp, close_scia)
 
 
 # --- HTTP transport: port discovery, pid-file, admin route ---

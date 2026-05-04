@@ -34,7 +34,11 @@ LOG_FILE = LLSM_HOME / "mcp.log"
 CMDLINE_MARKER = "llsm.mcp_server"
 
 # How long the panel waits for the child to bind + drop the port-file.
-PORT_FILE_TIMEOUT_S = 10.0
+# Bumped from 10s -> 30s: cold-start of pythonnet + SCIA DLL discovery
+# regularly takes 12-20s on this machine, especially right after a force_kill
+# when residual SCIA processes are still being torn down. The previous 10s
+# turned a successful restart into a fatal "did not bind a port" error.
+PORT_FILE_TIMEOUT_S = 30.0
 PORT_FILE_POLL_INTERVAL_S = 0.1
 
 # Graceful shutdown layers.

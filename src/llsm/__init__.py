@@ -1,1 +1,1 @@
-﻿"""LLSM - LLM-driven automation for SCIA Engineer."""
+"""LLSM - LLM-driven automation for SCIA Engineer."""

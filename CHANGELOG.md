@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Reliability
+- **MCP async tool execution.** SCIA tool bodies now run in a single-worker
+  `ThreadPoolExecutor` instead of directly on FastMCP's asyncio event loop.
+  Long calls (`launch_scia` 30–60 s, `push_model` on big models) no longer
+  block `/admin/ping`, fixing the watchdog false-positives that were
+  force-killing MCP mid-launch. `src/llsm/mcp_server.py:_async_tool`,
+  `_TOOL_EXEC`.
+- **SCIA session wedge detection.** `SciaSession.submit()` now accepts an
+  optional `timeout_s`; on timeout the session is marked `_wedged` and
+  every subsequent submit fails fast with the original cause. Stops the
+  STA queue from accumulating behind a hung native .NET call (typical
+  trigger: `AdmToAdm eErrFail` hanging `push_model` forever). `push_model`
+  uses 300 s, `run_analysis` uses 600 s. `src/llsm/scia/session.py`,
+  `src/llsm/scia/tools.py`.
+- **MCP port-file timeout 10 s → 30 s.** Cold-start of pythonnet + SCIA
+  DLL discovery regularly takes 12–20 s on this machine, especially right
+  after a `force_kill` while residual SCIA processes are still tearing
+  down. The previous 10 s turned a successful restart into a fatal "did
+  not bind a port" error. `src/llsm/mcp_supervisor.py:PORT_FILE_TIMEOUT_S`.
+
+### Internal
+- Stripped UTF-8 BOM from `src/llsm/__init__.py` and several other source
+  files (cosmetic; was tripping `ast.parse` in some test paths).
+
 ## v0.3.1 — SCIA tool-use parity for OpenAI / Gemini / OpenAI-compatible (2026-05-04)
 
 ### Added

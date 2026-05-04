@@ -1,4 +1,4 @@
-﻿"""LLM-callable tool functions.
+"""LLM-callable tool functions.
 
 Each tool is a thin wrapper that:
 - runs on the main thread for ADM building (off-SCIA)
@@ -162,7 +162,12 @@ def push_model(ctx: LlsmContext) -> dict:
         proj.Model.RefreshModel_ToSCIAEngineer()
         return errors
 
-    errors = sess.submit(_open_and_push)
+    # 5 minutes is generous for big models; the failure mode we care about
+    # (AdmToAdm eErrFail) hangs forever, so any finite cap recovers cleanly.
+    try:
+        errors = sess.submit(_open_and_push, timeout_s=300)
+    except TimeoutError as e:
+        return {"ok": False, "error": str(e), "wedged": True}
     ctx.project_opened = True
     ctx.mesh_dirty = True
     return {"ok": not errors, "errors": errors, "items_pushed": ctx.builder.item_count(),
@@ -188,7 +193,10 @@ def run_analysis(ctx: LlsmContext) -> dict:
         rapi = sess.project.Model.InitializeResultsAPI()
         return rapi
 
-    rapi = sess.submit(_mesh_and_calc)
+    try:
+        rapi = sess.submit(_mesh_and_calc, timeout_s=600)
+    except TimeoutError as e:
+        return {"ok": False, "error": str(e), "wedged": True}
     ctx.rapi = rapi
     ctx.last_calc_ok = rapi is not None
     if ctx.last_calc_ok:

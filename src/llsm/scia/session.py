@@ -1,4 +1,4 @@
-﻿"""SciaSession — manages the SCIA Engineer process lifecycle.
+"""SciaSession — manages the SCIA Engineer process lifecycle.
 
 Usage:
     with SciaSession() as sess:
@@ -71,6 +71,14 @@ class SciaSession:
         self._sta_thread: threading.Thread | None = None
         self._started = threading.Event()
         self._shutdown = threading.Event()
+        # When a submit() times out the STA thread is still running the wedged
+        # call (we can't safely abort native .NET code), so accepting a new
+        # submit would just queue behind it and hang forever. Flip this flag
+        # and fail fast on subsequent submits until the panel restarts MCP.
+        # Typical trigger: SCIA's AdmToAdm service fails with eErrFail and
+        # push_model never returns from CreateAdmObject / RefreshModel.
+        self._wedged: bool = False
+        self._wedge_reason: str = ""
 
         self._env: Any = None  # SCIA.OpenAPI.Environment instance
         self._proj: Any = None  # current EsaProject
@@ -174,16 +182,41 @@ class SciaSession:
 
     # --- Call marshalling --------------------------------------------------
 
-    def submit(self, fn: Callable[[], Any]) -> Any:
-        """Run `fn` on the STA thread, block until result."""
+    def submit(self, fn: Callable[[], Any], *, timeout_s: float | None = None) -> Any:
+        """Run `fn` on the STA thread, block until result.
+
+        If `timeout_s` is set and the call doesn't complete within that window,
+        raise TimeoutError and mark the session as wedged. Subsequent submits
+        fail fast — the STA thread is still running the original call (we can't
+        safely abort native .NET) so queueing new work behind it would just hang.
+        """
+        if self._wedged:
+            raise RuntimeError(
+                f"SCIA session wedged ({self._wedge_reason}) — restart MCP to recover"
+            )
         if self._shutdown.is_set():
             raise RuntimeError("session is closed")
         reply: queue.Queue = queue.Queue()
         self._call_q.put((fn, reply))
-        status, payload = reply.get()
+        try:
+            if timeout_s is None:
+                status, payload = reply.get()
+            else:
+                status, payload = reply.get(timeout=timeout_s)
+        except queue.Empty:
+            self._wedged = True
+            self._wedge_reason = f"call did not return within {timeout_s}s"
+            raise TimeoutError(
+                f"SCIA call did not return within {timeout_s}s — likely AdmToAdm hang; "
+                "restart MCP from the panel to recover"
+            )
         if status == "err":
             raise payload
         return payload
+
+    @property
+    def is_wedged(self) -> bool:
+        return self._wedged
 
     # --- Convenience accessors --------------------------------------------
 

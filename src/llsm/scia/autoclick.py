@@ -1,4 +1,4 @@
-﻿"""Background thread that auto-dismisses SCIA's license/confirmation dialogs.
+"""Background thread that auto-dismisses SCIA's license/confirmation dialogs.
 
 SCIA v24 consistently pops a "SCIA Engineer" dialog with a Dutch "&Ja" button
 (and occasionally OK/Yes in other languages). Without this clicker, the

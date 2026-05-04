@@ -1,4 +1,4 @@
-﻿"""JSON Schemas for LLSM tools — fed to Anthropic's tool-use API.
+"""JSON Schemas for LLSM tools — fed to Anthropic's tool-use API.
 
 Each entry defines the tool the LLM can call, in Anthropic's format:
     {"name": ..., "description": ..., "input_schema": {...}}
