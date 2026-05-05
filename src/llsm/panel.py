@@ -80,6 +80,7 @@ def _chat_log(role: str, text: str) -> None:
 # === Now safe to import project modules - failures land in panel.log ===
 import argparse
 import queue
+import re
 import signal
 import socket
 import threading
@@ -164,6 +165,12 @@ _GLYPH_PILL_IDLE     = "●"  # ●
 _GLYPH_PILL_THINKING = "◐"  # ◐
 _GLYPH_PILL_RUNNING  = "▶"  # ▶
 _GLYPH_PILL_ERROR    = "⚠"  # ⚠
+
+# Markdown-lite regexes for chat-body rendering. Code is intentionally listed
+# first in the inline-render candidate list so backtick literals containing
+# `**` are not mis-rendered as bold.
+_RE_MD_CODE = re.compile(r"`([^`]+)`")
+_RE_MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
 
 # Sidebar.
 SIDEBAR_WIDTH = 200
@@ -1472,6 +1479,16 @@ class LlsmPanel:
         tc("timestamp",    foreground=c["muted"], font=("Segoe UI", 8, "italic"))
         tc("separator",    foreground=c["separator"], font=("Segoe UI", 9))
         tc("placeholder",  foreground=c["muted"], font=("Segoe UI", 10, "italic"))
+        # Inline markdown styling. Stacked on top of body tags (user/assistant/
+        # error/system) so the role colour wins for foreground; these tags only
+        # override font/background. Configured AFTER body tags so Tk's
+        # creation-order priority lets them win for font/bg.
+        tc("md_bold",   font=("Segoe UI", 10, "bold"))
+        tc("md_code",   font=("Consolas", 10), background=c["system_bg"])
+        tc("md_h1",     font=("Segoe UI", 14, "bold"), spacing1=8, spacing3=2)
+        tc("md_h2",     font=("Segoe UI", 12, "bold"), spacing1=6, spacing3=2)
+        tc("md_h3",     font=("Segoe UI", 11, "bold"), spacing1=4, spacing3=2)
+        tc("md_bullet", foreground=c["muted"])
 
         # Configure tk.Text widget surfaces (history + input).
         for w in (self.history, self.input_text):
@@ -2105,6 +2122,61 @@ class LlsmPanel:
     def _now_stamp():
         return datetime.now().isoformat(timespec="seconds").replace("T", " ")
 
+    def _insert_inline_md(self, line, base_tags):
+        """Insert one line into self.history with inline `code` and **bold** styling.
+
+        Code is checked first so backtick literals containing markdown
+        punctuation (e.g. `**foo**`) render as code, not bold. Stacked tags
+        keep the role's foreground colour while overriding font/background.
+        """
+        pos = 0
+        while pos < len(line):
+            best = None
+            for pat, style in (
+                (_RE_MD_CODE, "md_code"),
+                (_RE_MD_BOLD, "md_bold"),
+            ):
+                m = pat.search(line, pos)
+                if m and (best is None or m.start() < best[0].start()):
+                    best = (m, style)
+            if best is None:
+                self.history.insert("end", line[pos:], base_tags)
+                return
+            m, style = best
+            if m.start() > pos:
+                self.history.insert("end", line[pos:m.start()], base_tags)
+            self.history.insert("end", m.group(1), base_tags + (style,))
+            pos = m.end()
+
+    def _render_markdown_body(self, body, base_tag):
+        """Render body text into self.history with markdown-lite styling.
+
+        Supports: **bold**, `code`, headings (# / ## / ###), and bullet
+        lines (- / * / •) which become '  • '. Each output line ends with
+        a newline tagged with the body tag so the role colour persists
+        across blank lines.
+        """
+        base_tags = (base_tag,)
+        for raw_line in body.splitlines() or [""]:
+            stripped = raw_line.lstrip()
+            if stripped.startswith("### "):
+                self._insert_inline_md(stripped[4:], base_tags + ("md_h3",))
+            elif stripped.startswith("## "):
+                self._insert_inline_md(stripped[3:], base_tags + ("md_h2",))
+            elif stripped.startswith("# "):
+                self._insert_inline_md(stripped[2:], base_tags + ("md_h1",))
+            elif stripped.startswith("- ") or stripped.startswith("* "):
+                indent = raw_line[: len(raw_line) - len(stripped)]
+                self.history.insert("end", indent + "  • ", base_tags + ("md_bullet",))
+                self._insert_inline_md(stripped[2:], base_tags)
+            elif stripped.startswith("• "):
+                indent = raw_line[: len(raw_line) - len(stripped)]
+                self.history.insert("end", indent + "  • ", base_tags + ("md_bullet",))
+                self._insert_inline_md(stripped[2:], base_tags)
+            else:
+                self._insert_inline_md(raw_line, base_tags)
+            self.history.insert("end", "\n", base_tags)
+
     def _append(self, who, text, tag, ts=None):
         """Render a chat turn as a badge + timestamp + body + separator block.
 
@@ -2141,8 +2213,8 @@ class LlsmPanel:
             # Header row: ▎[ROLE]   <timestamp>
             self.history.insert("end", f"{_GLYPH_BAR}{glyph}  ", badge_tag)
             self.history.insert("end", f"{ts}\n", "timestamp")
-            # Body.
-            self.history.insert("end", body + "\n", tag)
+            # Body (markdown-lite: **bold**, `code`, # headings, - bullets).
+            self._render_markdown_body(body, tag)
             # Spacer + thin separator + spacer.
             self.history.insert("end", "\n", tag)
             self.history.insert("end", _GLYPH_SEP + "\n\n", "separator")

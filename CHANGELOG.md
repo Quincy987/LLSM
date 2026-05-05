@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.3 — Markdown rendering in chat panel (2026-05-05)
+
+### UX
+- **Chat panel renders markdown.** Assistant replies (and transcript
+  replay) used to show `**bold**`, headings and `- bullets` as raw
+  text in the Tk `Text` widget. Added a small inline parser that
+  styles `**bold**`, `` `code` ``, `# / ## / ###` headings and
+  `- / * / •` bullets via stacked Tk tags, keeping the role's
+  foreground colour and only overriding font/background. Code spans
+  win on tie so backtick literals containing markdown punctuation
+  (e.g. `` `**foo**` ``) render correctly. Italic is intentionally
+  omitted to avoid false matches on prose asterisks (`5 * x`,
+  `*.py`). `src/llsm/panel.py:_render_markdown_body`,
+  `_insert_inline_md`, `_apply_theme` (md_* tags).
+
 ## v0.3.2 — SCIA/MCP reliability fixes for long-running tool calls (2026-05-04)
 
 ### Reliability
