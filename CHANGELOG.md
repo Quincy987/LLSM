@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.3 — Markdown rendering in chat panel (2026-05-05)
+
 ### UX
 - **Chat panel renders markdown.** Assistant replies (and transcript
   replay) used to show `**bold**`, headings and `- bullets` as raw
