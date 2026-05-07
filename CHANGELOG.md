@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.4 — Beam result extraction TypeError fix (2026-05-07)
+
 ### Fixed
 - **Beam result extraction TypeError.** `_load_beam_result` in
   `src/llsm/scia/tools.py` assigned the raw `System.Guid` to
