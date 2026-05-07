@@ -449,15 +449,17 @@ def _load_beam_result(ctx, beam_name: str, load_case: str, result_kind: str) -> 
     else:
         return {"ok": False, "error": f"unknown result_kind {result_kind!r}; use 'inner_forces' or 'deformation'"}
 
-    case_id_raw = case_obj.Id  # System.Guid value
+    # pythonnet does not invoke implicit Guid->ApiGuid conversion on property
+    # assignment, so wrap explicitly. NOTE: this restores the assignment but
+    # does not address the v24 GetDsId lookup miss (ApiGuid.ToString() returns
+    # the type name, not the GUID) — see docs/06-phase0-results.md. LoadResult
+    # may still return None on v24; that is the deferred Layer-2 bug.
+    case_id_wrapped = SciaApiGuid(case_obj.Id)
 
     def _query():
         rk = SciaResults.ResultKey()
         rk.CaseType = RE.eDsElementType.eDsElementType_LoadCase
-        # Assign raw System.Guid - the C# example assigns Guid directly via
-        # implicit conversion to ApiGuid. Wrapping in SciaApiGuid in pythonnet
-        # produces a type-name string in the lookup table.
-        rk.CaseId = case_id_raw
+        rk.CaseId = case_id_wrapped
         rk.EntityType = RE.eDsElementType.eDsElementType_Beam
         rk.EntityName = beam_name
         rk.Dimension = RE.eDimension.eDim_1D

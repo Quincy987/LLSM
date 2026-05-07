@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Beam result extraction TypeError.** `_load_beam_result` in
+  `src/llsm/scia/tools.py` assigned the raw `System.Guid` to
+  `ResultKey.CaseId`, which threw `TypeError: System.Guid value cannot be
+  converted to SCIA.OpenAPI.ApiGuid` because pythonnet does not invoke the
+  implicit Guid → ApiGuid conversion on property assignment. Restored the
+  explicit `SciaApiGuid(case_obj.Id)` wrap. The deferred Layer-2 v24
+  GetDsId/ToString lookup miss is unaffected — `LoadResult` may still
+  return `None` on v24, but no longer crashes with `TypeError`. See
+  `docs/06-phase0-results.md` for Layer-2 background.
+
 ## v0.3.3 — Markdown rendering in chat panel (2026-05-05)
 
 ### UX
