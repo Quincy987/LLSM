@@ -198,11 +198,12 @@ def _register_common_tools(mcp: FastMCP) -> None:
         return scia_tools.get_node_position(_ctx, name=name)
 
     def refresh_from_scia() -> dict:
-        """Diagnostic: pull SCIA's data store into the in-memory ADM model.
+        """Low-level: trigger SCIA's internal engine->store refresh.
 
-        Use to verify that an edit actually propagated to SCIA — after a
-        refresh_from_scia, get_node_position reflects SCIA's truth, not the
-        local ADM's. Discards any pending in-memory edits."""
+        NOTE: the OpenAPI is push-only — this does NOT read SCIA's model back
+        into the in-memory ADM (verified against v24). get_node_position /
+        model_summary still reflect what was pushed, not an independent re-read.
+        Reading/editing a model the API did not build needs the C# plugin."""
         return scia_tools.refresh_from_scia(_ctx)
 
     def model_summary() -> dict:

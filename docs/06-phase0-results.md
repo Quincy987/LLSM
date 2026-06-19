@@ -63,7 +63,24 @@ Once `CreateMesh()` is called, RAPI initializes on the first attempt.
 - `phase0/live_test.py` — full autonomous end-to-end script (auto-clicker + STA + CreateMesh + RAPI)
 - `phase0/smoke_test.py` — DLL load + in-memory ADM validation (no SCIA launch)
 - `phase0/probe_api.py` — reflection probe of `SciaEnvironment` + `EsaProject` classes
+- `phase0/probe_structure.py` — reflection of `proj.Model` (`Structure`): no read-back accessor
+- `phase0/spike_open_readback.py` — proves OpenAPI can't read an opened model back
+- `phase0/spike_connector.py` — third-party connector attach attempt (no SCIA launch)
+- `phase0/spike_attach_running.py` — boots real SCIA GUI, attempts connector attach
 - `phase0/open-api-adm-jupyter/` — scia-garage reference repo (v24-patched) + populated venv
+
+## Live-attach to an existing/open model — investigated, NOT achievable on v24 (q-662)
+
+Question: can LLSM read/edit a model the engineer already has open (not one we built)?
+
+Findings (all reflection + live spikes against v24.0):
+- **OpenAPI is push-only.** `SciaEnvironment` has no attach/connect (only `RunSCIAEngineer` + `OpenProject(path)`), and `SciaSession` kills stale SCIA first. An opened model can't be read back: `proj.Model` (`Structure`) has no `AnalysisModel`; `TrySynchronizeModel`/`RefreshModel_FromSCIAEngineer` populate nothing; name→ID dicts are null after open. (Side fix: corrected the misleading `refresh_from_scia` docstrings in `tools.py`/`mcp_server.py`.)
+- **A real connector SDK exists** — `dll_calatrava\SciaTools.ThirdParty.SDK[.ADM].dll` (+ native `ExternalAppLink.dll`, a shipped POC `SciaTools.ThirdParty.Poc.Wpf.exe`, Copyright SCIA nv 2022 / v22.1). It exposes exactly the missing surface: `GetAnalysisModelFromSciaEngineer()`, `GetSelectedObjectsFromSciaEngineer()`, `Send[Partial]AnalysisModelToSciaEngineer`, register/launch handshake, `SciaEngineerThirdPartyProjectSwitched` events.
+- **No partner-key gate at the SDK** — a random app GUID is accepted.
+- **But it does NOT attach to a running SCIA.** Both a connector-only attach and a freshly-booted real `SciaEngineer.exe` GUI (with and without a model loaded) fail at `LaunchedManually` with `E_CONNECTOR_PROCESS_NOT_FOUND` — *before* any model access. The connector is file/folder-message based and the flow is **SCIA-initiated**: SCIA must be configured to launch your app as a **registered external application**, which starts SCIA's third-party API + connector together (hence `LaunchedBySciaEngineer` + POC's `InitializeThroughSciaEngineer(configPath)`).
+- **The wall = SCIA-side external-app registration.** Not in any shipped config/registry slot found; `ExternalAppLink.dll` is native (not trivially decompilable). Needs SCIA's official external-application / Open API connector docs (or SCIA/Nemetschek support), and possibly a license/module.
+
+**Status: parked.** Capability is in the product but not self-serviceable from the install on v24. **Revisit on higher SCIA versions** — a newer release may document/open the external-app registration, expose the third-party API on a normally-running instance, or ship a usable sample. Re-run `phase0/spike_attach_running.py` against the new version as the first check.
 
 ---
 

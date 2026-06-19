@@ -64,7 +64,7 @@ LLSM/
 
 | Family  | Tool                   | Notes                                       |
 |---------|------------------------|---------------------------------------------|
-| Project | `open_project`         | open a .esa file                            |
+| Project | `open_project`         | ⚠️ Via OpenAPI: can open a .esa but it's push-only — opened models can't be read/enumerated/edited (q-662). Possible lead: the third-party connector SDK (`dll_calatrava\SciaTools.ThirdParty.SDK*`) exposes `GetAnalysisModelFromSciaEngineer()` — read-back exists there; gated/unverified. |
 | Project | `new_project`          | fresh project with default template         |
 | Project | `save_project`         |                                             |
 | Query   | `project_info`         | name, path, counts — used for grounding     |
