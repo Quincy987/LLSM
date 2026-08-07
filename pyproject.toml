@@ -12,6 +12,7 @@ dependencies = [
     "pythonnet>=3.0.5",
     "pywin32>=310",
     "psutil>=7.0.0",
+    "mcp[cli]>=1.0",
 ]
 
 [project.optional-dependencies]

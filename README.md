@@ -2,7 +2,7 @@
 
 Drive **SCIA Engineer** via natural language. An engineer types *"build a 6m x 4m steel portal frame with fixed bases and 5 kN/m gravity on the rafter"*, and LLSM builds, pushes, and analyses the model.
 
-Inspired by [VibeModel](C:/Development/VibeModel) (the Revit equivalent).
+Inspired by VibeModel (the Revit equivalent, internal).
 
 **Target:** SCIA Engineer 24.0 on Windows.
 
@@ -80,11 +80,13 @@ $env:ANTHROPIC_API_KEY = "sk-ant-..."
 
 ## One-time setup
 
+Prerequisites: **Windows**, **Python 3.11+**, and **SCIA Engineer 24.0** installed (the pipeline drives SCIA via its OpenAPI; without SCIA you can still run the chat panel in chat-only mode).
+
 ```powershell
-cd C:\Development\LLSM
+git clone https://github.com/Quincy987/LLSM.git
+cd LLSM
 python -m venv .venv
 .venv\Scripts\pip install -e .
-.venv\Scripts\pip install "mcp[cli]"
 ```
 
 For multi-provider support (v0.3.0+):

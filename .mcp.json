@@ -1,8 +1,11 @@
 {
   "mcpServers": {
     "llsm": {
-      "command": "C:\\Development\\LLSM\\.venv\\Scripts\\python.exe",
-      "args": ["-m", "llsm.mcp_server"],
+      "command": ".venv\\Scripts\\python.exe",
+      "args": [
+        "-m",
+        "llsm.mcp_server"
+      ],
       "env": {}
     }
   }
