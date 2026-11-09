@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.6 — Beddings on existing SCIA models (2026-11-09)
+
 ### Added
 - **`llsm bedding preview|apply`** puts soil beddings from a layer table (CSV
   or JSON) on the piles of a saved `.esa`, without chat or LLM credentials.
