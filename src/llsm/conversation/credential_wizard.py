@@ -465,7 +465,8 @@ class CredentialWizard(tk.Toplevel):
             self.after(0, lambda: self._set_busy(False))
             return
         except Exception as exc:
-            self.after(0, lambda: self._append_login_output(f"[wizard] error: {exc}\n"))
+            # Bind now: Python clears `exc` when the except block ends, before Tk runs this.
+            self.after(0, lambda msg=f"[wizard] error: {exc}\n": self._append_login_output(msg))
             self.after(0, lambda: self._set_busy(False))
             return
 

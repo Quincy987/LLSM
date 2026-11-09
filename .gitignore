@@ -6,3 +6,4 @@ __pycache__/
 phase0/*.out
 phase0/*.err
 *.session
+phase0/xml_route/work/

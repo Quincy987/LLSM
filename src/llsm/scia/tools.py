@@ -301,12 +301,19 @@ def update_node(ctx: LlsmContext, name: str, x_mm: float, y_mm: float, z_mm: flo
 
 
 def refresh_from_scia(ctx: LlsmContext) -> dict:
-    """Pull SCIA's data store INTO the in-memory ADM model.
+    """Trigger SCIA's internal engine->store refresh. Does NOT read ADM back.
 
-    Diagnostic primitive: lets the caller see what SCIA actually has, by
-    overwriting the in-memory ADM with SCIA's state. Use sparingly — it
-    discards any pending edits in ADM. After this call, get_node_position
-    reflects SCIA's truth, not the LLM's last edit attempt.
+    IMPORTANT (verified, phase0/spike_open_readback.py against SCIA v24):
+    the OpenAPI is push-only. RefreshModel_FromSCIAEngineer() returns void and
+    there is no way to read SCIA's model back into the in-memory ADM — the
+    Structure exposes no AnalysisModel, and TrySynchronizeModel does not fill a
+    passed-in model either. So this call does NOT update the builder; an
+    immediately-following get_node_position / model_summary still reflects the
+    in-memory ADM (what we pushed), not independently re-read SCIA truth.
+
+    Kept only as a low-level pass-through to SCIA's refresh routine. A model the
+    OpenAPI did not itself build cannot be inspected or edited through this API;
+    see docs/verify/phase0-route.md for the file route.
     """
     if ctx.session is None or ctx.session.project is None:
         return {"ok": False, "error": "no project open"}
@@ -316,7 +323,8 @@ def refresh_from_scia(ctx: LlsmContext) -> dict:
         sess.submit(lambda: proj.Model.RefreshModel_FromSCIAEngineer())
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
-    return {"ok": True, "info": "ADM now reflects SCIA's data store"}
+    return {"ok": True, "info": "SCIA engine->store refresh triggered; "
+            "in-memory ADM is unchanged (OpenAPI read-back is not supported)"}
 
 
 def get_node_position(ctx: LlsmContext, name: str) -> dict:

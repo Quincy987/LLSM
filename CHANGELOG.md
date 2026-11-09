@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.5 — XML route spike for existing SCIA models (2026-11-09)
+
+### Added
+- **Route spike for editing existing SCIA models** (`phase0/xml_route/`). On a
+  copy of a real kademuur model, SCIA's XML update adds line supports to
+  existing piles by name, and pile geometry can be read from the saved file.
+  Stiffness in the XML is N/m². Decision and open points in
+  `docs/verify/phase0-route.md`; no product feature yet.
+
+### Changed
+- **Plan reordered around existing models and beddings**
+  (`docs/09-plan-v0.4-existing-models.md`), after the first colleague replies.
+- **`refresh_from_scia` description** no longer says the C# plugin is required
+  to read a model the OpenAPI did not build.
+
+### Fixed
+- **Credentials wizard:** a failed login now shows its error instead of
+  raising `NameError` in the deferred UI callback.
+
 ## v0.3.4 — Beam result extraction TypeError fix (2026-05-07)
 
 ### Fixed
