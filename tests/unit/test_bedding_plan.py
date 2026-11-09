@@ -196,6 +196,12 @@ def test_member_a_glob_picks_above_ground_is_left_out_not_refused():
     assert "C1: left out" in " ".join(result.warnings)
 
 
+def test_member_above_ground_with_its_own_supports_does_not_block_the_run():
+    column = member("C1", 3, (0, 0, 8), (0, 0, 2))
+    result = build_plan(EsaModel([member(), column], [foreign(member_id=3)]), [CLAY], diameter_m=0.45)
+    assert [p.pile.name for p in result.planned] == ["P1"] and not result.problems
+
+
 def test_member_asked_by_name_without_overlap_is_a_problem():
     column = member("C1", 3, (0, 0, 8), (0, 0, 2))
     result = build_plan(EsaModel([column], []), [CLAY], piles="C1", diameter_m=0.45)

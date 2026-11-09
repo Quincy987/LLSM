@@ -1,4 +1,5 @@
 """The update XML, and the guards that run before anything is started."""
+import stat
 from pathlib import Path
 
 import pytest
@@ -36,6 +37,16 @@ def test_a_running_scia_stops_the_update(monkeypatch):
     monkeypatch.setattr(esa_xml, "running_scia", lambda: [(1, "sciaengineer.exe")])
     with pytest.raises(SciaRunning, match="sciaengineer"):
         assert_no_scia()
+
+
+def test_a_read_only_file_is_not_locked(tmp_path):
+    path = tmp_path / "m.esa"
+    path.write_bytes(b"x")
+    path.chmod(stat.S_IREAD)
+    try:
+        assert_unlocked(path)
+    finally:
+        path.chmod(stat.S_IWRITE)
 
 
 def test_a_file_held_open_is_locked(tmp_path):

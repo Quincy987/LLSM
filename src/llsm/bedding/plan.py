@@ -115,6 +115,18 @@ def build_plan(
 
     gaps: dict[tuple[float, float], list[str]] = {}
     for pile in selected:
+        try:
+            segments = pile_segments(pile, layers, datum_offset, start_level_nap)
+        except ValueError as exc:
+            plan.problems.append(str(exc))
+            continue
+        if not segments:
+            if pile.name in asked_by_name:
+                plan.problems.append(f"{pile.name}: no layer in the table overlaps this pile.")
+            else:
+                plan.warnings.append(f"{pile.name}: left out, no layer in the table overlaps it.")
+            continue
+
         ours, theirs = _existing_for(pile, model.supports)
         if pile.member_id is None:
             plan.warnings.append(f"{pile.name}: the read-back can check its springs, but not that they are on this pile.")
@@ -134,18 +146,6 @@ def build_plan(
             continue
         elif theirs:
             plan.warnings.append(f"{pile.name}: keeping {theirs} existing line support(s); stiffness adds up.")
-
-        try:
-            segments = pile_segments(pile, layers, datum_offset, start_level_nap)
-        except ValueError as exc:
-            plan.problems.append(str(exc))
-            continue
-        if not segments:
-            if pile.name in asked_by_name:
-                plan.problems.append(f"{pile.name}: no layer in the table overlaps this pile.")
-            else:
-                plan.warnings.append(f"{pile.name}: left out, no layer in the table overlaps it.")
-            continue
 
         if ours and not replace:
             plan.skipped_piles.append(pile.name)

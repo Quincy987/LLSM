@@ -225,6 +225,9 @@ def apply_bedding(
 def _mark_failed(output: Path) -> Path:
     """Keep a bad file for inspection under a name nobody will mistake for a result."""
     failed = output.with_name(f"{output.stem}_FAILED{output.suffix}")
-    failed.unlink(missing_ok=True)
-    output.rename(failed)
+    try:
+        failed.unlink(missing_ok=True)
+        output.rename(failed)
+    except OSError:  # still held by something; the result is not ok either way
+        return output
     return failed

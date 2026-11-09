@@ -114,7 +114,7 @@ def assert_unlocked(path: Path) -> None:
     try:
         handle = win32file.CreateFile(
             str(path),
-            win32con.GENERIC_READ | win32con.GENERIC_WRITE,
+            win32con.GENERIC_READ,  # read only, so a read-only model is not mistaken for a locked one
             0,  # no sharing: fails when anything else holds the file
             None,
             win32con.OPEN_EXISTING,
@@ -216,10 +216,10 @@ def run_update(source: Path, output: Path, xml_text: str, timeout: float = 600) 
     with tempfile.TemporaryDirectory(prefix="llsm-bedding-", ignore_cleanup_errors=True) as temp:
         folder = Path(temp)
         working_copy = folder / "input.esa"
-        shutil.copy2(source, working_copy)
+        shutil.copyfile(source, working_copy)  # no attributes: a read-only model must give a writable copy
         update = folder / "update.xml"
         update.write_text(xml_text, encoding="utf-8")
-        shutil.copy2(DEF_FILE, folder / DEF_FILE.name)
+        shutil.copyfile(DEF_FILE, folder / DEF_FILE.name)
         log_path = folder / "esa_xml.log"
         argv = [str(exe), "NONE", str(working_copy), str(update), "-tESA", f"-o{output}", f"-l{log_path}"]
 

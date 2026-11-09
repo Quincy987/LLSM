@@ -142,6 +142,15 @@ def test_a_saved_file_that_cannot_be_opened_is_not_ok(tmp_path):
     assert not result["ok"] and "read back" in result["problems"][0]
 
 
+def test_a_bad_file_that_cannot_be_renamed_is_still_not_ok(tmp_path, monkeypatch):
+    def refuse(self, target):
+        raise PermissionError("held")
+
+    monkeypatch.setattr(Path, "rename", refuse)
+    result = Fake(tmp_path, model()).apply()
+    assert not result["ok"] and Path(result["output"]).name == "m_llsm-01.esa"
+
+
 def test_scia_running_is_reported_not_raised(tmp_path):
     fake = Fake(tmp_path, model(GOOD))
 
