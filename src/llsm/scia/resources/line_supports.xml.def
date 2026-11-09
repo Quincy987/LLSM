@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+
+<def_project xmlns="http://www.scia.cz">
+   
+   <def_container id="{2C78B173-A1D3-11D4-A433-000000000000}" clsid="{2C78B173-A1D3-11D4-A433-000000000000}" progid="DataLibScia.EP_NonLinearFunction.1" library="yes">
+      <def_table id="EE4128E8-4FDC-4222-BC0D-2BA1932F3FA8" name="XML\default" type="vertical" clsid="{2C78B173-A1D3-11D4-A433-000000000000}" progid="DataLibScia.EP_NonLinearFunction.1" size="6">
+
+         <def_property x="0" name="Type" type="enum" id="{002E80F4-A296-11D4-A434-000000000000}">
+         <def_enum size="3">
+         <it_enum v="0" t="Translation"/>
+         <it_enum v="1" t="Rotation"/>
+         <it_enum v="2" t="Nonlinear subsoil"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="1" name="Positive end" type="enum" id="{002E80F5-A296-11D4-A434-000000000000}">
+         <def_enum size="3">
+         <it_enum v="0" t="Rigid"/>
+         <it_enum v="1" t="Free"/>
+         <it_enum v="2" t="Flexible"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="2" name="Negative end" type="enum" id="{002E80F6-A296-11D4-A434-000000000000}">
+         <def_enum size="3">
+         <it_enum v="0" t="Rigid"/>
+         <it_enum v="1" t="Free"/>
+         <it_enum v="2" t="Flexible"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="3" name="u / F" type="real2" id="{002E80F3-A296-11D4-A434-000000000000}"/>
+
+
+         <def_property x="4" name="fi / M" type="real2" id="{0879C610-BD5B-11D4-A45A-00C06C542707}"/>
+
+
+         <def_property x="5" name="u / F" type="real2" id="{FAF49E68-488C-4E7C-8F31-DF6D19A92A40}"/>
+
+      </def_table>
+   </def_container>
+   <def_container id="{61FC64DE-5B75-4074-BF61-DA1AAA0A194C}" clsid="{61FC64DE-5B75-4074-BF61-DA1AAA0A194C}" progid="DataAddSupport.EP_LineSupportLine.1">
+      <def_table id="F1872059-F8EE-4009-8094-18C23FDC874D" name="XML\default" type="vertical" clsid="{61FC64DE-5B75-4074-BF61-DA1AAA0A194C}" progid="DataAddSupport.EP_LineSupportLine.1" size="31">
+
+         <def_property x="0" name="Reference Table" type="table" id="{8F96D00B-2125-411D-9218-EF0038D0056F}">
+         <def_subtable size="4" type="vertical">
+         <def_property x="0" name="Member Type" type="string" id="{3334884C-E566-404D-A135-4093CC88257D}"/>
+
+         <def_property x="1" name="Member Type Name" type="string" readonly="yes" id="{FF14758E-BC03-4650-88B5-5EA8F1016952}"/>
+
+         <def_property x="2" name="Member Id" type="integer" id="{DD496603-20BD-4CF1-8C72-351306D89D08}"/>
+
+         <def_property x="3" name="Member Name" type="string" id="{66D67076-ED1C-44EC-BA07-93E993F493CB}"/>
+
+         </def_subtable>
+         </def_property>
+
+
+         <def_property x="1" name="Constraint" type="enum" id="{9D88BD1D-EEE0-4EA9-ABAF-296CCD9CB1C2}">
+         <def_enum size="4">
+         <it_enum v="0" t="Fixed"/>
+         <it_enum v="1" t="Hinged"/>
+         <it_enum v="2" t="Sliding"/>
+         <it_enum v="3" t="Custom"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="2" name="Type" type="enum" flag="262144" id="{7C7589CA-C90C-11D4-A46A-00C06C542707}">
+         <def_enum size="3">
+         <it_enum v="0" t="Line"/>
+         <it_enum v="1" t="Foundation strip"/>
+         <it_enum v="2" t="Wall"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="3" name="X" type="enum" flag="262144" id="{49F8018F-A4E5-11D4-A43A-000000000000}">
+         <def_enum size="8">
+         <it_enum v="0" t="Free"/>
+         <it_enum v="1" t="Rigid"/>
+         <it_enum v="2" t="Flexible"/>
+         <it_enum v="3" t="Rigid press only"/>
+         <it_enum v="4" t="Rigid tension only"/>
+         <it_enum v="5" t="Flexible press only"/>
+         <it_enum v="6" t="Flexible tension only"/>
+         <it_enum v="7" t="Nonlinear"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="4" name="Stiffness X" type="param" flag="33619968" id="{49F80190-A4E5-11D4-A43A-000000000000}"/>
+
+
+         <def_property x="5" name="Y" type="enum" flag="262144" id="{49F80192-A4E5-11D4-A43A-000000000000}">
+         <def_enum size="8">
+         <it_enum v="0" t="Free"/>
+         <it_enum v="1" t="Rigid"/>
+         <it_enum v="2" t="Flexible"/>
+         <it_enum v="3" t="Rigid press only"/>
+         <it_enum v="4" t="Rigid tension only"/>
+         <it_enum v="5" t="Flexible press only"/>
+         <it_enum v="6" t="Flexible tension only"/>
+         <it_enum v="7" t="Nonlinear"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="6" name="Stiffness Y" type="param" flag="33619968" id="{49F80193-A4E5-11D4-A43A-000000000000}"/>
+
+
+         <def_property x="7" name="Z" type="enum" flag="262144" id="{49F80195-A4E5-11D4-A43A-000000000000}">
+         <def_enum size="8">
+         <it_enum v="0" t="Free"/>
+         <it_enum v="1" t="Rigid"/>
+         <it_enum v="2" t="Flexible"/>
+         <it_enum v="3" t="Rigid press only"/>
+         <it_enum v="4" t="Rigid tension only"/>
+         <it_enum v="5" t="Flexible press only"/>
+         <it_enum v="6" t="Flexible tension only"/>
+         <it_enum v="7" t="Nonlinear"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="8" name="Stiffness Z" type="param" flag="33619968" id="{49F80196-A4E5-11D4-A43A-000000000000}"/>
+
+
+         <def_property x="9" name="Rx" type="enum" flag="262144" id="{49F80198-A4E5-11D4-A43A-000000000000}">
+         <def_enum size="4">
+         <it_enum v="0" t="Free"/>
+         <it_enum v="1" t="Rigid"/>
+         <it_enum v="2" t="Flexible"/>
+         <it_enum v="7" t="Nonlinear"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="10" name="Stiffness Rx" type="param" flag="33619968" id="{49F80199-A4E5-11D4-A43A-000000000000}"/>
+
+
+         <def_property x="11" name="Ry" type="enum" flag="262144" id="{49F8019B-A4E5-11D4-A43A-000000000000}">
+         <def_enum size="4">
+         <it_enum v="0" t="Free"/>
+         <it_enum v="1" t="Rigid"/>
+         <it_enum v="2" t="Flexible"/>
+         <it_enum v="7" t="Nonlinear"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="12" name="Stiffness Ry" type="param" flag="33619968" id="{49F8019C-A4E5-11D4-A43A-000000000000}"/>
+
+
+         <def_property x="13" name="Rz" type="enum" flag="262144" id="{49F8019E-A4E5-11D4-A43A-000000000000}">
+         <def_enum size="4">
+         <it_enum v="0" t="Free"/>
+         <it_enum v="1" t="Rigid"/>
+         <it_enum v="2" t="Flexible"/>
+         <it_enum v="7" t="Nonlinear"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="14" name="Stiffness Rz" type="param" flag="33619968" id="{49F8019F-A4E5-11D4-A43A-000000000000}"/>
+
+
+         <def_property x="15" name="Function X" type="ref" flag="131072" id="{49F80191-A4E5-11D4-A43A-000000000000}">
+         <def_ref id="{2C78B173-A1D3-11D4-A433-000000000000}" progid="DataLibScia.EP_NonLinearFunction.1"/>
+         </def_property>
+
+
+         <def_property x="16" name="Function Y" type="ref" flag="131072" id="{49F80194-A4E5-11D4-A43A-000000000000}">
+         <def_ref id="{2C78B173-A1D3-11D4-A433-000000000000}" progid="DataLibScia.EP_NonLinearFunction.1"/>
+         </def_property>
+
+
+         <def_property x="17" name="Function Z" type="ref" flag="131072" id="{49F80197-A4E5-11D4-A43A-000000000000}">
+         <def_ref id="{2C78B173-A1D3-11D4-A433-000000000000}" progid="DataLibScia.EP_NonLinearFunction.1"/>
+         </def_property>
+
+
+         <def_property x="18" name="Function Rx" type="ref" flag="131072" id="{49F8019A-A4E5-11D4-A43A-000000000000}">
+         <def_ref id="{2C78B173-A1D3-11D4-A433-000000000000}" progid="DataLibScia.EP_NonLinearFunction.1"/>
+         </def_property>
+
+
+         <def_property x="19" name="Function Ry" type="ref" flag="131072" id="{49F8019D-A4E5-11D4-A43A-000000000000}">
+         <def_ref id="{2C78B173-A1D3-11D4-A433-000000000000}" progid="DataLibScia.EP_NonLinearFunction.1"/>
+         </def_property>
+
+
+         <def_property x="20" name="Function Rz" type="ref" flag="131072" id="{49F801A0-A4E5-11D4-A43A-000000000000}">
+         <def_ref id="{2C78B173-A1D3-11D4-A433-000000000000}" progid="DataLibScia.EP_NonLinearFunction.1"/>
+         </def_property>
+
+
+         <def_property x="21" name="System" type="enum" id="{ACC6FEC0-B7FC-11D4-ADD9-000000000000}">
+         <def_enum size="2">
+         <it_enum v="0" t="GCS"/>
+         <it_enum v="1" t="LCS"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="22" name="Coord. definition" type="enum" id="{EDA4B5AB-8A80-11D4-A414-000000000000}">
+         <def_enum size="2">
+         <it_enum v="0" t="Abso"/>
+         <it_enum v="1" t="Rela"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="23" name="Extent" type="enum" id="{E360E1BB-587D-46A8-B387-A039F5497011}">
+         <def_enum size="2">
+         <it_enum v="0" t="full"/>
+         <it_enum v="1" t="span"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="24" name="Position x1" type="param" flag="33619968" id="{EDA4B5AE-8A80-11D4-A414-000000000000}"/>
+
+
+         <def_property x="25" name="Position x2" type="param" flag="33619968" id="{F68C16F0-8E6D-11D4-A419-000000000000}"/>
+
+
+         <def_property x="26" name="Origin" type="enum" id="{EDA4B5AA-8A80-11D4-A414-000000000000}">
+         <def_enum size="2">
+         <it_enum v="0" t="From start"/>
+         <it_enum v="1" t="From end"/>
+         </def_enum>
+         </def_property>
+
+      </def_table>
+   </def_container>
+</def_project>

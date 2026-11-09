@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.6 — Beddings on existing SCIA models (2026-11-09)
+
+### Added
+- **`llsm bedding preview|apply`** puts soil beddings from a layer table (CSV
+  or JSON) on the piles of a saved `.esa`, without chat or LLM credentials.
+  Accepts kh, Ménard modulus or line stiffness, each with an explicit unit.
+  Writes a new `<model>_llsm-NN.esa`, reads it back and reports `ok` only when
+  every spring matches. Refuses piles that already carry other line supports
+  unless `--allow-existing`, and catches a diameter given in mm. Reads Excel
+  CSV files, and warns about stretches of a pile that no layer covers.
+- **MCP tools `bedding_preview` and `bedding_apply`** over the same code.
+- **`llsm.scia.esa_file`** reads piles and line supports from a saved model,
+  checked against the object counts SCIA logs in the file.
+  **`llsm.scia.esa_xml`** runs SCIA's XML update on a temporary copy and refuses
+  when SCIA is running or the model is open.
+
 ## v0.3.5 — XML route spike for existing SCIA models (2026-11-09)
 
 ### Added

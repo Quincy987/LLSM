@@ -44,6 +44,7 @@ from typing import Callable
 
 from mcp.server.fastmcp import FastMCP
 
+from . import bedding as bedding_tools
 from .scia.loader import load as load_scia
 from .scia import tools as scia_tools
 from .scia.tools import LlsmContext
@@ -85,7 +86,8 @@ INSTRUCTIONS_BASE = (
     "     -> add_*_support -> add_load_group -> add_load_case -> add_line_load\n"
     "  3. launch_scia -> push_model -> run_analysis\n\n"
     "Units: lengths in mm; line loads in kN/m. Z axis is vertical (up positive); "
-    "for gravity-like downward loads use direction='Z' with a NEGATIVE magnitude."
+    "for gravity-like downward loads use direction='Z' with a NEGATIVE magnitude.\n\n"
+    "To put soil beddings on the piles of an existing saved model, use bedding_preview, then bedding_apply."
 )
 
 INSTRUCTIONS_PERSISTENT = (
@@ -267,7 +269,70 @@ def _register_common_tools(mcp: FastMCP) -> None:
         """
         return scia_tools.get_beam_deflection(_ctx, beam=beam, load_case=load_case)
 
+    # --- Beddings on a saved model ---
+    def bedding_preview(
+        model_path: str,
+        layers: list[dict],
+        piles: str = "*",
+        diameter_m: float | None = None,
+        variant: str | None = None,
+        start_level_nap: float | None = None,
+        datum_offset: float = 0.0,
+        alpha: float | None = None,
+        groepsfactor: float | None = None,
+        replace: bool = False,
+        allow_existing: bool = False,
+    ) -> dict:
+        """Work out which springs a soil-layer table puts on the piles of a saved .esa. Changes nothing.
+
+        Always call this first and show the engineer the table. Each layer is
+        {top, bottom, value, unit, description} with top and bottom in m NAP, listed top down.
+        unit is exactly one of: kh_kN_m3 (needs diameter_m), E_menard_MPa (needs diameter_m, alpha,
+        groepsfactor) or k_line_kN_m2. piles is a comma-separated list of names and globs.
+        datum_offset is the model z of NAP 0. replace and allow_existing mean the same as in bedding_apply."""
+        return bedding_tools.preview_bedding(
+            Path(model_path),
+            layers,
+            bedding_tools.PlanRequest(
+                piles=piles, diameter_m=diameter_m, variant=variant, start_level_nap=start_level_nap,
+                datum_offset=datum_offset, alpha=alpha, groepsfactor=groepsfactor,
+                replace=replace, allow_existing=allow_existing,
+            ),
+        )
+
+    def bedding_apply(
+        model_path: str,
+        layers: list[dict],
+        piles: str = "*",
+        diameter_m: float | None = None,
+        variant: str | None = None,
+        start_level_nap: float | None = None,
+        datum_offset: float = 0.0,
+        alpha: float | None = None,
+        groepsfactor: float | None = None,
+        replace: bool = False,
+        allow_existing: bool = False,
+        out_dir: str | None = None,
+    ) -> dict:
+        """Write the springs from bedding_preview to a NEW .esa next to the model and read them back.
+
+        The original is never changed. SCIA must be closed. Same units as bedding_preview.
+        Trust only `ok`, `mismatches` and `other_changes` in the result; report `output` to the engineer.
+        replace overwrites supports this tool wrote earlier; allow_existing adds to piles that
+        already carry other line supports, which adds up their stiffness."""
+        return bedding_tools.apply_bedding(
+            Path(model_path),
+            layers,
+            bedding_tools.PlanRequest(
+                piles=piles, diameter_m=diameter_m, variant=variant, start_level_nap=start_level_nap,
+                datum_offset=datum_offset, alpha=alpha, groepsfactor=groepsfactor,
+                replace=replace, allow_existing=allow_existing,
+            ),
+            out_dir=Path(out_dir) if out_dir else None,
+        )
+
     for _fn in (
+        bedding_preview, bedding_apply,
         new_model, add_material, add_rectangular_section, add_node, add_beam,
         add_fixed_support, add_pinned_support, add_roller_support,
         add_load_group, add_load_case, add_line_load,

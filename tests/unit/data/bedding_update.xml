@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<project xmlns="http://www.scia.cz">
+   <def uri="line_supports.xml.def"/>
+   <container id="{61FC64DE-5B75-4074-BF61-DA1AAA0A194C}" t="DataAddSupport.EP_LineSupportLine.1">
+      <table id="F1872059-F8EE-4009-8094-18C23FDC874D" t="DataAddSupport.EP_LineSupportLine.1" name="Line supports on beam">
+         <h>
+            <h0 t="Reference Table"/>
+            <h1 t="Constraint"/>
+            <h2 t="Type"/>
+            <h3 t="X"/>
+            <h4 t="Stiffness X"/>
+            <h5 t="Y"/>
+            <h6 t="Stiffness Y"/>
+            <h7 t="Z"/>
+            <h8 t="Stiffness Z"/>
+            <h9 t="Rx"/>
+            <h10 t="Stiffness Rx"/>
+            <h11 t="Ry"/>
+            <h12 t="Stiffness Ry"/>
+            <h13 t="Rz"/>
+            <h14 t="Stiffness Rz"/>
+            <h15 t="Function X"/>
+            <h16 t="Function Y"/>
+            <h17 t="Function Z"/>
+            <h18 t="Function Rx"/>
+            <h19 t="Function Ry"/>
+            <h20 t="Function Rz"/>
+            <h21 t="System"/>
+            <h22 t="Coord. definition"/>
+            <h23 t="Extent"/>
+            <h24 t="Position x1"/>
+            <h25 t="Position x2"/>
+            <h26 t="Origin"/>
+         </h>
+         <obj id="9001" nm="LLSM:S1:1">
+           <p0 t="">
+             <h>
+               <h0 t="Member Type"/>
+               <h1 t="Member Type Name"/>
+               <h2 t="Member Id"/>
+               <h3 t="Member Name"/>
+             </h>
+             <row id="0">
+               <p0 v="{ECB5D684-7357-11D4-9F6C-00104BC3B443}"/>
+               <p1 v="EP_DSG_Elements.EP_Beam.1"/>
+               <p2 v="6"/>
+               <p3 v="S1"/>
+             </row>
+           </p0>
+           <p1 v="3"/>
+           <p2 v="0"/>
+           <p3 v="0"/>
+           <p5 v="2"/>
+           <p6 v="2250000.0"/>
+           <p7 v="2"/>
+           <p8 v="2250000.0"/>
+           <p9 v="0"/>
+           <p11 v="0"/>
+           <p13 v="0"/>
+           <p24 v="0.05"/>
+           <p25 v="0.35"/>
+         </obj>
+
+      </table>
+   </container>
+</project>

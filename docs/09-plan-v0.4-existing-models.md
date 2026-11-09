@@ -80,6 +80,8 @@ supports on beam"), ESA_XML usage above.
 Exit: decision recorded; one real pile carries two correct segments visible in SCIA.
 
 ### Phase 1 — Bedding core, no chat required (v0.4.0)
+**Outcome 2026-11-09: built and checked on a real model copy, see `docs/verify/phase1-bedding.md`.**
+
 `llsm.bedding` package, pure Python, fully unit-tested; CLI + MCP tool over the same core.
 1. **Input model**: layers as `(top_NAP, bottom_NAP, value, unit, description)`. Accepted value kinds,
    each explicit: `kh [kN/m³]`, `E_menard [MPa]` (+ α, groepsfactor; reuse the logic of
