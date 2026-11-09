@@ -21,6 +21,7 @@ descendants of the LLSM process, seen every half second. Later additions to the 
 | Licence notice during a launch | PASS | Reported as `SCIA_LICENCE_NOTICE` after 11.5 s. Phase 0's run hung until it timed out. |
 | Own processes only | PASS | Ledger held SciaEngineer and the startup screen; `close()` stopped those and cleared the ledger. |
 | Full launch up to HubServer | PASS | 26.5 s with `LLSM_ANSWER_LICENCE_NOTICES=1`: four processes, HubServer among our descendants, SCIA quit on close. This was the one run that answered the notices. |
+| Whole model through the session | PASS | New beam, launch 19.8 s, push 13.9 s, analysis 13.5 s, no false dialog during the calculation, clean close. SCIA's Win32 licence question came up during the push and was clicked. |
 | MCP server without token | PASS | 401, also on `/mcp` and `/admin/shutdown`. |
 | With an `Origin` or `Sec-Fetch-Site` header | PASS | 403, even with the right token. Wrong `Host`: 403. |
 | With the token | PASS | 200; the shutdown route ends the server. |
@@ -39,11 +40,17 @@ is gone and the LLSM tools still work.
 
 - "Onjuist afgesloten projecten" on a real launch: it comes after the licence notices, and only after a forced stop. The
   reporting is covered by unit tests.
-- A Win32 licence question on a real launch: on this machine SCIA asks through Qt notices, so the click path is unit-tested only.
 - The full panel with a live chat. The backend's command line and each part were tested separately.
 - A real fresh Windows account.
+- `--geometry-from` on a real hand export from SCIA; the unit tests use the sample's table layout.
 - `bedding_preview` by name in a chat turn: the small model used for the check called `model_summary` instead. The earlier
   MCP dispatch test in `phase1-bedding.md` covers that tool.
+
+## One launch timed out
+
+Of the five launches through this code, one ended after about six minutes in "HubServer did not spawn", right after the cached
+licence token had expired; the two launches after it, one the same script, took 20 to 24 s. The error reached the caller and
+the session was cleaned up, so a retry works. The cause is not known.
 
 ## Dependency pin
 
@@ -58,4 +65,4 @@ stays **unknown**. Before a pilot it needs one comparison in SCIA of the code se
 
 ## Side effect
 
-The one full launch answered SCIA's licence notices, as the first Phase 0 runs did: `UserSelection.json` was written again.
+The full launches answered SCIA's licence notices (`LLSM_ANSWER_LICENCE_NOTICES=1`), as the first Phase 0 runs did: `UserSelection.json` was written again.

@@ -19,7 +19,7 @@ import threading
 import time
 import zlib
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import win32api
@@ -39,6 +39,8 @@ _TITLE = "SCIA Engineer"
 _LICENCE_TEXT = re.compile(r"licen|protect|bescherm|module", re.I)
 _YES_LABELS = {"ja", "ok"}
 _MAIN_WINDOW_WIDTH = 1000  # the main window is wider; licence notices are about 500 px
+_NOTICE_CLASS = re.compile(r"Qt\d+QWindowIcon")  # the main window's class has "OwnDC" in it
+_ONLY_STOPS_WORK = {"annuleren", "cancel", "stop", "afbreken", "abort"}  # a progress window, not a question
 _MINIMISED_LEFT = -20000  # Windows parks minimised windows at -32000
 
 
@@ -71,6 +73,7 @@ class PendingDialog:
     code: str
     title: str
     buttons: tuple[str, ...]
+    seen_at: float = field(default_factory=time.time)
 
     @property
     def message(self) -> str:
@@ -106,16 +109,17 @@ IGNORE = "ignore"
 
 def classify(window: Window, main_seen: bool) -> str:
     """What to do about one visible window of our SCIA."""
-    is_qt = window.cls.startswith("Qt")
-    if is_qt and window.title == _TITLE:
-        if window.width >= _MAIN_WINDOW_WIDTH:
-            return MAIN
-        return NOTICE if not main_seen else IGNORE
+    if window.cls.startswith("Qt") and window.title == _TITLE:
+        if "OwnDC" in window.cls or window.width >= _MAIN_WINDOW_WIDTH:
+            return MAIN  # also when minimised, which is how a hidden launch starts
+        return NOTICE if _NOTICE_CLASS.fullmatch(window.cls) and not main_seen else IGNORE
     if window.cls != "#32770" or not window.title:
         return IGNORE
     is_licence = window.title == _TITLE and any(_LICENCE_TEXT.search(t) for t in window.texts)
     if is_licence and any(label.lower() in _YES_LABELS for label in window.labels):
         return CLICK
+    if not {label.lower() for label in window.labels} - _ONLY_STOPS_WORK:
+        return IGNORE  # no buttons, or only a way to cancel: nothing is being asked
     return REPORT
 
 
@@ -137,11 +141,12 @@ def write_png(path: Path, width: int, height: int, bgra: bytes) -> None:
 
 def _capture(window: Window) -> Path | None:
     """Keep a picture of a dialog for the log. Best effort; only that window, never the desktop."""
-    window_dc = memory_dc = bitmap = None
+    raw_dc = window_dc = memory_dc = bitmap = None
     try:
         DIALOG_DIR.mkdir(parents=True, exist_ok=True)
         width, height = window.rect[2] - window.rect[0], window.rect[3] - window.rect[1]
-        window_dc = win32ui.CreateDCFromHandle(win32gui.GetWindowDC(window.hwnd))
+        raw_dc = win32gui.GetWindowDC(window.hwnd)
+        window_dc = win32ui.CreateDCFromHandle(raw_dc)
         memory_dc = window_dc.CreateCompatibleDC()
         bitmap = win32ui.CreateBitmap()
         bitmap.CreateCompatibleBitmap(window_dc, width, height)
@@ -153,7 +158,12 @@ def _capture(window: Window) -> Path | None:
     except Exception:
         return None
     finally:
-        for release in (lambda: memory_dc.DeleteDC(), lambda: window_dc.DeleteDC(), lambda: win32gui.DeleteObject(bitmap.GetHandle())):
+        for release in (
+            lambda: memory_dc.DeleteDC(),
+            lambda: window_dc.DeleteDC(),
+            lambda: win32gui.ReleaseDC(window.hwnd, raw_dc),
+            lambda: win32gui.DeleteObject(bitmap.GetHandle()),
+        ):
             try:
                 release()
             except Exception:

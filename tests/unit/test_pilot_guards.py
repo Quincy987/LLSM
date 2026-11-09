@@ -31,6 +31,10 @@ def test_browser_requests_are_403_even_with_the_token(extra):
     assert refusal({**GOOD, **extra}, "secret", 8765)[0] == 403
 
 
+def test_a_token_with_odd_characters_is_refused_not_a_crash():
+    assert refusal({**GOOD, "x-llsm-token": "sécret"}, "secret", 8765)[0] == 401
+
+
 def test_wrong_host_is_403():
     assert refusal({**GOOD, "host": "evil.example:8765"}, "secret", 8765)[0] == 403
 

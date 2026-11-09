@@ -12,6 +12,7 @@ All public methods marshal calls onto that thread.
 """
 from __future__ import annotations
 import json
+import os
 import queue
 import threading
 import time
@@ -26,18 +27,19 @@ from . import loader
 
 SESSIONS_FILE = Path.home() / ".llsm" / "scia_sessions.json"
 _LAUNCH_LIMIT_S = 420  # RunSCIAEngineer alone can take 3 minutes before it gives up
+_DIALOG_GRACE_S = 5.0  # a window that goes away by itself interrupts nothing
 
 
 def our_scia_processes() -> list[psutil.Process]:
     """SCIA processes started from this process. A SCIA someone opened by hand is never one."""
-    found = []
-    for proc in psutil.Process().children(recursive=True):
-        try:
-            if proc.name().lower() in SCIA_PROCESSES:
-                found.append(proc)
-        except psutil.Error:  # it exited while we looked
-            pass
-    return found
+    return [p for p in psutil.Process().children(recursive=True) if _name_of(p) in SCIA_PROCESSES]
+
+
+def _name_of(proc: psutil.Process) -> str:
+    try:
+        return proc.name().lower()
+    except psutil.Error:  # it exited while we looked
+        return ""
 
 
 def _load_records(path: Path) -> list[dict]:
@@ -56,7 +58,7 @@ def remember_processes(procs: list[psutil.Process], path: Path | None = None) ->
     changed = False
     for proc in procs:
         try:
-            record = {"pid": proc.pid, "name": proc.name().lower(), "create_time": proc.create_time()}
+            record = {"pid": proc.pid, "name": proc.name().lower(), "create_time": proc.create_time(), "owner": os.getpid()}
         except psutil.Error:
             continue
         if (record["pid"], record["create_time"]) not in known:
@@ -67,11 +69,22 @@ def remember_processes(procs: list[psutil.Process], path: Path | None = None) ->
         path.write_text(json.dumps(records, indent=1), encoding="utf-8")
 
 
-def kill_remembered(path: Path | None = None) -> int:
-    """Stop only processes in the ledger that are still the same process, then clear it."""
+def kill_remembered(path: Path | None = None, only_mine: bool = False) -> int:
+    """Stop only processes in the ledger that are still the same process.
+
+    ``only_mine`` limits it to this process's own SCIAs (closing a session). Otherwise it
+    takes those of LLSM processes that are gone (cleaning up after a crash). Either way,
+    a SCIA that another running LLSM started is left to it.
+    """
     path = path or SESSIONS_FILE
+    me = os.getpid()
     killed = 0
+    kept = []
     for record in _load_records(path):
+        owner = record.get("owner")
+        if owner != me and (only_mine or (owner is not None and psutil.pid_exists(owner))):
+            kept.append(record)
+            continue
         try:
             proc = psutil.Process(record["pid"])
             same = proc.name().lower() == record["name"] and abs(proc.create_time() - record["create_time"]) < 1.0
@@ -80,7 +93,10 @@ def kill_remembered(path: Path | None = None) -> int:
                 killed += 1
         except (psutil.Error, KeyError, TypeError):
             pass
-    path.unlink(missing_ok=True)
+    if kept:
+        path.write_text(json.dumps(kept, indent=1), encoding="utf-8")
+    else:
+        path.unlink(missing_ok=True)
     if killed:
         time.sleep(3)
     return killed
@@ -218,7 +234,7 @@ class SciaSession:
         while time.time() < deadline:
             if self._shutdown.is_set():
                 return
-            if any("hubserver" in p.name().lower() for p in our_scia_processes()):
+            if any("hubserver" in _name_of(p) for p in our_scia_processes()):
                 self._log("HubServer ready")
                 break
             time.sleep(1)
@@ -256,7 +272,7 @@ class SciaSession:
                 time.sleep(0.2)
         self._clicker.stop()
         time.sleep(1)
-        kill_remembered()
+        kill_remembered(only_mine=True)
 
     # --- Call marshalling --------------------------------------------------
 
@@ -288,7 +304,7 @@ class SciaSession:
             except queue.Empty:
                 waited += 1.0
             dialog = self._clicker.pending
-            if dialog is not None:
+            if dialog is not None and time.time() - dialog.seen_at >= _DIALOG_GRACE_S:
                 self._wedged = True
                 self._wedge_reason = f"a dialog interrupted the call: {dialog.message}"
                 raise SciaDialogPending(dialog, mid_call=True)

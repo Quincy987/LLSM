@@ -119,7 +119,8 @@ class ClaudeCodeBackend:
     def _run_once(self, message: str):
         cmd = self._build_cmd(message)
         if self.verbose:
-            print(f"[claude-code] $ {cmd}")
+            shown = ["<mcp-config>" if i and cmd[i - 1] == "--mcp-config" else part for i, part in enumerate(cmd)]
+            print(f"[claude-code] $ {shown}")  # the config holds the server's token
         try:
             self._current_proc = subprocess.Popen(
                 cmd,

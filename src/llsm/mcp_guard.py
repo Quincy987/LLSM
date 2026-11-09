@@ -20,7 +20,7 @@ def refusal(headers: dict[str, str], token: str, port: int) -> tuple[int, str] |
         return 403, "requests from a browser are not allowed"
     if headers.get("host") != f"127.0.0.1:{port}":
         return 403, "wrong Host header"
-    if not secrets.compare_digest(headers.get(TOKEN_HEADER.lower(), ""), token):
+    if not secrets.compare_digest(headers.get(TOKEN_HEADER.lower(), "").encode("utf-8"), token.encode("utf-8")):
         return 401, "missing or wrong token"
     return None
 

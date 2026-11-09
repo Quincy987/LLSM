@@ -176,6 +176,7 @@ LLSM/
 - **Query**: `model_summary`, `get_node_position`, `refresh_from_scia`
 - **Results**: `get_beam_deflection`, `get_beam_inner_forces`
 - **SCIA drive**: `launch_scia`, `push_model`, `run_analysis`, `close_scia`
+- **Beddings on a saved model**: `bedding_preview`, `bedding_apply`
 
 ## Known limitations (Phase 2)
 

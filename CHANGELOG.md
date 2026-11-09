@@ -24,8 +24,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **The chat agent can only use LLSM's own tools** instead of running with all
   permissions; it has no shell or file tools.
 - **The local MCP server needs a token on every request** and refuses browsers.
-- Every MCP tool result carries a short `state` block, and answers are kept to
-  five lines with units on every number.
+- Every MCP tool result carries a short `state` block, and the model is asked
+  to answer in five lines with units on every number.
 
 ### Fixed
 - `test_credentials.py` no longer depends on API keys in the environment.

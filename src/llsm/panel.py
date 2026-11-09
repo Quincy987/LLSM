@@ -915,7 +915,10 @@ class LlsmPanel:
                 text.configure(state="disabled")
 
         def work():
-            report = diagnose.format_report(diagnose.run_checks())
+            try:
+                report = diagnose.format_report(diagnose.run_checks())
+            except Exception as exc:
+                report = f"Diagnose failed: {type(exc).__name__}: {exc}"
             self.root.after(0, lambda: show(report))
 
         threading.Thread(target=work, daemon=True).start()

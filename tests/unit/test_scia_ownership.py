@@ -46,6 +46,15 @@ def test_the_main_window_is_not_a_notice():
     assert classify(window(cls=QT, rect=(0, 0, 1536, 900)), False) == MAIN
 
 
+def test_a_minimised_main_window_is_not_a_notice():
+    assert classify(window(cls="Qt652QWindowOwnDCIcon", rect=(-32000, -32000, -31840, -31973)), False) == MAIN
+
+
+@pytest.mark.parametrize("buttons", [(), ((5, "&Annuleren"),), ((5, "Cancel"),)])
+def test_a_progress_window_is_not_a_question(buttons):
+    assert classify(window(title="Berekening", buttons=buttons), False) == IGNORE
+
+
 def test_splash_and_startup_screen_are_ignored():
     assert classify(window(title="Splash Window", cls=QT), False) == IGNORE
     assert classify(window(title="SCIA Engineer Startup Screen", cls="HwndWrapper[x]"), False) == IGNORE
@@ -97,7 +106,7 @@ def test_answering_notices_is_opt_in(monkeypatch):
 
 def test_pending_clears_when_the_window_is_gone(monkeypatch):
     monkeypatch.setattr(autoclick, "_capture", lambda w: None)
-    windows = [window(title="Vraag te bewaren")]
+    windows = [window(title="Vraag te bewaren", buttons=YES)]
     fixture = clicker(windows)
     fixture.sweep()
     assert fixture.pending is not None
@@ -149,6 +158,20 @@ def test_only_the_same_process_is_stopped(tmp_path, monkeypatch):
     assert kill_remembered(ledger) == 1
     assert ours.killed and not now[2].killed and not now[3].killed
     assert not ledger.exists()
+
+
+def test_a_scia_of_another_running_llsm_is_left_alone(tmp_path, monkeypatch):
+    ledger = tmp_path / "sessions.json"
+    other = psutil.Process().parent().pid
+    ledger.write_text(json.dumps([{"pid": 5, "name": "esa.exe", "create_time": 1.0, "owner": other}]), encoding="utf-8")
+    assert kill_remembered(ledger) == 0 and ledger.exists()
+
+
+def test_closing_only_stops_this_sessions_processes(tmp_path, monkeypatch):
+    ledger = tmp_path / "sessions.json"
+    records = [{"pid": 5, "name": "esa.exe", "create_time": 1.0, "owner": 1}]
+    ledger.write_text(json.dumps(records), encoding="utf-8")
+    assert kill_remembered(ledger, only_mine=True) == 0 and json.loads(ledger.read_text(encoding="utf-8")) == records
 
 
 def test_a_process_that_is_gone_is_no_problem(tmp_path, monkeypatch):
@@ -211,12 +234,27 @@ def test_submit_refuses_while_a_dialog_waits(monkeypatch):
 def test_submit_returns_when_a_dialog_appears_during_the_call(monkeypatch):
     paused = Paused(monkeypatch)
     paused.session._started.set()
-    dialog = PendingDialog(1, CODE_DIALOG, "Vraag", ())
+    dialog = PendingDialog(1, CODE_DIALOG, "Vraag", (), seen_at=0.0)
     threading.Timer(0.2, lambda: setattr(paused.session._clicker, "pending", dialog)).start()
     with pytest.raises(SciaDialogPending) as caught:
         paused.session.submit(lambda: 1)
     assert caught.value.mid_call and paused.session.is_wedged
     assert "restart" in caught.value.as_result()["error"]["suggestion"].lower()
+
+
+def test_a_window_that_just_appeared_does_not_interrupt_a_call(monkeypatch):
+    paused = Paused(monkeypatch)
+    paused.session._started.set()
+
+    def worker():
+        fn, reply = paused.session._call_q.get(timeout=2)
+        paused.session._clicker.pending = PendingDialog(1, CODE_DIALOG, "Bezig", ())
+        session_module.time.sleep(1.5)
+        paused.session._clicker.pending = None
+        reply.put(("ok", fn()))
+
+    threading.Thread(target=worker, daemon=True).start()
+    assert paused.session.submit(lambda: 7) == 7 and not paused.session.is_wedged
 
 
 def test_submit_still_returns_results(monkeypatch):
