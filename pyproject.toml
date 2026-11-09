@@ -28,3 +28,6 @@ llsm-panel = "llsm.panel:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"llsm.scia" = ["resources/*.def"]

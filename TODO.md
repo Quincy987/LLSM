@@ -12,10 +12,11 @@ Plan: `docs/09-plan-v0.4-existing-models.md` (order) + `docs/08-plan-v0.4-vibemo
 - [ ] Hand export of model tables, as fallback for the reader
 
 ## Phase 1 — bedding core (no chat required)
-- [ ] `llsm.bedding`: layers (NAP, value+unit, description) x piles (begin/end z) -> segments; variant laag/gem/hoog explicit
-- [ ] Clip straddling layer; abort on any pile error; skip/replace piles that already have supports
-- [ ] Preview table -> write new file version -> read back -> compare
-- [ ] Unit tests (vertical, inclined, split pile, datum shift) + one hand-calculated pile in docs/verify
+- [x] `llsm.bedding`: layers (NAP, value+unit, description) x piles (begin/end z) -> segments; variant laag/gem/hoog explicit
+- [x] Clip straddling layer; abort on any pile error; skip/replace piles that already have supports
+- [x] Preview table -> write new file version -> read back -> compare
+- [x] Unit tests (vertical, inclined, split pile, datum shift) + one hand-calculated pile in docs/verify
+- [ ] Decode where existing supports sit on a pile (now only counted)
 
 ## Phase 2 — pilot readiness
 - [ ] Only manage SCIA PIDs LLSM started; auto-clicker whitelist, report unknown dialogs

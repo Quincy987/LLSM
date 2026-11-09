@@ -22,6 +22,11 @@ from llsm.llm.anthropic_backend import AnthropicBackend
 
 
 def main() -> int:
+    # Before the parser: its `prompt` positional would swallow a subcommand.
+    if len(sys.argv) > 1 and sys.argv[1] == "bedding":
+        from llsm.bedding.cli import main as bedding_main
+        return bedding_main(sys.argv[2:])
+
     ap = argparse.ArgumentParser(prog="llsm", description="LLM-driven SCIA Engineer automation.")
     ap.add_argument("prompt", nargs="+", help="Natural-language request for the LLM.")
     ap.add_argument("--model", default=None, help="Override Anthropic model.")
