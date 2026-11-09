@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import re
 import time
+import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from ..scia import esa_xml
-from ..scia.esa_file import EsaFormatError, EsaModel, LineSupport, read_esa
+from ..scia.esa_file import EsaFormatError, EsaModel, LineSupport, read_esa, read_xml
 from .layers import LayerError, parse_layers
 from .plan import BeddingPlan, PlannedSegment, build_plan
 
@@ -61,6 +62,7 @@ def _prepare(
     rows: list[dict],
     request: PlanRequest,
     reader: Callable[[Path], EsaModel],
+    geometry_from: Path | None = None,
 ) -> tuple[dict, EsaModel | None, BeddingPlan | None]:
     result = _base_result(action, model_path, request)
     try:
@@ -77,8 +79,15 @@ def _prepare(
         result["problems"] = [f"{model_path.name} is open elsewhere, probably in SCIA. Close it and try again."]
         return result, None, None
     except (EsaFormatError, OSError) as exc:
-        result["problems"] = [f"The model could not be read reliably: {exc}"]
-        return result, None, None
+        if geometry_from is None:
+            result["problems"] = [f"The model could not be read reliably: {exc}. An XML export can stand in: geometry-from."]
+            return result, None, None
+        try:
+            model = read_xml(Path(geometry_from))
+        except (OSError, ET.ParseError, ValueError, KeyError, AttributeError) as export_error:
+            result["problems"] = [f"The XML export could not be read: {export_error}"]
+            return result, None, None
+        model.warnings.append(f"Piles taken from {Path(geometry_from).name}: the .esa could not be read ({exc}).")
 
     plan = build_plan(
         model,
@@ -108,9 +117,10 @@ def preview_bedding(
     rows: list[dict],
     request: PlanRequest,
     reader: Callable[[Path], EsaModel] = read_esa,
+    geometry_from: Path | None = None,
 ) -> dict:
     """Work out what would be written. Touches nothing."""
-    result, _, _ = _prepare("preview", Path(model_path).resolve(), rows, request, reader)
+    result, _, _ = _prepare("preview", Path(model_path).resolve(), rows, request, reader, geometry_from)
     result["ok"] = not result["problems"]
     return result
 
@@ -153,6 +163,8 @@ def _other_changes(before: EsaModel, after: EsaModel, planned_names: set[str]) -
         changes.append(f"support {name} is gone")
     for name in sorted(new.keys() - old.keys() - planned_names):
         changes.append(f"support {name} appeared")
+    if before.source == "xml":  # values from an export and from a .esa are not comparable
+        return changes
     for name in sorted((old.keys() & new.keys()) - planned_names):
         if old[name] != new[name]:
             changes.append(f"support {name} changed")
@@ -172,10 +184,11 @@ def apply_bedding(
     out_dir: Path | None = None,
     reader: Callable[[Path], EsaModel] = read_esa,
     writer: Callable[[Path, Path, str], esa_xml.RunResult] = esa_xml.run_update,
+    geometry_from: Path | None = None,
 ) -> dict:
     """Write the plan to a new file and report what is really in it."""
     model_path = Path(model_path).resolve()  # ESA_XML runs from its install folder
-    result, before, plan = _prepare("apply", model_path, rows, request, reader)
+    result, before, plan = _prepare("apply", model_path, rows, request, reader, geometry_from)
     result.update(output=None, written=0, expected=0, mismatches=[], other_changes=[], seconds=None, esa_xml=None)
     if plan is None or before is None or plan.problems:
         return result
@@ -213,6 +226,8 @@ def apply_bedding(
     result["mismatches"] = _compare(plan.planned, stored)
     result["other_changes"] = _other_changes(before, after, planned_names)
     result["written"] = len(plan.planned) - len(result["mismatches"])
+    if before.source == "xml":
+        result["warnings"] = [*result["warnings"], "Other supports were compared by name only, and members not at all."]
     result["ok"] = not result["mismatches"] and not result["other_changes"]
     if result["ok"]:
         result["output"] = str(output)

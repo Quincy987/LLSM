@@ -1,33 +1,219 @@
-"""Background thread that auto-dismisses SCIA's license/confirmation dialogs.
+"""Watches the dialogs of the SCIA this session started, and only those.
 
-SCIA v24 consistently pops a "SCIA Engineer" dialog with a Dutch "&Ja" button
-(and occasionally OK/Yes in other languages). Without this clicker, the
-HubServer won't spawn — see docs/06-phase0-results.md.
+It clicks one thing: SCIA's own Win32 licence question. Everything else is reported,
+so the tool that is waiting on SCIA can say what it is waiting for:
+
+* Qt licence notices (modules taken by colleagues, more than one mandatory licence).
+  Their text cannot be read and answering them rewrites the user's licence selection,
+  so they are shown and reported. ``LLSM_ANSWER_LICENCE_NOTICES=1`` answers them instead.
+* any other dialog, e.g. "Onjuist afgesloten projecten" or "Vraag te bewaren".
 """
 from __future__ import annotations
+
+import ctypes
+import os
+import re
+import struct
+import sys
 import threading
 import time
-import ctypes
-from typing import Iterable
+import zlib
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
 
-import psutil
+import win32api
+import win32con
 import win32gui
 import win32process
+import win32ui
+
+DIALOG_DIR = Path.home() / ".llsm" / "dialogs"
+
+CODE_DIALOG = "SCIA_DIALOG"
+CODE_NOTICE = "SCIA_LICENCE_NOTICE"
+
+_BM_CLICK = 0x00F5
+_PW_RENDERFULLCONTENT = 2
+_TITLE = "SCIA Engineer"
+_LICENCE_TEXT = re.compile(r"licen|protect|bescherm|module", re.I)
+_YES_LABELS = {"ja", "ok"}
+_MAIN_WINDOW_WIDTH = 1000  # the main window is wider; licence notices are about 500 px
+_MINIMISED_LEFT = -20000  # Windows parks minimised windows at -32000
 
 
-_ACCEPT_LABELS = {
-    "ja", "yes", "ok", "accepteren", "accept", "continue", "doorgaan",
-}
-_SCIA_NAME_HINTS = ("esa", "scia")
+@dataclass(frozen=True)
+class Window:
+    hwnd: int
+    title: str
+    cls: str
+    pid: int
+    rect: tuple[int, int, int, int]
+    buttons: tuple[tuple[int, str], ...] = ()  # (hwnd, label); Win32 dialogs only
+    texts: tuple[str, ...] = ()
+
+    @property
+    def width(self) -> int:
+        return self.rect[2] - self.rect[0]
+
+    @property
+    def minimised(self) -> bool:
+        return self.rect[0] < _MINIMISED_LEFT
+
+    @property
+    def labels(self) -> list[str]:
+        return [label.replace("&", "").strip() for _, label in self.buttons]
+
+
+@dataclass(frozen=True)
+class PendingDialog:
+    hwnd: int
+    code: str
+    title: str
+    buttons: tuple[str, ...]
+
+    @property
+    def message(self) -> str:
+        if self.code == CODE_NOTICE:
+            return "SCIA asks about licences or modules"
+        return f"{self.title}: {', '.join(self.buttons) or 'no buttons'}"
+
+
+class SciaDialogPending(RuntimeError):
+    """SCIA is waiting for an answer from the user."""
+
+    def __init__(self, dialog: PendingDialog, mid_call: bool = False):
+        super().__init__(dialog.message)
+        self.dialog = dialog
+        self.mid_call = mid_call
+
+    def as_result(self) -> dict:
+        suggestion = "Answer it in SCIA, then retry."
+        if self.mid_call:
+            suggestion = "Answer it in SCIA, then restart the MCP server (Tools > Restart MCP server)."
+        return {
+            "ok": False,
+            "error": {"code": self.dialog.code, "message": self.dialog.message, "suggestion": suggestion},
+        }
+
+
+CLICK = "click"
+NOTICE = "notice"
+REPORT = "report"
+MAIN = "main"
+IGNORE = "ignore"
+
+
+def classify(window: Window, main_seen: bool) -> str:
+    """What to do about one visible window of our SCIA."""
+    is_qt = window.cls.startswith("Qt")
+    if is_qt and window.title == _TITLE:
+        if window.width >= _MAIN_WINDOW_WIDTH:
+            return MAIN
+        return NOTICE if not main_seen else IGNORE
+    if window.cls != "#32770" or not window.title:
+        return IGNORE
+    is_licence = window.title == _TITLE and any(_LICENCE_TEXT.search(t) for t in window.texts)
+    if is_licence and any(label.lower() in _YES_LABELS for label in window.labels):
+        return CLICK
+    return REPORT
+
+
+def write_png(path: Path, width: int, height: int, bgra: bytes) -> None:
+    """Write top-down 32-bit BGRA pixels as a PNG, without an imaging library."""
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    rows = bytearray()
+    stride = width * 4
+    for y in range(height):
+        rows.append(0)
+        line = bgra[y * stride : (y + 1) * stride]
+        rows += bytes(b for i in range(0, stride, 4) for b in (line[i + 2], line[i + 1], line[i]))
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(bytes(rows))) + chunk(b"IEND", b""))
+
+
+def _capture(window: Window) -> Path | None:
+    """Keep a picture of a dialog for the log. Best effort; only that window, never the desktop."""
+    window_dc = memory_dc = bitmap = None
+    try:
+        DIALOG_DIR.mkdir(parents=True, exist_ok=True)
+        width, height = window.rect[2] - window.rect[0], window.rect[3] - window.rect[1]
+        window_dc = win32ui.CreateDCFromHandle(win32gui.GetWindowDC(window.hwnd))
+        memory_dc = window_dc.CreateCompatibleDC()
+        bitmap = win32ui.CreateBitmap()
+        bitmap.CreateCompatibleBitmap(window_dc, width, height)
+        memory_dc.SelectObject(bitmap)
+        ctypes.windll.user32.PrintWindow(window.hwnd, memory_dc.GetSafeHdc(), _PW_RENDERFULLCONTENT)
+        target = DIALOG_DIR / f"{time.strftime('%Y%m%d-%H%M%S')}-{window.hwnd}.png"
+        write_png(target, width, height, bitmap.GetBitmapBits(True))
+        return target
+    except Exception:
+        return None
+    finally:
+        for release in (lambda: memory_dc.DeleteDC(), lambda: window_dc.DeleteDC(), lambda: win32gui.DeleteObject(bitmap.GetHandle())):
+            try:
+                release()
+            except Exception:
+                pass
+
+
+def _describe(hwnd: int, pid: int) -> Window:
+    title, cls = win32gui.GetWindowText(hwnd), win32gui.GetClassName(hwnd)
+    buttons: list[tuple[int, str]] = []
+    texts: list[str] = []
+    if cls == "#32770":
+
+        def child(chwnd: int, _: object) -> bool:
+            label = win32gui.GetWindowText(chwnd).strip()
+            if label:
+                kind = win32gui.GetClassName(chwnd)
+                if kind == "Button":
+                    buttons.append((chwnd, label))
+                elif kind == "Static":
+                    texts.append(label)
+            return True
+
+        try:
+            win32gui.EnumChildWindows(hwnd, child, None)
+        except win32gui.error:
+            pass
+    return Window(hwnd, title, cls, pid, win32gui.GetWindowRect(hwnd), tuple(buttons), tuple(texts))
+
+
+def visible_windows(pids: set[int]) -> list[Window]:
+    found: list[Window] = []
+
+    def top(hwnd: int, _: object) -> bool:
+        if win32gui.IsWindowVisible(hwnd):
+            _, pid = win32process.GetWindowThreadProcessId(hwnd)
+            if pid in pids:
+                found.append(_describe(hwnd, pid))
+        return True
+
+    win32gui.EnumWindows(top, None)
+    return found
 
 
 class AutoClicker:
-    def __init__(self, poll_interval: float = 0.5, verbose: bool = False) -> None:
-        self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
+    def __init__(
+        self,
+        owned_pids: Callable[[], set[int]],
+        poll_interval: float = 0.5,
+        verbose: bool = False,
+        windows: Callable[[set[int]], list[Window]] = visible_windows,
+    ) -> None:
+        self._owned_pids = owned_pids
+        self._windows = windows
         self._interval = poll_interval
         self._verbose = verbose
-        self._clicked_hwnds: set[int] = set()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._handled: set[int] = set()
+        self._main_seen = False
+        self.pending: PendingDialog | None = None
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -44,74 +230,62 @@ class AutoClicker:
     def _run(self) -> None:
         while not self._stop.is_set():
             try:
-                self._sweep()
-            except Exception as exc:
-                if self._verbose:
-                    print(f"[autoclick] err: {exc}")
+                self.sweep()
+            except Exception as exc:  # a watcher must never take the session down
+                print(f"[autoclick] error: {exc}", file=sys.stderr)
             time.sleep(self._interval)
 
-    def _sweep(self) -> None:
-        scia_pids = _collect_scia_pids()
-        if not scia_pids:
+    def sweep(self) -> None:
+        pids = self._owned_pids()
+        windows = self._windows(pids) if pids else []
+        open_now = {w.hwnd for w in windows}
+        if self.pending is not None and self.pending.hwnd not in open_now:
+            self.pending = None
+        for window in windows:
+            if window.hwnd in self._handled:
+                continue
+            action = classify(window, self._main_seen)
+            if action == MAIN:
+                self._main_seen = True
+            elif action != IGNORE:
+                self._handled.add(window.hwnd)
+                self._act(action, window)
+
+    def _act(self, action: str, window: Window) -> None:
+        if action == CLICK:
+            button = next(h for h, label in window.buttons if label.replace("&", "").strip().lower() in _YES_LABELS)
+            self._post_click(button)
+            self._log(f"licence dialog {window.title!r}: clicked")
+        elif action == NOTICE:
+            self._on_notice(window)
+        else:
+            picture = _capture(window)
+            self.pending = PendingDialog(window.hwnd, CODE_DIALOG, window.title, tuple(window.labels))
+            print(f"[autoclick] dialog {window.title!r} buttons={window.labels} picture={picture}", file=sys.stderr)
+
+    def _on_notice(self, window: Window) -> None:
+        if window.minimised:  # otherwise nobody can answer it
+            self._show(window.hwnd)
+        if os.environ.get("LLSM_ANSWER_LICENCE_NOTICES") == "1":
+            self._press_return(window.hwnd)
+            self._log("licence notice: sent Return (LLSM_ANSWER_LICENCE_NOTICES=1)")
             return
-
-        def enum_cb(hwnd: int, _: object) -> bool:
-            if not win32gui.IsWindowVisible(hwnd):
-                return True
-            _, pid = win32process.GetWindowThreadProcessId(hwnd)
-            if pid not in scia_pids or hwnd in self._clicked_hwnds:
-                return True
-            target = self._find_accept_button(hwnd)
-            if target is not None:
-                cbtn_hwnd, cbtn_text = target
-                title = win32gui.GetWindowText(hwnd)
-                if self._verbose:
-                    print(f"[autoclick] dialog {title!r} -> click {cbtn_text!r}")
-                self._click(cbtn_hwnd, hwnd)
-                self._clicked_hwnds.add(hwnd)
-            return True
-
-        win32gui.EnumWindows(enum_cb, None)
+        self.pending = PendingDialog(window.hwnd, CODE_NOTICE, window.title, ())
+        print("[autoclick] licence notice: waiting for the user", file=sys.stderr)
 
     @staticmethod
-    def _find_accept_button(parent_hwnd: int) -> tuple[int, str] | None:
-        found: list[tuple[int, str]] = []
-
-        def child_cb(chwnd: int, _: object) -> bool:
-            text = win32gui.GetWindowText(chwnd)
-            normalised = text.lower().replace("&", "").strip()
-            if normalised in _ACCEPT_LABELS:
-                found.append((chwnd, text))
-                return False
-            return True
-
-        try:
-            win32gui.EnumChildWindows(parent_hwnd, child_cb, None)
-        except Exception:
-            return None
-        return found[0] if found else None
+    def _post_click(button: int) -> None:
+        win32gui.PostMessage(button, _BM_CLICK, 0, 0)
 
     @staticmethod
-    def _click(button_hwnd: int, dialog_hwnd: int) -> None:
-        # BM_CLICK = 0x00F5
-        try:
-            win32gui.PostMessage(button_hwnd, 0x00F5, 0, 0)
-            return
-        except Exception:
-            pass
-        # Fallback: Enter key
-        try:
-            win32gui.SetForegroundWindow(dialog_hwnd)
-            ctypes.windll.user32.keybd_event(0x0D, 0, 0, 0)
-            ctypes.windll.user32.keybd_event(0x0D, 0, 2, 0)
-        except Exception:
-            pass
+    def _show(hwnd: int) -> None:
+        win32gui.ShowWindow(hwnd, win32con.SW_SHOWNOACTIVATE)
 
+    @staticmethod
+    def _press_return(hwnd: int) -> None:
+        win32api.PostMessage(hwnd, win32con.WM_KEYDOWN, win32con.VK_RETURN, 1)
+        win32api.PostMessage(hwnd, win32con.WM_KEYUP, win32con.VK_RETURN, 3 << 30 | 1)
 
-def _collect_scia_pids() -> set[int]:
-    pids: set[int] = set()
-    for p in psutil.process_iter(["pid", "name"]):
-        name = p.info.get("name")
-        if name and any(hint in name.lower() for hint in _SCIA_NAME_HINTS):
-            pids.add(p.info["pid"])
-    return pids
+    def _log(self, message: str) -> None:
+        if self._verbose:
+            print(f"[autoclick] {message}", file=sys.stderr)

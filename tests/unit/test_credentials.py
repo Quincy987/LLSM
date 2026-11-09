@@ -1,6 +1,18 @@
 """Roundtrip set/get/delete via the fake keyring."""
 from __future__ import annotations
 
+import os
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _no_api_keys_from_the_machine(monkeypatch):
+    """A key in the developer's environment must not answer for the keyring."""
+    for name in list(os.environ):
+        if name.endswith("_API_KEY"):
+            monkeypatch.delenv(name)
+
 
 def test_set_get_roundtrip(fake_keyring):
     from llsm.llm import credentials

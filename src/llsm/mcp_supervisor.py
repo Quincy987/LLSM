@@ -23,6 +23,8 @@ from typing import Any
 
 import psutil
 
+from .mcp_guard import TOKEN_HEADER
+
 LLSM_HOME = Path.home() / ".llsm"
 PID_FILE = LLSM_HOME / "mcp.pid"
 PORT_FILE = LLSM_HOME / "mcp.port"
@@ -67,7 +69,7 @@ class McpHandle:
         even if some future caller routes it through a path with shell parsing.
         """
         return json.dumps(
-            {"mcpServers": {"llsm": {"type": "http", "url": self.url}}},
+            {"mcpServers": {"llsm": {"type": "http", "url": self.url, "headers": {TOKEN_HEADER: self.shutdown_token}}}},
             separators=(",", ":"),
         )
 
@@ -249,7 +251,7 @@ def spawn(verbose: bool = False) -> McpHandle:
         )
 
     pid_data = _read_pid_file(PID_FILE) or {}
-    token = pid_data.get("shutdown_token", "")
+    token = pid_data.get("token") or pid_data.get("shutdown_token", "")
     if not token:
         _kill_tree(proc.pid)
         raise RuntimeError("MCP server pid-file missing shutdown token")
@@ -295,7 +297,7 @@ def shutdown(handle: McpHandle, verbose: bool = False) -> None:
             req = urllib.request.Request(
                 f"http://127.0.0.1:{handle.port}/admin/shutdown",
                 method="POST",
-                headers={"X-LLSM-Shutdown-Token": handle.shutdown_token},
+                headers={TOKEN_HEADER: handle.shutdown_token},
                 data=b"",
             )
             with urllib.request.urlopen(req, timeout=2) as resp:
@@ -403,7 +405,7 @@ def connect_to_existing(verbose: bool = False) -> McpHandle | None:
         port = int(port_raw)
     except Exception:
         return None
-    token = pid_data.get("shutdown_token", "")
+    token = pid_data.get("token") or pid_data.get("shutdown_token", "")
     if not token:
         return None
     if verbose:
@@ -422,10 +424,11 @@ def health_ping(handle: McpHandle, timeout_s: float = 1.5) -> bool:
     """Cheap alive-check via GET /admin/ping. Returns True iff status==200."""
     try:
         import urllib.request
-        with urllib.request.urlopen(
+        request = urllib.request.Request(
             f"http://127.0.0.1:{handle.port}/admin/ping",
-            timeout=timeout_s,
-        ) as resp:
+            headers={TOKEN_HEADER: handle.shutdown_token},
+        )
+        with urllib.request.urlopen(request, timeout=timeout_s) as resp:
             return resp.status == 200
     except Exception:
         return False

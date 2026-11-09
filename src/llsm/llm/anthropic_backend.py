@@ -61,7 +61,7 @@ Give every object a concrete, descriptive short name ('col_left', 'rafter', 'bas
 
 ### Response style
 
-After the workflow, summarize what you built in 2-4 concise bullet lines — what's in the model and whether analysis succeeded.
+After the workflow, say what's in the model and whether analysis succeeded. Answer in at most 5 lines, put a unit on every number, and show results as a table.
 """
 
 

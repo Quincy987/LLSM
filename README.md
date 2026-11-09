@@ -18,9 +18,10 @@ Prerequisites: **Windows**, **Python 3.11+**, and **SCIA Engineer 24.0** install
 ```powershell
 git clone https://github.com/Quincy987/LLSM.git
 cd LLSM
-python -m venv .venv
-.venv\Scripts\pip install -e .
+install.cmd
 ```
+
+`install.cmd` needs no administrator rights and can be run again. It ends with `llsm diagnose`, a report on Python, the packages, SCIA, the licence and the Claude CLI. Run it any time with `.venv\Scripts\llsm diagnose`, or use **Tools > Diagnose…** in the panel.
 
 Optional extras:
 
@@ -43,7 +44,7 @@ Uses your existing Claude subscription through the `claude` CLI. Requires [Claud
 .venv\Scripts\llsm-panel
 ```
 
-A chat window appears and auto-snaps to SCIA's right edge as an owned Win32 window — moves and closes with SCIA, no DLL injection, EULA-safe. Claude Code is the default backend (`claude -p` subprocess); it auto-loads the LLSM MCP server from `.mcp.json`, so all 25 SCIA tools are available out of the box.
+A chat window appears and auto-snaps to SCIA's right edge as an owned Win32 window — moves and closes with SCIA, no DLL injection, EULA-safe. Claude Code is the default backend (`claude -p` subprocess); it auto-loads the LLSM MCP server from `.mcp.json`, so all SCIA tools are available out of the box.
 
 **Or drive it from the Claude Code terminal directly** (no panel):
 
@@ -110,6 +111,29 @@ OpenAI (`--backend openai`) and Google Gemini (`--backend gemini`) are also supp
 
 ---
 
+## Beddings on an existing model
+
+Put soil beddings on the piles of a saved SCIA model, without chat or LLM credentials. The model is never changed: the result is a new `<model>_llsm-NN.esa` next to it, read back and checked. Close SCIA first.
+
+The layer table is a CSV or JSON file, top down, with levels in m NAP:
+
+```text
+top;bottom;value;unit;description
+-2;-8;5000;kh_kN_m3;klei
+-8;-14;8000;kh_kN_m3;zand, kleiig
+```
+
+`unit` is `kh_kN_m3`, `E_menard_MPa` or `k_line_kN_m2`.
+
+```powershell
+.venv\Scripts\llsm bedding preview model.esa layers.csv --diameter 0.45 --start-level -1.1 --piles "S*"
+.venv\Scripts\llsm bedding apply model.esa layers.csv --diameter 0.45 --start-level -1.1 --piles "S*"
+```
+
+Piles that already carry other line supports are refused unless you pass `--allow-existing`, because the stiffness would add up.
+
+---
+
 ## Project layout
 
 ```
@@ -143,7 +167,7 @@ LLSM/
 | 05 | [`docs/05-plan.md`](docs/05-plan.md) | Phased roadmap |
 | 06 | [`docs/06-phase0-results.md`](docs/06-phase0-results.md) | Phase 0 verification |
 
-## Current tool surface (25 tools)
+## Current tool surface (27 tools)
 
 - **Model defs**: `new_model`, `add_material`, `add_rectangular_section`
 - **Geometry**: `add_node`, `add_beam`, `update_node`, `set_member_endpoints`, `set_member_cross_section`, `delete_object`

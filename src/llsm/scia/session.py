@@ -11,6 +11,7 @@ SCIA operations run on an internal STA thread (OpenAPI requires this).
 All public methods marshal calls onto that thread.
 """
 from __future__ import annotations
+import json
 import queue
 import threading
 import time
@@ -19,24 +20,67 @@ from typing import Any, Callable
 
 import psutil
 
-from .autoclick import AutoClicker
+from .autoclick import AutoClicker, PendingDialog, SciaDialogPending
+from .esa_xml import SCIA_PROCESSES, running_scia
 from . import loader
 
-_SCIA_PROC_NAMES = {
-    "esastartupscreen.exe", "esa.exe", "sciaengineer.exe",
-    "sciatools.admtoadm.hubclient.exe", "sciatools.admtoadm.hubserver.exe",
-}
+SESSIONS_FILE = Path.home() / ".llsm" / "scia_sessions.json"
+_LAUNCH_LIMIT_S = 420  # RunSCIAEngineer alone can take 3 minutes before it gives up
 
 
-def _kill_stale_scia() -> int:
+def our_scia_processes() -> list[psutil.Process]:
+    """SCIA processes started from this process. A SCIA someone opened by hand is never one."""
+    found = []
+    for proc in psutil.Process().children(recursive=True):
+        try:
+            if proc.name().lower() in SCIA_PROCESSES:
+                found.append(proc)
+        except psutil.Error:  # it exited while we looked
+            pass
+    return found
+
+
+def _load_records(path: Path) -> list[dict]:
+    try:
+        records = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return records if isinstance(records, list) else []
+
+
+def remember_processes(procs: list[psutil.Process], path: Path | None = None) -> None:
+    """Add these processes to the ledger of SCIAs we may stop later."""
+    path = path or SESSIONS_FILE
+    records = _load_records(path)
+    known = {(r.get("pid"), r.get("create_time")) for r in records}
+    changed = False
+    for proc in procs:
+        try:
+            record = {"pid": proc.pid, "name": proc.name().lower(), "create_time": proc.create_time()}
+        except psutil.Error:
+            continue
+        if (record["pid"], record["create_time"]) not in known:
+            records.append(record)
+            changed = True
+    if changed:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(records, indent=1), encoding="utf-8")
+
+
+def kill_remembered(path: Path | None = None) -> int:
+    """Stop only processes in the ledger that are still the same process, then clear it."""
+    path = path or SESSIONS_FILE
     killed = 0
-    for p in psutil.process_iter(["pid", "name"]):
-        if p.info.get("name") and p.info["name"].lower() in _SCIA_PROC_NAMES:
-            try:
-                psutil.Process(p.info["pid"]).kill()
+    for record in _load_records(path):
+        try:
+            proc = psutil.Process(record["pid"])
+            same = proc.name().lower() == record["name"] and abs(proc.create_time() - record["create_time"]) < 1.0
+            if same:
+                proc.kill()
                 killed += 1
-            except Exception:
-                pass
+        except (psutil.Error, KeyError, TypeError):
+            pass
+    path.unlink(missing_ok=True)
     if killed:
         time.sleep(3)
     return killed
@@ -65,7 +109,10 @@ class SciaSession:
         self._verbose = verbose
         self._kill_stale = kill_stale
 
-        self._clicker = AutoClicker(verbose=verbose)
+        self._clicker = AutoClicker(self._owned_pids, verbose=verbose)
+        self.foreign_at_start: list[tuple[int, str]] = []
+        self._failure: str | None = None
+        self._launched_at = 0.0
 
         self._call_q: queue.Queue[tuple[Callable[[], Any], queue.Queue]] = queue.Queue()
         self._sta_thread: threading.Thread | None = None
@@ -92,11 +139,39 @@ class SciaSession:
     def __exit__(self, *exc) -> None:
         self.close()
 
+    def _owned_pids(self) -> set[int]:
+        """Our SCIA processes right now; every one seen goes into the ledger."""
+        procs = our_scia_processes()
+        remember_processes(procs)
+        return {p.pid for p in procs}
+
+    @property
+    def pending_dialog(self) -> PendingDialog | None:
+        return self._clicker.pending
+
     def start(self) -> None:
+        """Launch SCIA, or keep waiting for a launch already under way.
+
+        Raises SciaDialogPending while SCIA waits for the user; calling it again
+        after they have answered carries on with the same launch.
+        """
+        if self._sta_thread is None:
+            self._launch()
+        while not self._started.wait(timeout=1.0):
+            if self._failure:
+                raise RuntimeError(self._failure)
+            if self._clicker.pending is not None:
+                raise SciaDialogPending(self._clicker.pending)
+            if time.time() - self._launched_at > _LAUNCH_LIMIT_S:
+                raise RuntimeError(f"SCIA did not finish starting within {_LAUNCH_LIMIT_S} s")
+
+    def _launch(self) -> None:
         if self._kill_stale:
-            n = _kill_stale_scia()
+            n = kill_remembered()
             if n and self._verbose:
-                print(f"[scia] killed {n} stale SCIA processes")
+                print(f"[scia] stopped {n} processes left by an earlier LLSM session")
+        self.foreign_at_start = running_scia()
+        self._launched_at = time.time()
         self._clicker.start()
 
         import clr  # noqa: F401
@@ -107,16 +182,16 @@ class SciaSession:
                 self._sta_loop(T)
             except Exception as e:
                 self._log(f"STA thread crashed: {e}")
+                detail = f"SCIA did not start: {e}"
+                if self.foreign_at_start:
+                    detail += " (another SCIA is already running on this computer; close it and try again)"
+                self._failure = detail
 
         thread_start = T.ThreadStart(sta_main)
         t = T.Thread(thread_start)
         t.SetApartmentState(T.ApartmentState.STA)
         t.Start()
         self._sta_thread = t
-
-        # Wait for SCIA env ready
-        if not self._started.wait(timeout=300):
-            raise RuntimeError("SCIA startup did not complete in 5 minutes")
 
     def _sta_loop(self, T) -> None:
         from SCIA.OpenAPI import Environment as SciaEnvironment
@@ -134,14 +209,17 @@ class SciaSession:
         )
         self._log(f"launching SCIA Engineer (visible={self._visible})...")
         self._env.RunSCIAEngineer(mode)
+        if self.foreign_at_start and not our_scia_processes():
+            raise RuntimeError("no SCIA was started")  # no point waiting for a HubServer
 
         # Wait for HubServer to spawn — signal that SCIA is fully ready
         self._log("waiting for HubServer...")
         deadline = time.time() + 180
         while time.time() < deadline:
-            names = [p.info["name"].lower() for p in psutil.process_iter(["name"]) if p.info.get("name")]
-            if any("hubserver" in n for n in names):
-                self._log(f"HubServer ready")
+            if self._shutdown.is_set():
+                return
+            if any("hubserver" in p.name().lower() for p in our_scia_processes()):
+                self._log("HubServer ready")
                 break
             time.sleep(1)
         else:
@@ -178,7 +256,7 @@ class SciaSession:
                 time.sleep(0.2)
         self._clicker.stop()
         time.sleep(1)
-        _kill_stale_scia()
+        kill_remembered()
 
     # --- Call marshalling --------------------------------------------------
 
@@ -196,20 +274,31 @@ class SciaSession:
             )
         if self._shutdown.is_set():
             raise RuntimeError("session is closed")
+        if self._clicker.pending is not None:
+            raise SciaDialogPending(self._clicker.pending)
+        if not self._started.is_set():
+            raise RuntimeError("SCIA is still starting; call launch_scia again")
         reply: queue.Queue = queue.Queue()
         self._call_q.put((fn, reply))
-        try:
-            if timeout_s is None:
-                status, payload = reply.get()
-            else:
-                status, payload = reply.get(timeout=timeout_s)
-        except queue.Empty:
-            self._wedged = True
-            self._wedge_reason = f"call did not return within {timeout_s}s"
-            raise TimeoutError(
-                f"SCIA call did not return within {timeout_s}s — likely AdmToAdm hang; "
-                "restart MCP from the panel to recover"
-            )
+        waited = 0.0
+        while True:
+            try:
+                status, payload = reply.get(timeout=1.0)
+                break
+            except queue.Empty:
+                waited += 1.0
+            dialog = self._clicker.pending
+            if dialog is not None:
+                self._wedged = True
+                self._wedge_reason = f"a dialog interrupted the call: {dialog.message}"
+                raise SciaDialogPending(dialog, mid_call=True)
+            if timeout_s is not None and waited >= timeout_s:
+                self._wedged = True
+                self._wedge_reason = f"call did not return within {timeout_s}s"
+                raise TimeoutError(
+                    f"SCIA call did not return within {timeout_s}s — likely AdmToAdm hang; "
+                    "restart MCP from the panel to recover"
+                )
         if status == "err":
             raise payload
         return payload
