@@ -17,7 +17,7 @@ descendants of the LLSM process, seen every half second. Later additions to the 
 | `llsm diagnose` | PASS | All lines correct; an expired licence token shows as a warning with what to do; no token text in the report. |
 | Tools > Diagnose… | PASS | The real method on a Tk root: report shown, Copy puts it on the clipboard. The full panel was not opened. |
 | Hand-started SCIA, `llsm bedding apply` | PASS | Refused: "SCIA is running". The hand-started SCIA stayed open. |
-| Session launched next to a hand-started SCIA | PASS | Nothing of it in the ledger, hand-started processes alive afterwards. The launch failed with "another SCIA is already running". It took 333 s then; it now stops as soon as `RunSCIAEngineer` returns without a SCIA of ours, which was not re-run. |
+| Session launched next to a hand-started SCIA | PASS | Nothing of it in the ledger, hand-started processes alive afterwards. The launch fails with "another SCIA is already running", now after 64 s (333 s before it stopped waiting for a HubServer that could not come). |
 | Licence notice during a launch | PASS | Reported as `SCIA_LICENCE_NOTICE` after 11.5 s. Phase 0's run hung until it timed out. |
 | Own processes only | PASS | Ledger held SciaEngineer and the startup screen; `close()` stopped those and cleared the ledger. |
 | Full launch up to HubServer | PASS | 26.5 s with `LLSM_ANSWER_LICENCE_NOTICES=1`: four processes, HubServer among our descendants, SCIA quit on close. This was the one run that answered the notices. |
@@ -25,7 +25,7 @@ descendants of the LLSM process, seen every half second. Later additions to the 
 | MCP server without token | PASS | 401, also on `/mcp` and `/admin/shutdown`. |
 | With an `Origin` or `Sec-Fetch-Site` header | PASS | 403, even with the right token. Wrong `Host`: 403. |
 | With the token | PASS | 200; the shutdown route ends the server. |
-| Claude turn through the MCP config with the token | PASS | Reached the LLSM tools (`model_summary`, see below). |
+| Claude turn through the MCP config with the token | PASS | `bedding_preview` called; the answer quoted its problem text, no permission denials. |
 | Claude has no other tools | PASS | Asked to run a shell command: "I don't have a Bash tool in this session". |
 | `pytest tests/unit` | PASS | All pass, including the former environment leak. |
 | `ruff check --select E9,F63,F7,F82 .` | PASS | Clean. |
@@ -43,8 +43,6 @@ is gone and the LLSM tools still work.
 - The full panel with a live chat. The backend's command line and each part were tested separately.
 - A real fresh Windows account.
 - `--geometry-from` on a real hand export from SCIA; the unit tests use the sample's table layout.
-- `bedding_preview` by name in a chat turn: the small model used for the check called `model_summary` instead. The earlier
-  MCP dispatch test in `phase1-bedding.md` covers that tool.
 
 ## One launch timed out
 
