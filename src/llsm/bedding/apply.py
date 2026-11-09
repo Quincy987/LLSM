@@ -216,7 +216,7 @@ def apply_bedding(
     result["ok"] = not result["mismatches"] and not result["other_changes"]
     if result["ok"]:
         result["output"] = str(output)
-        result["warnings"] = [*result["warnings"], "Recalculate in SCIA: saving drops the mesh and results."]
+        result["warnings"] = [*result["warnings"], "Recalculate in SCIA: the supports changed, so earlier results no longer apply."]
     else:
         result["output"] = str(_mark_failed(output))
     return result
