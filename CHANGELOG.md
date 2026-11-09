@@ -12,7 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Accepts kh, Ménard modulus or line stiffness, each with an explicit unit.
   Writes a new `<model>_llsm-NN.esa`, reads it back and reports `ok` only when
   every spring matches. Refuses piles that already carry other line supports
-  unless `--allow-existing`.
+  unless `--allow-existing`, and catches a diameter given in mm. Reads Excel
+  CSV files, and warns about stretches of a pile that no layer covers.
 - **MCP tools `bedding_preview` and `bedding_apply`** over the same code.
 - **`llsm.scia.esa_file`** reads piles and line supports from a saved model,
   checked against the object counts SCIA logs in the file.
