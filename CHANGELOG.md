@@ -27,6 +27,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Every MCP tool result carries a short `state` block, and the model is asked
   to answer in five lines with units on every number.
 
+- pythonnet stays below 3.1, the range LLSM is tested on.
+
 ### Fixed
 - `test_credentials.py` no longer depends on API keys in the environment.
 
