@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.7 — Pilot readiness: safe around SCIA, guarded, installable (2026-11-10)
+
 ### Added
 - **`install.cmd`** installs per user, without administrator rights.
 - **`llsm diagnose`** and **Tools > Diagnose…** report on Python, packages,
