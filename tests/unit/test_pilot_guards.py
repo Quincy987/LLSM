@@ -46,6 +46,7 @@ def test_claude_only_gets_the_llsm_tools():
     assert "bypassPermissions" not in command
     assert command[command.index("--permission-mode") + 1] == "dontAsk"
     assert command[command.index("--allowedTools") + 1] == "mcp__llsm__*"
+    assert command[command.index("--tools") + 1] == ""
 
 
 def test_the_prompt_is_not_swallowed_by_the_tool_list():

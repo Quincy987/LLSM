@@ -22,7 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   tool result within seconds instead of hanging the call;
   `LLSM_ANSWER_LICENCE_NOTICES=1` answers the notices.
 - **The chat agent can only use LLSM's own tools** instead of running with all
-  permissions.
+  permissions; it has no shell or file tools.
 - **The local MCP server needs a token on every request** and refuses browsers.
 - Every MCP tool result carries a short `state` block, and answers are kept to
   five lines with units on every number.

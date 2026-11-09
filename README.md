@@ -18,7 +18,7 @@ Prerequisites: **Windows**, **Python 3.11+**, and **SCIA Engineer 24.0** install
 ```powershell
 git clone https://github.com/Quincy987/LLSM.git
 cd LLSM
-install.cmd
+.\install.cmd
 ```
 
 `install.cmd` needs no administrator rights and can be run again. It ends with `llsm diagnose`, a report on Python, the packages, SCIA, the licence and the Claude CLI. Run it any time with `.venv\Scripts\llsm diagnose`, or use **Tools > Diagnose…** in the panel.

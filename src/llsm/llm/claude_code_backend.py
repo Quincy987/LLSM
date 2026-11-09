@@ -99,7 +99,9 @@ class ClaudeCodeBackend:
             "claude",
             "-p",
             *(["--resume", self.session_id] if self._session_started else ["--session-id", self.session_id]),
-            # --allowedTools takes a list: keep another option after it, or it eats the prompt.
+            # No built-in tools at all: dontAsk still lets read-only shell commands through.
+            # Both flags take a list: keep another option after them, or they eat the prompt.
+            "--tools", "",
             "--allowedTools", "mcp__llsm__*",
             "--permission-mode", "dontAsk",
             "--model", self.model,

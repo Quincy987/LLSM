@@ -9,7 +9,7 @@ description = "LLM-driven automation for SCIA Engineer"
 requires-python = ">=3.11"
 dependencies = [
     "anthropic>=0.40.0",
-    "pythonnet>=3.0.5",
+    "pythonnet>=3.0.5,<3.1",
     "pywin32>=310",
     "psutil>=7.0.0",
     "mcp[cli]>=1.2,<2",
