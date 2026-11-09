@@ -116,6 +116,8 @@ def build_plan(
     gaps: dict[tuple[float, float], list[str]] = {}
     for pile in selected:
         ours, theirs = _existing_for(pile, model.supports)
+        if pile.member_id is None:
+            plan.warnings.append(f"{pile.name}: the read-back can check its springs, but not that they are on this pile.")
         if pile.member_id is None and others_in_model:
             if not allow_existing:
                 plan.problems.append(

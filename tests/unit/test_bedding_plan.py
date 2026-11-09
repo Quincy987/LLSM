@@ -172,8 +172,9 @@ def test_unknown_member_id_can_be_allowed():
     assert result.planned and "could not be read" in " ".join(result.warnings)
 
 
-def test_unknown_member_id_is_fine_in_a_model_without_other_supports():
-    assert build_plan(EsaModel([member(member_id=None)], []), [CLAY], diameter_m=0.45).planned
+def test_unknown_member_id_is_fine_in_a_model_without_other_supports_but_says_what_is_unchecked():
+    result = build_plan(EsaModel([member(member_id=None)], []), [CLAY], diameter_m=0.45)
+    assert result.planned and "not that they are on this pile" in " ".join(result.warnings)
 
 
 def test_uncovered_stretches_are_grouped_over_piles():

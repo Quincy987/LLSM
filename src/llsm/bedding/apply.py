@@ -76,7 +76,7 @@ def _prepare(
     except PermissionError:
         result["problems"] = [f"{model_path.name} is open elsewhere, probably in SCIA. Close it and try again."]
         return result, None, None
-    except EsaFormatError as exc:
+    except (EsaFormatError, OSError) as exc:
         result["problems"] = [f"The model could not be read reliably: {exc}"]
         return result, None, None
 
@@ -203,7 +203,7 @@ def apply_bedding(
 
     try:
         after = reader(output)
-    except EsaFormatError as exc:
+    except (EsaFormatError, OSError) as exc:
         result["problems"] = [f"The saved file could not be read back: {exc}"]
         result["output"] = str(_mark_failed(output))
         return result

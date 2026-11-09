@@ -31,6 +31,7 @@ The member id is the pile's own: S4 is id 6, which SCIA itself reports when it r
 | Minimal `.def` | PASS | `src/llsm/scia/resources/line_supports.xml.def` (9.5 kB) is enough. |
 | MCP tools | PASS | Both registered with explicit parameters; `bedding_preview` and `bedding_apply` called through FastMCP's own dispatch (pile S12: 1 of 1 confirmed, 33.4 s). |
 | Relative paths on the CLI | PASS | `llsm bedding apply model.esa layers.csv` from the model's folder: 3 of 3 confirmed. |
+| Spaces, comma and brackets in the path | PASS | Model and output in a folder like the OneDrive project folders, named like the real file: 3 of 3 confirmed, 36.1 s. |
 | Live pytest (`LLSM_LIVE=1`) | PASS | 2 passed in 102 s. |
 
 ## Reading the member id
@@ -51,5 +52,5 @@ resolved from the name: 32 of 32 on the v19.1 file, 32 of 32 on the v24 save, an
 
 ## Tests
 
-`pytest tests/unit`: 140 passed, 1 failed. The failure, `test_credentials.py::test_delete_clears`, is the known
+`pytest tests/unit`: 141 passed, 1 failed. The failure, `test_credentials.py::test_delete_clears`, is the known
 environment leak listed for Phase 2.

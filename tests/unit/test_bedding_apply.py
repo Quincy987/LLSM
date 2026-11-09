@@ -130,6 +130,18 @@ def test_an_unreadable_output_is_not_ok(tmp_path):
     assert result["output"].endswith("_FAILED.esa")
 
 
+def test_a_saved_file_that_cannot_be_opened_is_not_ok(tmp_path):
+    fake = Fake(tmp_path, model(GOOD))
+
+    def reader(path):
+        if path == fake.model_path:
+            return fake.before
+        raise PermissionError("held by a virus scanner")
+
+    result = apply_bedding(fake.model_path, ROWS, REQUEST, reader=reader, writer=fake.writer)
+    assert not result["ok"] and "read back" in result["problems"][0]
+
+
 def test_scia_running_is_reported_not_raised(tmp_path):
     fake = Fake(tmp_path, model(GOOD))
 
