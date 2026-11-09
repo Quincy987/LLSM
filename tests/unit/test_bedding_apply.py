@@ -140,6 +140,45 @@ def test_scia_running_is_reported_not_raised(tmp_path):
     assert not result["ok"] and result["problems"] == ["SCIA is running"]
 
 
+def test_preview_says_not_ok_when_apply_would_have_nothing_to_write(tmp_path):
+    fake = Fake(tmp_path, model(GOOD))
+    fake.before = model(GOOD)
+    assert not preview_bedding(fake.model_path, ROWS, REQUEST, reader=fake.reader)["ok"]
+
+
+def test_relative_paths_become_absolute_for_esa_xml(tmp_path, monkeypatch):
+    fake = Fake(tmp_path, model(GOOD))
+    monkeypatch.chdir(tmp_path)
+    seen = {}
+
+    def writer(source, output, xml):
+        seen.update(source=source, output=output)
+        output.write_bytes(b"saved")
+        return OK
+
+    def reader(path):
+        return fake.before if path.name == "m.esa" else fake.after
+
+    result = apply_bedding(Path("m.esa"), ROWS, REQUEST, reader=reader, writer=writer)
+    assert result["ok"] and seen["source"].is_absolute() and seen["output"].is_absolute()
+
+
+def test_missing_output_folder_is_a_problem(tmp_path):
+    fake = Fake(tmp_path, model(GOOD))
+    result = apply_bedding(fake.model_path, ROWS, REQUEST, tmp_path / "nope", reader=fake.reader, writer=fake.writer)
+    assert not result["ok"] and "folder" in result["problems"][0] and fake.xml is None
+
+
+def test_a_disk_error_is_reported_not_raised(tmp_path):
+    fake = Fake(tmp_path, model(GOOD))
+
+    def writer(source, output, xml):
+        raise OSError("disk full")
+
+    result = apply_bedding(fake.model_path, ROWS, REQUEST, reader=fake.reader, writer=writer)
+    assert not result["ok"] and result["problems"] == ["disk full"]
+
+
 def test_problems_stop_before_writing(tmp_path):
     fake = Fake(tmp_path, model(GOOD))
     fake.before = model(LineSupport("Sn1", 7, None, None, 1e6, 1e6))

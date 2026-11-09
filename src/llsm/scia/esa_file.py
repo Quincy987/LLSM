@@ -174,8 +174,13 @@ def _support_from_record(chunk: bytes, start: int, name: str) -> LineSupport | N
     return LineSupport(name, member_id, x1 if relative else None, x2 if relative else None, k_y, k_z)
 
 
-def _version_key(stamp: str) -> list[int]:
-    return [int(part) for part in re.findall(r"\d+", stamp)]
+def _stamps_in(chunk: bytes) -> set[str]:
+    return {m.group(0).decode("utf-16le") for m in _VERSION_STAMP.finditer(chunk)}
+
+
+def _latest(stamps: set[str]) -> str:
+    """The newest of a file's version stamps; older saves stay in its history."""
+    return max(stamps, key=lambda stamp: [int(part) for part in re.findall(r"\d+", stamp)])
 
 
 def read_esa(path: Path) -> EsaModel:
@@ -186,7 +191,7 @@ def read_esa(path: Path) -> EsaModel:
     stamps: set[str] = set()
     for chunk in iter_blocks(Path(path).read_bytes()):
         declared.update((m.group(2), int(m.group(1))) for m in _OBJECT_LOG.finditer(chunk))
-        stamps |= {m.group(0).decode("utf-16le") for m in _VERSION_STAMP.finditer(chunk)}
+        stamps |= _stamps_in(chunk)
         for start, name in names_in(chunk):
             member = _member_from_record(chunk, start, name)
             if member and name not in members:
@@ -203,8 +208,11 @@ def read_esa(path: Path) -> EsaModel:
     if not stamps:
         raise EsaFormatError(f"{Path(path).name}: no SCIA version stamp found; is this a saved model?")
 
-    saved_by = max(stamps, key=_version_key)
+    saved_by = _latest(stamps)
     model = EsaModel(list(members.values()), list(supports.values()), saved_by)
+    for progid, count in found.items():
+        if count and progid not in declared:
+            model.warnings.append(f"SCIA logs no object count for {progid.decode()}; the read could not be cross-checked.")
     version = saved_by.split("_")[2]
     if not version.startswith(TESTED_VERSIONS):
         model.warnings.append(f"Saved by SCIA {version}; this reader was tested on 19.1 and 24.0 only.")
@@ -215,8 +223,8 @@ def saved_by_version(path: Path) -> str | None:
     """The version stamp of the SCIA that last saved the file, or None."""
     stamps: set[str] = set()
     for chunk in iter_blocks(Path(path).read_bytes()):
-        stamps |= {m.group(0).decode("utf-16le") for m in _VERSION_STAMP.finditer(chunk)}
-    return max(stamps, key=_version_key) if stamps else None
+        stamps |= _stamps_in(chunk)
+    return _latest(stamps) if stamps else None
 
 
 def read_xml(path: Path) -> EsaModel:

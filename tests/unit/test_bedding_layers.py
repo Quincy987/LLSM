@@ -53,6 +53,28 @@ def test_missing_parameters_are_refused(unit, kwargs):
         line_stiffness(SoilLayer(-2, -8, 10, unit, ""), **kwargs)
 
 
+def test_diameter_in_millimetres_is_caught():
+    with pytest.raises(ValueError, match="metres"):
+        line_stiffness(SoilLayer(-2, -8, 5000, KH, ""), diameter_m=450)
+
+
+@pytest.mark.parametrize("alpha,group", [(0, 1.0), (1.5, 1.0), (1 / 3, 0)])
+def test_implausible_menard_factors_are_caught(alpha, group):
+    with pytest.raises(ValueError, match="alpha"):
+        line_stiffness(SoilLayer(-2, -8, 10, MENARD, ""), diameter_m=0.4, alpha=alpha, groepsfactor=group)
+
+
+def test_not_a_number_is_refused():
+    with pytest.raises(LayerError, match="real numbers"):
+        parse_layers([row("nan", -8)])
+
+
+def test_excel_csv_in_windows_encoding(tmp_path):
+    path = tmp_path / "layers.csv"
+    path.write_bytes("Top;Bottom;Value;Unit;Description\n-2;-8;5000;kh_kN_m3;klei\xefg\n".encode("cp1252"))
+    assert parse_layers(read_layer_rows(path))[0].description == "kleiïg"
+
+
 def test_decimal_comma_and_order():
     layers = parse_layers([row("-2,5", "-8,0", "5000,5"), row(-8, -14)])
     assert (layers[0].top_nap, layers[0].value) == (-2.5, 5000.5)

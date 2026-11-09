@@ -8,7 +8,7 @@ Date: 2026-11-09. SCIA Engineer 24.0.3015.64, on a copy of a kademuur model last
 Pile from z −1.1 to −19.5 (L = 18.4 m), vertical, D = 0.45 m, start level NAP −1.1, datum offset 0.
 k_line = kh · D; written value = k_line · 1000 (N/m²).
 
-| Segment | Layer (NAP) | On the pile | x1 = (1.1 + z)/−18.4 … by hand | x2 by hand | k by hand [N/m²] | Read back | Result |
+| Segment | Layer (NAP) | On the pile | x1 by hand | x2 by hand | k by hand [N/m²] | Read back | Result |
 |---|---|---|---|---|---|---|---|
 | `LLSM:S4:1` | −2…−8, kh 5000, klei | −2…−8 | 0.9/18.4 = 0.048913 | 6.9/18.4 = 0.375000 | 5000 · 0.45 · 1000 = 2.25e6 | 0.048913, 0.375000, 2.25e6 (kY and kZ), member id 6 | PASS |
 | `LLSM:S4:2` | −8…−14, kh 8000, zand, kleiig | −8…−14 | 0.375000 | 12.9/18.4 = 0.701087 | 3.6e6 | 0.375000, 0.701087, 3.6e6, member id 6 | PASS |
@@ -29,7 +29,8 @@ The member id is the pile's own: S4 is id 6, which SCIA itself reports when it r
 | `other_changes` | PASS | Empty in every run. Supports 319 to 322, members unchanged. |
 | All 32 piles at once (`--piles "S*"`) | PASS | 96 of 96 confirmed, 46.5 s. |
 | Minimal `.def` | PASS | `src/llsm/scia/resources/line_supports.xml.def` (9.5 kB) is enough. |
-| MCP tools | PASS | Both registered with explicit parameters; `bedding_preview` called through FastMCP's own dispatch. `bedding_apply` shares the code run above but was not called through MCP. |
+| MCP tools | PASS | Both registered with explicit parameters; `bedding_preview` and `bedding_apply` called through FastMCP's own dispatch (pile S12: 1 of 1 confirmed, 33.4 s). |
+| Relative paths on the CLI | PASS | `llsm bedding apply model.esa layers.csv` from the model's folder: 3 of 3 confirmed. |
 | Live pytest (`LLSM_LIVE=1`) | PASS | 2 passed in 102 s. |
 
 ## Reading the member id
@@ -50,5 +51,5 @@ resolved from the name: 32 of 32 on the v19.1 file, 32 of 32 on the v24 save, an
 
 ## Tests
 
-`pytest tests/unit`: 123 passed, 1 failed. The failure, `test_credentials.py::test_delete_clears`, is the known
+`pytest tests/unit`: 140 passed, 1 failed. The failure, `test_credentials.py::test_delete_clears`, is the known
 environment leak listed for Phase 2.

@@ -130,7 +130,8 @@ def test_allow_existing_writes_and_warns():
 
 def test_our_own_supports_skip_the_pile_without_replace():
     result = plan([ours(1)])
-    assert result.skipped_piles == ["P1"] and not result.planned and not result.problems
+    assert result.skipped_piles == ["P1"] and not result.planned
+    assert result.problems == ["Nothing to write: every selected pile was skipped."]
 
 
 def test_replace_overwrites_our_supports():
@@ -140,7 +141,12 @@ def test_replace_overwrites_our_supports():
 
 def test_shrinking_replace_is_refused():
     result = plan([ours(1), ours(2), ours(3)], replace=True)
-    assert not result.planned and "leave 1 old" in result.problems[0]
+    assert not result.planned and "LLSM:P1:3" in result.problems[0]
+
+
+def test_replace_refuses_a_stale_number_even_when_the_count_fits():
+    result = plan([ours(1), ours(3)], replace=True)
+    assert not result.planned and "LLSM:P1:3" in result.problems[0]
 
 
 def test_missing_diameter_is_a_problem_not_a_crash():
@@ -154,11 +160,47 @@ def test_every_problem_is_collected():
     assert len(result.problems) == 3
 
 
-def test_unknown_member_id_warns_and_cannot_count_foreign_supports():
+def test_unknown_member_id_is_refused_when_the_model_has_other_supports():
     model = EsaModel([member(member_id=None)], [foreign()])
     result = build_plan(model, [CLAY], diameter_m=0.45)
+    assert not result.planned and "could not be read" in result.problems[0]
+
+
+def test_unknown_member_id_can_be_allowed():
+    model = EsaModel([member(member_id=None)], [foreign()])
+    result = build_plan(model, [CLAY], diameter_m=0.45, allow_existing=True)
     assert result.planned and "could not be read" in " ".join(result.warnings)
 
 
-def test_gap_above_the_toe_is_warned():
-    assert "toe is at" in " ".join(plan().warnings)
+def test_unknown_member_id_is_fine_in_a_model_without_other_supports():
+    assert build_plan(EsaModel([member(member_id=None)], []), [CLAY], diameter_m=0.45).planned
+
+
+def test_uncovered_stretches_are_grouped_over_piles():
+    model = EsaModel([member("A", 1), member("B", 2)], [])
+    warnings = build_plan(model, [CLAY, SAND], diameter_m=0.45).warnings
+    assert "No soil layer between NAP -1 and -2 on A, B." in warnings
+    assert "No soil layer between NAP -14 and -21 on A, B." in warnings
+
+
+def test_a_gap_between_layers_is_warned():
+    low = SoilLayer(-10, -14, 8000, KH, "zand")
+    assert "No soil layer between NAP -8 and -10 on P1." in build_plan(EsaModel([member()], []), [CLAY, low], diameter_m=0.45).warnings
+
+
+def test_member_a_glob_picks_above_ground_is_left_out_not_refused():
+    column = member("C1", 3, (0, 0, 8), (0, 0, 2))
+    result = build_plan(EsaModel([member(), column], []), [CLAY], diameter_m=0.45)
+    assert [p.pile.name for p in result.planned] == ["P1"] and not result.problems
+    assert "C1: left out" in " ".join(result.warnings)
+
+
+def test_member_asked_by_name_without_overlap_is_a_problem():
+    column = member("C1", 3, (0, 0, 8), (0, 0, 2))
+    result = build_plan(EsaModel([column], []), [CLAY], piles="C1", diameter_m=0.45)
+    assert "overlaps" in result.problems[0]
+
+
+def test_parameter_problems_do_not_hide_pile_problems():
+    result = build_plan(EsaModel([member()], [foreign()]), [CLAY])
+    assert any("diameter" in p for p in result.problems) and any("double" in p for p in result.problems)

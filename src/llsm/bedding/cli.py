@@ -80,7 +80,7 @@ def main(argv: list[str]) -> int:
     args = _parser().parse_args(argv)
     try:
         rows = read_layer_rows(args.layers)
-    except (OSError, ValueError, IndexError) as exc:
+    except (OSError, ValueError) as exc:
         problems = exc.problems if isinstance(exc, LayerError) else [str(exc)]
         for line in problems:
             print(f"PROBLEM: {line}", file=sys.stderr)

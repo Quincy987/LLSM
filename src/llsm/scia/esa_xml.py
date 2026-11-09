@@ -179,7 +179,10 @@ def _support_object(object_id: int, support: UpdateSupport) -> str:
 
 
 def _esa_xml_exe() -> Path:
-    exe = loader.discover().install_folder / "ESA_XML.exe"
+    try:
+        exe = loader.discover().install_folder / "ESA_XML.exe"
+    except OSError as exc:
+        raise EsaXmlError("SCIA Engineer 24.0 was not found on this computer.") from exc
     if not exe.is_file():
         raise EsaXmlError(f"ESA_XML.exe not found at {exe}")
     return exe
@@ -205,10 +208,12 @@ def run_update(source: Path, output: Path, xml_text: str, timeout: float = 600) 
 
     ``source`` is only ever read. On any failure no ``output`` is left behind.
     """
+    source, output = Path(source).resolve(), Path(output).resolve()  # ESA_XML runs from its install folder
     assert_no_scia()
     assert_unlocked(source)
     exe = _esa_xml_exe()
-    with tempfile.TemporaryDirectory(prefix="llsm-bedding-") as temp:
+    # A stopped ESA_XML can hold its files for a moment; that must not hide the result.
+    with tempfile.TemporaryDirectory(prefix="llsm-bedding-", ignore_cleanup_errors=True) as temp:
         folder = Path(temp)
         working_copy = folder / "input.esa"
         shutil.copy2(source, working_copy)

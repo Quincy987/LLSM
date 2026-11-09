@@ -294,7 +294,9 @@ def _register_common_tools(mcp: FastMCP) -> None:
             Path(model_path),
             layers,
             bedding_tools.PlanRequest(
-                piles, diameter_m, variant, start_level_nap, datum_offset, alpha, groepsfactor, replace, allow_existing
+                piles=piles, diameter_m=diameter_m, variant=variant, start_level_nap=start_level_nap,
+                datum_offset=datum_offset, alpha=alpha, groepsfactor=groepsfactor,
+                replace=replace, allow_existing=allow_existing,
             ),
         )
 
@@ -322,7 +324,9 @@ def _register_common_tools(mcp: FastMCP) -> None:
             Path(model_path),
             layers,
             bedding_tools.PlanRequest(
-                piles, diameter_m, variant, start_level_nap, datum_offset, alpha, groepsfactor, replace, allow_existing
+                piles=piles, diameter_m=diameter_m, variant=variant, start_level_nap=start_level_nap,
+                datum_offset=datum_offset, alpha=alpha, groepsfactor=groepsfactor,
+                replace=replace, allow_existing=allow_existing,
             ),
             out_dir=Path(out_dir) if out_dir else None,
         )

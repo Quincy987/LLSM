@@ -110,7 +110,7 @@ def preview_bedding(
     reader: Callable[[Path], EsaModel] = read_esa,
 ) -> dict:
     """Work out what would be written. Touches nothing."""
-    result, _, _ = _prepare("preview", Path(model_path), rows, request, reader)
+    result, _, _ = _prepare("preview", Path(model_path).resolve(), rows, request, reader)
     result["ok"] = not result["problems"]
     return result
 
@@ -174,16 +174,16 @@ def apply_bedding(
     writer: Callable[[Path, Path, str], esa_xml.RunResult] = esa_xml.run_update,
 ) -> dict:
     """Write the plan to a new file and report what is really in it."""
-    model_path = Path(model_path)
+    model_path = Path(model_path).resolve()  # ESA_XML runs from its install folder
     result, before, plan = _prepare("apply", model_path, rows, request, reader)
     result.update(output=None, written=0, expected=0, mismatches=[], other_changes=[], seconds=None, esa_xml=None)
     if plan is None or before is None or plan.problems:
         return result
-    if not plan.planned:
-        result["problems"] = ["Nothing to write: every selected pile was skipped."]
+    if out_dir is not None and not Path(out_dir).is_dir():
+        result["problems"] = [f"Output folder not found: {out_dir}"]
         return result
 
-    output = next_output_path(model_path, out_dir)
+    output = next_output_path(model_path, Path(out_dir).resolve() if out_dir else None)
     supports = [
         esa_xml.UpdateSupport(p.name, p.pile.name, p.pile.member_id, p.segment.x1, p.segment.x2, p.stiffness_n_m2)
         for p in plan.planned
@@ -191,7 +191,7 @@ def apply_bedding(
     started = time.time()
     try:
         run = writer(model_path, output, esa_xml.build_update(supports))
-    except esa_xml.EsaXmlError as exc:
+    except (esa_xml.EsaXmlError, OSError) as exc:
         result["problems"] = [str(exc)]
         return result
     result["seconds"] = round(time.time() - started, 1)

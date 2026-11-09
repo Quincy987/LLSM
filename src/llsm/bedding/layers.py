@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,6 +14,7 @@ UNITS = (KH, MENARD, K_LINE)
 VARIANTS = ("laag", "gemiddeld", "hoog")
 
 _R0 = 0.3  # m, Ménard reference radius
+_MAX_DIAMETER_M = 5.0  # above this it was almost certainly given in mm
 
 
 class LayerError(ValueError):
@@ -54,11 +56,15 @@ def line_stiffness(
         return layer.value
     if diameter_m is None:
         raise ValueError(f"{layer.unit} needs the pile diameter")
+    if not 0 < diameter_m <= _MAX_DIAMETER_M:
+        raise ValueError(f"a pile diameter of {diameter_m} is not plausible; give it in metres")
     if layer.unit == KH:
         return layer.value * diameter_m
     factor = layer.alpha if layer.alpha is not None else alpha
     if factor is None or groepsfactor is None:
         raise ValueError(f"{MENARD} needs alpha and groepsfactor")
+    if not 0 < factor <= 1 or groepsfactor <= 0:
+        raise ValueError("alpha must be above 0 and at most 1, and groepsfactor above 0")
     return menard_kh(diameter_m * 1000.0, layer.value * 1000.0, factor, groepsfactor) * diameter_m
 
 
@@ -101,6 +107,9 @@ def parse_layers(rows: list[dict], variant: str | None = None) -> list[SoilLayer
         except (TypeError, ValueError):
             problems.append(f"Row {number}: a number could not be read: {row}.")
             continue
+        if not all(math.isfinite(v) for v in (layer.top_nap, layer.bottom_nap, layer.value)):
+            problems.append(f"Row {number}: levels and value must be real numbers.")
+            continue
         if layer.unit not in UNITS:
             problems.append(f"Row {number}: unknown unit {layer.unit!r}; use one of {', '.join(UNITS)}.")
         if layer.value <= 0:
@@ -128,7 +137,12 @@ def read_layer_rows(path: Path) -> list[dict]:
         if not isinstance(rows, list):
             raise LayerError([f"{path.name}: expected a list of layers."])
         return rows
-    text = path.read_text(encoding="utf-8-sig")
+    raw = path.read_bytes()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:  # Excel's default "CSV" on a Dutch Windows
+        text = raw.decode("cp1252")
     first_line = text.splitlines()[0] if text else ""
     delimiter = ";" if ";" in first_line else ","
-    return [{(k or "").strip(): v for k, v in row.items()} for row in csv.DictReader(text.splitlines(), delimiter=delimiter)]
+    reader = csv.DictReader(text.splitlines(), delimiter=delimiter)
+    return [{(k or "").strip().lower(): v for k, v in row.items()} for row in reader]
