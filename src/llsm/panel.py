@@ -1580,7 +1580,8 @@ class LlsmPanel:
         """Switch to the palette for `setting` without a restart (does not persist it)."""
         if self._theme_var.get() != setting:
             self._theme_var.set(setting)   # keeps the menu tick and the poll in step
-        self._palette = theme.palette_for(setting)
+        # A failed read of the Windows setting keeps the current palette.
+        self._palette = theme.palette_for(setting, fallback=self._palette.mode)
         theme.apply_ttk(ttk.Style(self.root), self._palette, self.root)
         self._apply_theme()
         self._schedule_theme_poll()
@@ -1606,7 +1607,8 @@ class LlsmPanel:
         self._theme_poll_after = None
         if self._closing or self._theme_var.get() != theme.SYSTEM:
             return
-        # A failed registry read keeps the current palette instead of flipping.
+        # A failed registry read keeps the current palette instead of flipping
+        # (here and again in set_theme, which reads the setting once more).
         if theme.resolve_mode(theme.SYSTEM, fallback=self._palette.mode) != self._palette.mode:
             self.set_theme(theme.SYSTEM)   # reschedules itself
         else:

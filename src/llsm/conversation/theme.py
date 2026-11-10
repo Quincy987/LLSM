@@ -128,8 +128,8 @@ def resolve_mode(setting: str | None, fallback: str = LIGHT_MODE) -> str:
         return fallback
 
 
-def palette_for(setting: str | None) -> Palette:
-    return _PALETTES[resolve_mode(setting)]
+def palette_for(setting: str | None, fallback: str = LIGHT_MODE) -> Palette:
+    return _PALETTES[resolve_mode(setting, fallback)]
 
 
 def set_current(palette: Palette) -> None:
