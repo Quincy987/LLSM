@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.9 — Calmer panel (2026-11-10)
+
 ### UX
 - **Rustiger paneel.** Twee balken bovenin (menu; gesprekstitel met de status
   rechts als klein tekstje), Send als gewone knop rechtsonder met Cancel ernaast,
