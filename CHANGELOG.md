@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.8 — SCIA look, dark mode and VibeModel-style answers (2026-11-10)
+
 ### UX
 - **Panel looks like a SCIA side panel, with a dark mode.** Grey window chrome, white
   content areas and SCIA's teal as the one accent; a caption strip ("LLSM" + SCIA/MCP
