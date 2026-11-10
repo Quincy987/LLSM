@@ -16,6 +16,7 @@ from typing import Any
 
 from anthropic import Anthropic
 
+from ..answer_rules import ANSWER_RULES
 from ..scia.tools import LlsmContext
 from .tools import TOOL_DEFS
 from .tool_loop import MAX_TOOL_ITERATIONS, invoke_tool
@@ -61,8 +62,7 @@ Give every object a concrete, descriptive short name ('col_left', 'rafter', 'bas
 
 ### Response style
 
-After the workflow, say what's in the model and whether analysis succeeded. Answer in at most 5 lines, put a unit on every number, and show results as a table.
-"""
+After the workflow, say what's in the model and whether analysis succeeded. """ + ANSWER_RULES + "\n"
 
 
 @dataclass
@@ -74,7 +74,7 @@ class AnthropicBackend:
     # Optional callback fired around each tool invocation. Signature:
     #   on_tool_event(phase: "start"|"end", name: str, payload: Any)
     # phase=="start": payload is the args dict.
-    # phase=="end":   payload is True/False (ok flag).
+    # phase=="end":   payload is {"ok": bool, "error": str}.
     # Runs synchronously on whatever thread the tool loop runs on.
     on_tool_event: Any = None
 

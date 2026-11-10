@@ -20,9 +20,13 @@ Anthropic API. Same model (Opus 4.7), same tool surface, no API key needed.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
+import threading
 import uuid
 from pathlib import Path
+
+from ..answer_rules import ANSWER_RULES
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent  # src/llsm/llm/ -> repo
 DEFAULT_MODEL = "opus"  # alias for latest Opus (currently 4.7)
@@ -41,8 +45,6 @@ def available_models():
         ModelRef("claude-code", "sonnet", display_name="Sonnet (latest)"),
         ModelRef("claude-code", "haiku",  display_name="Haiku (latest)"),
     ]
-
-ANSWER_RULES = "Answer in at most 5 lines, put a unit on every number, and show results as a table."
 
 # System-prompt snippet that runs ON TOP of the MCP server's instructions when
 # the persistent server is in use. Centralised here so this backend and
@@ -65,6 +67,65 @@ PERSISTENT_SYSTEM_PROMPT = (
 )
 
 
+_MCP_PREFIX = re.compile(r"^mcp__[^_]+(?:_[^_]+)*?__")
+
+
+def parse_stream_line(line: str):
+    """One stdout line of `--output-format stream-json` -> its event dict, or None."""
+    line = (line or "").strip()
+    if not line.startswith("{"):
+        return None
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    return event if isinstance(event, dict) else None
+
+
+def _result_status(block: dict) -> tuple[bool, str]:
+    """(ok, error) of a tool_result block: an MCP error, or a tool's own {"ok": false}."""
+    content = block.get("content")
+    if isinstance(content, list):
+        text = "\n".join(str(c.get("text", "")) for c in content if isinstance(c, dict))
+    else:
+        text = str(content or "")
+    if block.get("is_error"):
+        return False, text
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return True, ""
+    if isinstance(data, dict) and data.get("ok") is False:
+        return False, str(data.get("error") or data.get("message") or "failed")
+    return True, ""
+
+
+def tool_events(event: dict, pending: dict) -> list[tuple]:
+    """Tool steps in one stream event, as (phase, name, payload) for the panel.
+
+    An assistant message's tool_use blocks start steps (payload: the input);
+    a user message's tool_result blocks end them (payload: {"ok", "error"}).
+    `pending` maps tool_use ids to names between the two.
+    """
+    out = []
+    message = event.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, list):
+        return out
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        if event.get("type") == "assistant" and block.get("type") == "tool_use":
+            name = _MCP_PREFIX.sub("", str(block.get("name", "")))
+            pending[str(block.get("id", ""))] = name
+            out.append(("start", name, block.get("input") or {}))
+        elif event.get("type") == "user" and block.get("type") == "tool_result":
+            name = pending.pop(str(block.get("tool_use_id", "")), "tool")
+            ok, error = _result_status(block)
+            out.append(("end", name, {"ok": ok, "error": error}))
+    return out
+
+
 class ClaudeCodeBackend:
     """Spawns `claude -p` per chat call, persists conversation via session-id."""
 
@@ -80,6 +141,7 @@ class ClaudeCodeBackend:
         session_started: bool = False,
         on_session_rotated=None,  # callback(new_session_id: str) when we rotate
         on_orphan_cleanup=None,   # callback(session_id: str) -> int; kills orphan claudes
+        on_tool_event=None,       # callback(phase, name, payload), as in tool_loop.invoke_tool
     ) -> None:
         self.model = model
         self.session_id = session_id or str(uuid.uuid4())
@@ -92,6 +154,7 @@ class ClaudeCodeBackend:
         self.mcp_config_json = mcp_config_json
         self._on_session_rotated = on_session_rotated
         self._on_orphan_cleanup = on_orphan_cleanup
+        self.on_tool_event = on_tool_event
         self._current_proc = None  # for Cancel button
 
     def _build_cmd(self, message: str) -> list[str]:
@@ -105,7 +168,10 @@ class ClaudeCodeBackend:
             "--allowedTools", "mcp__llsm__*",
             "--permission-mode", "dontAsk",
             "--model", self.model,
-            "--output-format", "json",
+            # Stream the turn's events so the panel sees each tool call as it
+            # happens; the last line is the same result object --output-format
+            # json prints. -p needs --verbose for stream-json.
+            "--output-format", "stream-json", "--verbose",
         ]
         if self.mcp_config_json is not None:
             cmd += [
@@ -122,7 +188,7 @@ class ClaudeCodeBackend:
             shown = ["<mcp-config>" if i and cmd[i - 1] == "--mcp-config" else part for i, part in enumerate(cmd)]
             print(f"[claude-code] $ {shown}")  # the config holds the server's token
         try:
-            self._current_proc = subprocess.Popen(
+            proc = subprocess.Popen(
                 cmd,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
@@ -137,16 +203,55 @@ class ClaudeCodeBackend:
             raise RuntimeError(
                 "`claude` CLI not on PATH. Install Claude Code or use --backend api."
             )
+        self._current_proc = proc
+        # stderr drains on its own thread so a chatty CLI can't fill the pipe
+        # while we read stdout line by line; a timer kills a turn that hangs.
+        err: list[str] = []
+        drain = threading.Thread(target=lambda: err.append(proc.stderr.read() or ""), daemon=True)
+        drain.start()
+        timed_out = threading.Event()
+
+        def _expire():
+            timed_out.set()
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
+        timer = threading.Timer(self.timeout_s, _expire)
+        timer.daemon = True
+        timer.start()
+        lines: list[str] = []
+        result_line = None
+        pending: dict[str, str] = {}
         try:
-            stdout, stderr = self._current_proc.communicate(timeout=self.timeout_s)
-        except subprocess.TimeoutExpired:
-            self._current_proc.kill()
-            self._current_proc.communicate()
-            raise RuntimeError(f"claude CLI timed out after {self.timeout_s}s")
+            for line in proc.stdout:
+                lines.append(line)
+                event = parse_stream_line(line)
+                if event is None:
+                    continue
+                if event.get("type") == "result":
+                    result_line = line.strip()
+                for phase, name, payload in tool_events(event, pending):
+                    self._emit(phase, name, payload)
+            proc.wait()
         finally:
-            rc = self._current_proc.returncode
+            timer.cancel()
+            drain.join(timeout=5)
+            rc = proc.returncode
             self._current_proc = None
-        return rc, stdout or "", stderr or ""
+        if timed_out.is_set():
+            raise RuntimeError(f"claude CLI timed out after {self.timeout_s}s")
+        stdout = result_line if result_line is not None else "".join(lines)
+        return rc, stdout, "".join(err)
+
+    def _emit(self, phase, name, payload) -> None:
+        if self.on_tool_event is None:
+            return
+        try:
+            self.on_tool_event(phase, name, payload)
+        except Exception:
+            pass  # the panel's queue must never break the turn
 
     def cancel(self) -> bool:
         """Kill the active claude subprocess (Cancel button hits this).
@@ -297,6 +402,7 @@ def build_backend(panel) -> "ClaudeCodeBackend":
         "verbose": False,
         "on_session_rotated": panel._on_session_rotated,
         "on_orphan_cleanup": panel._on_orphan_cleanup,
+        "on_tool_event": panel._on_tool_event_from_worker,
     }
     if panel._mcp_handle is not None:
         kwargs["mcp_config_json"] = panel._mcp_handle.mcp_config_json

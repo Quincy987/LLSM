@@ -47,6 +47,7 @@ import uvicorn
 from mcp.server.fastmcp import FastMCP
 
 from . import bedding as bedding_tools
+from .answer_rules import ANSWER_RULES
 from .mcp_guard import GuardMiddleware
 from .scia.autoclick import SciaDialogPending
 from .scia.loader import load as load_scia
@@ -129,7 +130,7 @@ INSTRUCTIONS_BASE = (
     "Units: lengths in mm; line loads in kN/m. Z axis is vertical (up positive); "
     "for gravity-like downward loads use direction='Z' with a NEGATIVE magnitude.\n\n"
     "To put soil beddings on the piles of an existing saved model, use bedding_preview, then bedding_apply.\n\n"
-    "Answer in at most 5 lines, put a unit on every number, and show results as a table."
+    + ANSWER_RULES
 )
 
 INSTRUCTIONS_PERSISTENT = (

@@ -7,9 +7,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### UX
-- **Chat panel lays out tables.** Markdown pipe tables in an answer were shown
-  as raw bars; they are now aligned columns in a fixed-width font with a bold
-  header, so the results tables the prompt asks for are readable.
+- **Answers render like VibeModel's.** A markdown-lite parser
+  (`conversation/markdown_lite.py`) reads headings, nested and numbered lists,
+  fenced code, pipe tables, rules, bold/italic/code/links; the panel draws them
+  with theme colours in both themes. Tables get a bold header on a fill,
+  alternating rows, right-aligned numeric columns (numbers with a unit, grouped
+  thousands; `:--`/`--:` wins) and column widths fitted to the pane like a
+  browser table, refitted on resize. Over 30 rows: "… nog N rijen" unfolds the
+  rest; **Kopiëren** puts the table on the clipboard as tab-separated text for
+  Excel. Code blocks are boxed on a tint and fold after 12 of more than 20
+  lines; inline code is a pill; headings are smaller and lines get more room.
+  Resumed chats go through the same renderer.
+- **Activity block per turn.** While the model works, a block above the answer
+  lists each tool step with ✓/✗, the first error line and its time (last 8),
+  and says "SCIA kan bezig zijn" after 60 s without progress. Afterwards it
+  folds to one line ("7 stappen · 48 s", click to expand), or goes away when no
+  tool ran. The Claude Code backend now reads the CLI's stream-json output to
+  see each tool call; the stored chat and the model's history are unchanged.
+
+### Changed
+- **One set of answer rules** (`answer_rules.py`) for the MCP instructions, the
+  Claude Code prompt and the Anthropic prompt: the five-line rule plus a table
+  for more than 3 items with 2+ attributes, at most 4 columns, units in the
+  header cell, and the user's language.
+- Tool end events carry `{"ok", "error"}` instead of a bare flag.
 
 ## v0.3.7 — Pilot readiness: safe around SCIA, guarded, installable (2026-11-10)
 
