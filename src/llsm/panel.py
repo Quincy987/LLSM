@@ -174,6 +174,9 @@ INPUT_MAX_LINES = 10
 # Pill error auto-clear.
 PILL_ERROR_CLEAR_MS = 3000
 
+# View > Theme > Follow Windows: how often to re-read the Windows app theme.
+THEME_POLL_MS = 5000
+
 # Placeholder text for the input.
 PLACEHOLDER_TEXT = "Describe your model... (Enter sends, Shift+Enter newline)"
 
@@ -243,9 +246,9 @@ class LlsmPanel:
         # UX/UI state (per plan: theme + pill + sidebar + placeholder).
         self._theme_colors: dict[str, str] = {}    # populated by _apply_theme
         self._palette = theme.LIGHT                # resolved in _build_ui
-        self._themed_menus: list = []              # every tk.Menu, recoloured on a switch
         self._menu_buttons: list = []              # the menu strip's Menubuttons
-        self._tint_warned = False                  # one-shot _sysline guard
+        self._pill_state = ("idle", "")            # re-applied after a theme switch
+        self._theme_poll_after = None              # Follow Windows: registry poll
         self._placeholder_active = False
         self._active_tools: list[str] = []         # stack of in-flight tools for pill
         self._pill_error_after = None              # after-id for auto-clear
@@ -786,17 +789,19 @@ class LlsmPanel:
 
         Not the native menubar: Windows always paints that white, which breaks
         the dark theme. Flat Menubuttons on the caption colour also look like a
-        SCIA panel. Every tk.Menu made here is kept in `_themed_menus` so a
-        theme switch can recolour it. 'Tools > Restart MCP server' lets the user
-        force-restart without touching Task Manager; bound to Ctrl+R as well.
+        SCIA panel; a theme switch recolours them (_recolour_menus). Alt+F/V/T
+        and F10 still open them (Tk traverses Menubuttons by their underline).
+        'Tools > Restart MCP server' lets the user force-restart without
+        touching Task Manager; bound to Ctrl+R as well.
         """
         strip = tk.Frame(self.root, bg=self._palette.caption_bg, bd=0, highlightthickness=0)
         strip.pack(side=tk.TOP, fill=tk.X)
         self.menu_strip = strip
 
         def menubutton(label):
-            mb = tk.Menubutton(strip, text=label, font=theme.CHROME_FONT, relief="flat",
-                               bd=0, padx=10, pady=3, highlightthickness=0, cursor="hand2",
+            mb = tk.Menubutton(strip, text=label, underline=0, font=theme.CHROME_FONT,
+                               relief="flat", bd=0, padx=10, pady=3, highlightthickness=0,
+                               cursor="hand2",
                                **theme.menubutton_colors(self._palette))
             mb.pack(side=tk.LEFT)
             self._menu_buttons.append(mb)
@@ -819,11 +824,8 @@ class LlsmPanel:
             on_open_history=self._on_menu_open_history,
             open_wizard_cb=self._on_menu_setup_credentials,
         )
-        file_menu = file_builder.build(file_mb)
-        file_mb.configure(menu=file_menu)
-        self._themed_menus.extend(file_builder.menus())
+        file_mb.configure(menu=file_builder.build(file_mb))
         tools = tk.Menu(tools_mb, tearoff=False, postcommand=self._refresh_tools_menu)
-        self._themed_menus.append(tools)
         tools.add_command(label="Set up credentials…",
                           command=self._on_menu_setup_credentials)
         tools.add_command(label="Manage providers…",
@@ -859,7 +861,6 @@ class LlsmPanel:
         tools_mb.configure(menu=tools)
         # View menu: sidebar toggle + theme.
         view = tk.Menu(view_mb, tearoff=False)
-        self._themed_menus.append(view)
         self._sidebar_visible_var = tk.BooleanVar(value=True)
         view.add_checkbutton(
             label="Show Model Sidebar",
@@ -869,7 +870,6 @@ class LlsmPanel:
         )
         view.add_separator()
         theme_menu = tk.Menu(view, tearoff=False)
-        self._themed_menus.append(theme_menu)
         for value, label in ((theme.LIGHT_MODE, "Light"), (theme.DARK_MODE, "Dark"),
                              (theme.SYSTEM, "Follow Windows")):
             theme_menu.add_radiobutton(label=label, value=value, variable=self._theme_var,
@@ -1303,7 +1303,6 @@ class LlsmPanel:
         # only reach widgets created AFTER they are set, menus included.
         self._theme_var = tk.StringVar(value=self._theme_setting())
         self._palette = theme.palette_for(self._theme_var.get())
-        theme.set_current(self._palette)
         theme.apply_ttk(ttk.Style(self.root), self._palette, self.root)
         theme.install_dialog_titlebars(self.root)
         self._build_menu()
@@ -1431,6 +1430,8 @@ class LlsmPanel:
         # explicitly (tk.Text does not inherit ttk theme — see plan).
         self._apply_theme()
 
+        self._schedule_theme_poll()
+
         # Show placeholder if input starts empty (it does).
         self._render_placeholder_if_empty()
 
@@ -1455,43 +1456,7 @@ class LlsmPanel:
         if killed:
             self._sysline("chat cancelled; SCIA state may be partial - call model_summary to verify")
 
-    # -------- Theme helpers (per plan: theme & accessibility ground rules) --------
-
-    def _resolve_rgb(self, value):
-        """Resolve any Tk color spec (#hex / named / SystemFoo) to an 8-bit RGB tuple.
-
-        Returns None on failure. Caller falls back to a baked-in reference value.
-        Critical for Windows: ttk.Style().lookup() often returns symbolic names
-        like 'SystemButtonFace', which winfo_rgb() resolves uniformly with hex.
-        """
-        if not value:
-            return None
-        try:
-            r16, g16, b16 = self.root.winfo_rgb(value)
-            return (r16 // 256, g16 // 256, b16 // 256)
-        except Exception:
-            return None
-
-    def _tint(self, base, accent, alpha=0.18):
-        """Blend `base` toward `accent` by `alpha` (0..1). Returns "#rrggbb".
-
-        Thin wrapper over theme.blend that also resolves Tk colour names. On
-        unparseable input falls back to a safe grey; never returns None / "".
-        """
-        base_rgb = theme.parse_hex(base) or self._resolve_rgb(base)
-        accent_rgb = theme.parse_hex(accent) or self._resolve_rgb(accent)
-        if base_rgb is None or accent_rgb is None:
-            if not self._tint_warned:
-                self._tint_warned = True
-                try:
-                    self._sysline(
-                        f"theme: could not resolve color (base={base!r}, accent={accent!r}); "
-                        "using built-in fallback"
-                    )
-                except Exception:
-                    pass
-            return _THEME_REFERENCE.get("muted", theme.LIGHT.muted)
-        return theme.blend(base_rgb, accent_rgb, alpha)
+    # -------- Theme (colours live in conversation/theme.py) --------
 
     def _apply_theme(self):
         """Apply the active palette to chat tags, tk widget surfaces, menus and title bar.
@@ -1570,8 +1535,8 @@ class LlsmPanel:
         except Exception:
             pass
 
-        # Pill default (idle).
-        self._set_pill("idle")
+        # Pill in its current state (idle at startup), in the new colours.
+        self._set_pill(*self._pill_state)
 
     def _theme_setting(self) -> str:
         value = self._ui_settings_get("theme", theme.SYSTEM)
@@ -1586,16 +1551,43 @@ class LlsmPanel:
         self.set_theme(setting)
 
     def set_theme(self, setting: str):
-        """Switch to the palette for `setting` without a restart."""
+        """Switch to the palette for `setting` without a restart (does not persist it)."""
+        if self._theme_var.get() != setting:
+            self._theme_var.set(setting)   # keeps the menu tick and the poll in step
         self._palette = theme.palette_for(setting)
         theme.apply_ttk(ttk.Style(self.root), self._palette, self.root)
-        self._apply_theme()   # ends on the idle pill
-        if self.busy:
-            self._set_pill("thinking")
+        self._apply_theme()
+        self._schedule_theme_poll()
+
+    def _schedule_theme_poll(self):
+        """Follow Windows: re-check the Windows app theme every few seconds.
+
+        Tk has no event for the Windows light/dark switch; reading one registry
+        value every THEME_POLL_MS is negligible. Runs only while the setting is
+        'system'.
+        """
+        if self._theme_poll_after is not None:
+            try:
+                self.root.after_cancel(self._theme_poll_after)
+            except Exception:
+                pass
+            self._theme_poll_after = None
+        if self._closing or self._theme_var.get() != theme.SYSTEM:
+            return
+        self._theme_poll_after = self.root.after(THEME_POLL_MS, self._on_theme_poll)
+
+    def _on_theme_poll(self):
+        self._theme_poll_after = None
+        if self._closing or self._theme_var.get() != theme.SYSTEM:
+            return
+        if theme.resolve_mode(theme.SYSTEM) != self._palette.mode:
+            self.set_theme(theme.SYSTEM)   # reschedules itself
+        else:
+            self._schedule_theme_poll()
 
     def _recolour_menus(self):
-        """Every tk.Menu in the window: registered ones plus any made later (cascades)."""
-        menus = list(self._themed_menus)
+        """Every tk.Menu in the window, cascades rebuilt on each open included."""
+        menus = []
         stack = [self.root]
         while stack:
             w = stack.pop()
@@ -1604,7 +1596,7 @@ class LlsmPanel:
             except Exception:
                 continue
             for k in kids:
-                if isinstance(k, tk.Menu) and k not in menus:
+                if isinstance(k, tk.Menu):
                     menus.append(k)
                 stack.append(k)
         kw = theme.menu_colors(self._palette)
@@ -1626,6 +1618,8 @@ class LlsmPanel:
         """
         if not hasattr(self, "status_pill"):
             return
+        if state in ("idle", "thinking", "running", "error"):
+            self._pill_state = (state, detail)
         if state != "error" and self._pill_error_after is not None:
             try:
                 self.root.after_cancel(self._pill_error_after)

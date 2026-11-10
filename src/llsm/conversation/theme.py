@@ -14,7 +14,7 @@ readable (WCAG AA, checked in tests/unit/test_theme.py).
 from __future__ import annotations
 
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
 LIGHT_MODE = "light"
 DARK_MODE = "dark"
@@ -252,6 +252,15 @@ def light_colors() -> dict:
 # ------------------------------------------------------------------ widgets
 
 
+def _row_height(root) -> int:
+    """Treeview row height in pixels for the chrome font (rowheight doesn't scale itself)."""
+    try:
+        import tkinter.font as tkfont
+        return tkfont.Font(root=root, font=CHROME_FONT).metrics("linespace") + 6
+    except Exception:
+        return 20
+
+
 def apply_ttk(style, p: Palette, root=None) -> None:
     """Style ttk widgets with `p` (clam engine) and set option defaults for plain Tk widgets.
 
@@ -320,7 +329,8 @@ def apply_ttk(style, p: Palette, root=None) -> None:
     )
     style.configure(
         "Treeview", background=p.surface, fieldbackground=p.surface, foreground=p.fg,
-        bordercolor=p.field_border, lightcolor=p.surface, darkcolor=p.surface, rowheight=20,
+        bordercolor=p.field_border, lightcolor=p.surface, darkcolor=p.surface,
+        rowheight=_row_height(root),
     )
     style.map("Treeview", background=[("selected", p.accent)], foreground=[("selected", p.accent_fg)])
     style.configure(
@@ -501,7 +511,3 @@ def install_dialog_titlebars(root) -> None:
             root.bind_class(cls, "<Map>", on_map, add="+")
         except Exception:
             pass
-
-
-def palette_dict(p: Palette) -> dict:
-    return asdict(p)
