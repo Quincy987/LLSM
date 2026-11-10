@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from . import table_layout as tl
+from . import theme
 from .activity import TEXTS as ACT_TEXTS
 from .activity import ActivityLog, format_clock, format_duration
 from .markdown_lite import (
@@ -85,54 +86,68 @@ class ChatRenderer:
     # ------------------------------------------------------------ theme
 
     def configure(self, c: dict, ref: dict) -> None:
-        """(Re)configure every markdown tag from the panel's theme colours."""
-        self._colors = dict(c)
+        """(Re)configure every markdown tag from the panel's theme colours.
+
+        `c` may be partial; missing keys come from the light palette. Tables
+        already on screen get their margin colour updated too (it is set per
+        table at layout time), so a theme switch needs no re-render.
+        """
+        c = {**theme.light_colors(), **c}
+        ref = {**theme.LIGHT.ref(), **ref}
+        self._colors = c
         tc = self.t.tag_configure
-        tint = c.get("system_bg", "#eeeeee")
-        link = c.get("link_fg", ref.get("running", "#1e6091"))
+        link = c["link_fg"]
         tc("md_bold", font=("Segoe UI", 10, "bold"))
         tc("md_italic", font=("Segoe UI", 10, "italic"))
         tc("md_bolditalic", font=("Segoe UI", 10, "bold italic"))
-        tc("md_code", font=("Consolas", 9), background=c.get("code_bg", tint))
+        tc("md_code", font=("Consolas", 9), background=c["code_bg"])
         tc("md_pad", font=("Consolas", 9))
         tc("md_link", underline=True, foreground=link)
-        tc("md_url", foreground=c.get("muted", "#888888"), font=("Segoe UI", 9))
+        tc("md_url", foreground=c["muted"], font=("Segoe UI", 9))
         tc("md_h1", font=("Segoe UI", 12, "bold"), spacing1=6, spacing3=2)
         tc("md_h2", font=("Segoe UI", 11, "bold"), spacing1=5, spacing3=2)
         tc("md_h3", font=("Segoe UI", 10, "bold"), spacing1=4, spacing3=1)
         tc("md_gap", font=("Segoe UI", 3), spacing1=0, spacing3=0)
-        tc("md_bullet", foreground=c.get("muted", "#888888"))
+        tc("md_bullet", foreground=c["muted"])
         for level in range(len(_BULLETS)):
             left = 4 + level * LIST_INDENT
             tc(f"md_li{level}", lmargin1=left, lmargin2=left + LIST_MARKER, tabs=(left + LIST_MARKER,))
             tc(f"md_li{level}c", lmargin1=left + LIST_MARKER, lmargin2=left + LIST_MARKER)
-        tc("md_codeblock", font=MONO_FONT, background=c.get("code_bg", tint),
+        tc("md_codeblock", font=MONO_FONT, background=c["code_bg"],
            lmargin1=12, lmargin2=12, rmargin=6, spacing1=0, spacing3=0,
            relief="solid", borderwidth=1, wrap="char")
-        tc("md_codepad", font=("Consolas", 3), background=c.get("code_bg", tint),
+        tc("md_codepad", font=("Consolas", 3), background=c["code_bg"],
            lmargin1=12, lmargin2=12, rmargin=6, spacing1=0, spacing3=0,
            relief="solid", borderwidth=1)
-        tc("md_hr", font=("Segoe UI", 1), background=c.get("separator", "#cccccc"),
+        tc("md_hr", font=("Segoe UI", 1), background=c["separator"],
            spacing1=0, spacing3=0, lmargin1=4, rmargin=4)
-        tc("md_th", font=("Segoe UI", 10, "bold"), background=c.get("table_head_bg", tint))
-        tc("md_tr0", background=c.get("bg", "#ffffff"))
-        tc("md_tr1", background=c.get("table_alt_bg", tint))
+        tc("md_th", font=("Segoe UI", 10, "bold"), background=c["table_head_bg"])
+        tc("md_tr0", background=c["bg"])
+        tc("md_tr1", background=c["table_alt_bg"])
         tc("md_rowtop", spacing1=3)
         tc("md_rowbot", spacing3=3)
         tc("md_tbllinks", font=("Segoe UI", 9), spacing1=3, spacing3=2)
         tc("md_action", foreground=link, underline=True)
-        tc("md_act", font=("Segoe UI", 9), foreground=c.get("muted", "#888888"),
+        tc("md_act", font=("Segoe UI", 9), foreground=c["muted"],
            lmargin1=8, lmargin2=26, spacing1=1, spacing3=1)
-        tc("md_act_head", font=("Segoe UI Semibold", 9), foreground=c.get("muted", "#888888"))
-        tc("md_act_ok", foreground=c.get("ok_fg", "#2e7d32"))
-        tc("md_act_fail", foreground=c.get("error_fg", "#c62828"))
+        tc("md_act_head", font=("Segoe UI Semibold", 9), foreground=c["muted"])
+        tc("md_act_ok", foreground=c["ok_fg"])
+        tc("md_act_fail", foreground=c["error_fg"])
         tc("md_act_run", foreground=link)
-        tc("md_act_err", foreground=c.get("error_fg", "#c62828"))
-        tc("md_act_quiet", foreground=ref.get("thinking", "#d29922"), font=("Segoe UI", 9, "italic"))
-        tc("md_act_args", foreground=c.get("separator", "#bbbbbb"))
+        tc("md_act_err", foreground=c["error_fg"])
+        tc("md_act_quiet", foreground=ref["thinking"], font=("Segoe UI", 9, "italic"))
+        tc("md_act_args", foreground=c["separator"])
+        for reg in self.tables():
+            try:
+                tc(reg.state["tag"], lmargincolor=c["bg"], rmargincolor=c["bg"])
+            except (tk.TclError, KeyError):
+                pass
         self.t.tag_raise("sel")
 
     # ------------------------------------------------------------ plumbing
+
+    def _bg(self) -> str:
+        return self._colors.get("bg") or theme.light_colors()["bg"]
 
     def _ins(self, text: str, tags) -> None:
         self.t.insert("md_ins", text, tuple(tags))
@@ -400,8 +415,8 @@ class ChatRenderer:
         self.t.tag_configure(s["tag"], tabs=tuple(stops), lmargin1=TABLE_LEFT,
                              lmargin2=TABLE_LEFT, rmargin=max(0, pane - table_w),
                              # Tk fills the margins with the row colour unless told otherwise.
-                             lmargincolor=self._colors.get("bg", "#ffffff"),
-                             rmargincolor=self._colors.get("bg", "#ffffff"))
+                             lmargincolor=self._bg(),
+                             rmargincolor=self._bg())
         self.t.tag_raise("sel")
 
         hidden = 0 if s["open"] else tl.hidden_row_count(len(rows))

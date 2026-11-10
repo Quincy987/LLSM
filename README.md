@@ -46,6 +46,8 @@ Uses your existing Claude subscription through the `claude` CLI. Requires [Claud
 
 A chat window appears and auto-snaps to SCIA's right edge as an owned Win32 window — moves and closes with SCIA, no DLL injection, EULA-safe. Claude Code is the default backend (`claude -p` subprocess); it auto-loads the LLSM MCP server from `.mcp.json`, so all SCIA tools are available out of the box.
 
+The panel is styled like a SCIA side panel. **View > Theme** switches between Light, Dark and Follow Windows (the default); the choice is remembered.
+
 **Or drive it from the Claude Code terminal directly** (no panel):
 
 ```powershell

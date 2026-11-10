@@ -57,7 +57,8 @@ class FileMenuBuilder:
         self.on_open_history = on_open_history
         self.open_wizard_cb = open_wizard_cb
 
-    def build(self, menubar: tk.Menu) -> tk.Menu:
+    def build(self, menubar: tk.Misc) -> tk.Menu:
+        """The File menu, parented to `menubar` (a tk.Menu or a Menubutton)."""
         m = tk.Menu(menubar, tearoff=False, postcommand=self._refresh_dynamic)
         m.add_command(label="New Chat  Ctrl+N", command=lambda: self.on_new(None))
 

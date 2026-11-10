@@ -85,7 +85,7 @@ import socket
 import threading
 import time
 import tkinter as tk
-from tkinter import scrolledtext, ttk
+from tkinter import ttk
 
 import psutil
 import win32api
@@ -96,6 +96,7 @@ import win32process
 import winerror
 
 from . import mcp_supervisor
+from .conversation import theme
 from .conversation.chat_render import ChatRenderer
 from .conversation.menu import FileMenuBuilder, HistoryDialog
 from .conversation.session import ConversationSession
@@ -132,27 +133,12 @@ SIGNAL_PIPE_DRAIN_MS = 100
 PANEL_WIDTH = 460
 SINGLE_INSTANCE_MUTEX = "Global\\LLSMPanel"
 
-# --- Theme reference values (light-theme baked-in fallbacks) ---
-# Used when ttk.Style().lookup() returns nothing usable, or as the accent
-# hues that _tint() blends the resolved theme bg toward. Per the plan's
-# theme rules: glyph + text first, color second; never color alone.
-_THEME_REFERENCE = {
-    # Surfaces (used as fallbacks when the theme lookup fails).
-    "bg":            "#ffffff",
-    "fg":            "#202020",
-    "muted":         "#777777",
-    "insert":        "#202020",
-    "separator":     "#cccccc",
-    # Role accent hues (these get blended into the theme bg via _tint).
-    "user_accent":   "#1e6091",
-    "llsm_accent":   "#2d6a4f",
-    "error_accent":  "#d62828",
-    "system_accent": "#888888",
-    # Status pill accents.
-    "thinking":      "#d29922",
-    "running":       "#1e6091",
-    "idle":          "#888888",
-}
+# --- Theme reference values ---
+# Role hues and surfaces of the active palette (conversation/theme.py). Read by
+# the chat tags, the status pill and the renderer; _apply_theme() updates it in
+# place on a theme switch. Per the plan's theme rules: glyph + text first,
+# color second; never color alone.
+_THEME_REFERENCE = dict(theme.LIGHT.ref())
 
 # Glyph vocabulary (per plan section "Theme & accessibility ground rules").
 _GLYPH_USER = "[YOU]"
@@ -187,6 +173,9 @@ INPUT_MAX_LINES = 10
 
 # Pill error auto-clear.
 PILL_ERROR_CLEAR_MS = 3000
+
+# View > Theme > Follow Windows: how often to re-read the Windows app theme.
+THEME_POLL_MS = 5000
 
 # Placeholder text for the input.
 PLACEHOLDER_TEXT = "Describe your model... (Enter sends, Shift+Enter newline)"
@@ -256,7 +245,10 @@ class LlsmPanel:
 
         # UX/UI state (per plan: theme + pill + sidebar + placeholder).
         self._theme_colors: dict[str, str] = {}    # populated by _apply_theme
-        self._tint_warned = False                  # one-shot _sysline guard
+        self._palette = theme.LIGHT                # resolved in _build_ui
+        self._menu_buttons: list = []              # the menu strip's Menubuttons
+        self._pill_state = ("idle", "")            # re-applied after a theme switch
+        self._theme_poll_after = None              # Follow Windows: registry poll
         self._placeholder_active = False
         self._active_tools: list[str] = []         # stack of in-flight tools for pill
         self._pill_error_after = None              # after-id for auto-clear
@@ -793,11 +785,33 @@ class LlsmPanel:
     # -------- Menu --------
 
     def _build_menu(self):
-        """Tk menu bar. 'Tools > Restart MCP server' lets the user force-restart
-        without touching Task Manager when something looks wedged. Bound to
-        Ctrl+R as well for muscle memory.
+        """Menu strip inside the window: File / View / Tools.
+
+        Not the native menubar: Windows always paints that white, which breaks
+        the dark theme. Flat Menubuttons on the caption colour also look like a
+        SCIA panel; a theme switch recolours them (_recolour_menus). Alt+F/V/T
+        open them as before: bound explicitly, because Tk's Windows menu keys
+        only drive a native menu bar. F10 can't be bound: Windows keeps it for
+        the window's system menu before Tk sees it.
+        'Tools > Restart MCP server' lets the user force-restart without
+        touching Task Manager; bound to Ctrl+R as well.
         """
-        menubar = tk.Menu(self.root)
+        strip = tk.Frame(self.root, bg=self._palette.caption_bg, bd=0, highlightthickness=0)
+        strip.pack(side=tk.TOP, fill=tk.X)
+        self.menu_strip = strip
+
+        def menubutton(label):
+            mb = tk.Menubutton(strip, text=label, underline=0, font=theme.CHROME_FONT,
+                               relief="flat", bd=0, padx=10, pady=3, highlightthickness=0,
+                               cursor="hand2",
+                               **theme.menubutton_colors(self._palette))
+            mb.pack(side=tk.LEFT)
+            self._menu_buttons.append(mb)
+            return mb
+
+        file_mb = menubutton("File")
+        view_mb = menubutton("View")
+        tools_mb = menubutton("Tools")
         # File menu first (left-most), built lazily so cascades repopulate
         # each time the user opens the menu.
         file_builder = FileMenuBuilder(
@@ -812,8 +826,8 @@ class LlsmPanel:
             on_open_history=self._on_menu_open_history,
             open_wizard_cb=self._on_menu_setup_credentials,
         )
-        menubar.add_cascade(label="File", menu=file_builder.build(menubar))
-        tools = tk.Menu(menubar, tearoff=False, postcommand=self._refresh_tools_menu)
+        file_mb.configure(menu=file_builder.build(file_mb))
+        tools = tk.Menu(tools_mb, tearoff=False, postcommand=self._refresh_tools_menu)
         tools.add_command(label="Set up credentials…",
                           command=self._on_menu_setup_credentials)
         tools.add_command(label="Manage providers…",
@@ -846,9 +860,9 @@ class LlsmPanel:
                            lambda e: (self._on_menu_restart_app(), "break"))
         self.root.bind_all("<Control-Shift-r>",
                            lambda e: (self._on_menu_restart_app(), "break"))
-        menubar.add_cascade(label="Tools", menu=tools)
-        # View menu: sidebar toggle.
-        view = tk.Menu(menubar, tearoff=False)
+        tools_mb.configure(menu=tools)
+        # View menu: sidebar toggle + theme.
+        view = tk.Menu(view_mb, tearoff=False)
         self._sidebar_visible_var = tk.BooleanVar(value=True)
         view.add_checkbutton(
             label="Show Model Sidebar",
@@ -856,11 +870,41 @@ class LlsmPanel:
             variable=self._sidebar_visible_var,
             command=self._on_toggle_sidebar,
         )
-        menubar.add_cascade(label="View", menu=view)
-        self.root.config(menu=menubar)
+        view.add_separator()
+        theme_menu = tk.Menu(view, tearoff=False)
+        for value, label in ((theme.LIGHT_MODE, "Light"), (theme.DARK_MODE, "Dark"),
+                             (theme.SYSTEM, "Follow Windows")):
+            theme_menu.add_radiobutton(label=label, value=value, variable=self._theme_var,
+                                       command=self._on_theme_selected)
+        view.add_cascade(label="Theme", menu=theme_menu)
+        view_mb.configure(menu=view)
+        # Alt+<underlined letter> opens that menu.
+        for mb in self._menu_buttons:
+            letter = mb.cget("text")[int(mb.cget("underline"))].lower()
+            for key in (letter, letter.upper()):
+                self.root.bind_all(f"<Alt-KeyPress-{key}>",
+                                   lambda e, mb=mb: self._post_menu(mb, e))
         # Keyboard shortcut for the restart action.
         if self._backend_kind == "claude-code":
             self.root.bind_all("<Control-r>", lambda e: (self._on_menu_restart_mcp(), "break"))
+
+    def _post_menu(self, menubutton, event=None):
+        """Open a menu-strip menu as a click would. Returns "break" for key bindings.
+
+        The keys are bound on "all", so a key pressed in a dialog (history,
+        credentials) is left alone: the menus belong to the main window.
+        """
+        if event is not None:
+            try:
+                if event.widget.winfo_toplevel() is not self.root:
+                    return None
+            except Exception:   # widget given as a path string, or already gone
+                return None
+        try:
+            self.root.tk.call("tk::MbPost", str(menubutton))
+        except tk.TclError as exc:
+            print(f"[panel] could not open menu: {exc}", file=sys.stderr)
+        return "break"
 
     def _on_menu_restart_mcp(self):
         """User-requested MCP restart. Bypasses the watchdog cooldown but still
@@ -890,7 +934,8 @@ class LlsmPanel:
 
         window = tk.Toplevel(self.root)
         window.title("LLSM diagnose")
-        text = tk.Text(window, width=100, height=20, wrap="none")
+        text = tk.Text(window, width=100, height=20, wrap="none", relief="flat",
+                       font=("Consolas", 9), padx=8, pady=6)
         text.insert("end", "Checking…")
         text.configure(state="disabled")
         text.pack(fill="both", expand=True)
@@ -899,7 +944,7 @@ class LlsmPanel:
             window.clipboard_clear()
             window.clipboard_append(text.get("1.0", "end-1c"))
 
-        tk.Button(window, text="Copy", command=copy).pack(pady=6)
+        ttk.Button(window, text="Copy", command=copy).pack(pady=6)
 
         def show(report: str):
             if text.winfo_exists():
@@ -1280,24 +1325,40 @@ class LlsmPanel:
         self.root.title(f"LLSM - {self._backend_kind}")
         if self._always_on_top:
             self.root.attributes("-topmost", True)
+        # Theme first: ttk styles and the option defaults for plain Tk widgets
+        # only reach widgets created AFTER they are set, menus included.
+        self._theme_var = tk.StringVar(value=self._theme_setting())
+        self._palette = theme.palette_for(self._theme_var.get())
+        theme.apply_ttk(ttk.Style(self.root), self._palette, self.root)
+        theme.install_dialog_titlebars(self.root)
         self._build_menu()
         # Wider default to accommodate the model-state sidebar.
         default_w = PANEL_WIDTH + SIDEBAR_WIDTH
         self.root.geometry(f"{default_w}x800+0+0")
         self.root.minsize(360 + SIDEBAR_WIDTH, 500)
 
-        # Status bar (existing).
+        # Caption strip, like the title of a docked SCIA panel: "LLSM" on the
+        # left, SCIA / MCP status on the right.
+        p = self._palette
+        self.caption = tk.Frame(self.root, bg=p.caption_bg, height=26, bd=0, highlightthickness=0)
+        self.caption.pack(side=tk.TOP, fill=tk.X)
+        self.caption.pack_propagate(False)
+        self.caption_title = tk.Label(self.caption, text="LLSM", font=theme.CHROME_FONT_BOLD,
+                                      bg=p.caption_bg, fg=p.fg, padx=10)
+        self.caption_title.pack(side=tk.LEFT)
         self.status_var = tk.StringVar(value="searching for SCIA...    |    MCP: starting...")
-        ttk.Label(self.root, textvariable=self.status_var, anchor="w",
-                  padding=(8, 4)).pack(side=tk.TOP, fill=tk.X)
-        ttk.Separator(self.root, orient="horizontal").pack(fill=tk.X)
+        self.caption_status = tk.Label(self.caption, textvariable=self.status_var, anchor="e",
+                                       font=theme.CHROME_FONT, bg=p.caption_bg, fg=p.muted, padx=10)
+        self.caption_status.pack(side=tk.RIGHT, fill=tk.X, expand=True)
+        self.caption_rule = tk.Frame(self.root, height=1, bg=p.separator, bd=0, highlightthickness=0)
+        self.caption_rule.pack(side=tk.TOP, fill=tk.X)
 
         # Conversation title bar. Shows active conversation title + model.
         # Click to rename.
         self.conv_title_var = tk.StringVar(value="")
         self.conv_title_label = tk.Label(
             self.root, textvariable=self.conv_title_var, anchor="w",
-            padx=10, pady=2, font=("Segoe UI", 9), cursor="hand2",
+            padx=10, pady=3, font=theme.CHROME_FONT, cursor="hand2",
         )
         self.conv_title_label.pack(side=tk.TOP, fill=tk.X)
         self.conv_title_label.bind("<Button-1>", lambda e: self._on_rename_active_conv())
@@ -1308,18 +1369,19 @@ class LlsmPanel:
         self.status_pill_var = tk.StringVar(value=f"{_GLYPH_PILL_IDLE} Idle")
         self.status_pill = tk.Label(
             self.root, textvariable=self.status_pill_var, anchor="w",
-            padx=10, pady=2, font=("Segoe UI Semibold", 9),
+            padx=10, pady=2, font=theme.CHROME_FONT_BOLD,
         )
         self.status_pill.pack(side=tk.TOP, fill=tk.X)
 
         # Bottom: input + buttons (build first so it reserves space; chat
         # area expands to fill the remainder).
-        bottom = ttk.Frame(self.root, padding=(4, 4))
+        bottom = ttk.Frame(self.root, padding=(6, 6))
         bottom.pack(side=tk.BOTTOM, fill=tk.X)
 
         self.input_text = tk.Text(bottom, height=INPUT_MIN_LINES, wrap="word",
-                                  font=("Segoe UI", 10))
-        self.input_text.pack(side=tk.TOP, fill=tk.X, padx=0, pady=(0, 4))
+                                  font=("Segoe UI", 10), relief="flat", bd=0,
+                                  highlightthickness=1, padx=8, pady=6)
+        self.input_text.pack(side=tk.TOP, fill=tk.X, padx=0, pady=(0, 6))
 
         # Enter sends, Shift+Enter inserts a newline (Tk default).
         self.input_text.bind("<Return>", self._on_return_key)
@@ -1335,7 +1397,8 @@ class LlsmPanel:
         self.cancel_btn = ttk.Button(button_row, text="Cancel", command=self._on_cancel,
                                      state="disabled")
         self.cancel_btn.pack(side=tk.LEFT, padx=(0, 4))
-        self.send_btn = ttk.Button(button_row, text="Send (Enter)", command=self._send)
+        self.send_btn = ttk.Button(button_row, text="Send (Enter)", command=self._send,
+                                   style="Accent.TButton")
         self.send_btn.pack(side=tk.RIGHT, fill=tk.X, expand=True)
 
         # Center: chat history (left) + sidebar (right). Pack the sidebar
@@ -1344,8 +1407,8 @@ class LlsmPanel:
         self.sidebar_frame.pack(side=tk.RIGHT, fill=tk.Y)
         self.sidebar_frame.pack_propagate(False)
 
-        ttk.Label(self.sidebar_frame, text="Model", anchor="w",
-                  font=("Segoe UI Semibold", 10), padding=(6, 4)).pack(side=tk.TOP, fill=tk.X)
+        ttk.Label(self.sidebar_frame, text="Model", anchor="w", style="Header.TLabel",
+                  padding=(8, 4)).pack(side=tk.TOP, fill=tk.X)
         ttk.Separator(self.sidebar_frame, orient="horizontal").pack(side=tk.TOP, fill=tk.X)
         # Treeview for the snapshot. Open by default so users see structure.
         self.sidebar_tree = ttk.Treeview(self.sidebar_frame, show="tree",
@@ -1361,12 +1424,19 @@ class LlsmPanel:
             iid = self.sidebar_tree.insert("", "end", text=f"{label} (0)", open=False)
             self._sidebar_category_iids[key] = iid
 
-        # Chat history.
-        self.history = scrolledtext.ScrolledText(
-            self.root, wrap="word", state="disabled",
-            font=("Segoe UI", 10), padx=10, pady=10,
+        # Chat history: a Text with a ttk scrollbar (ScrolledText's scrollbar
+        # is a plain Tk one that ignores the theme).
+        self.history_frame = tk.Frame(self.root, bd=0, highlightthickness=1)
+        self.history_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=(6, 4), pady=(2, 0))
+        history_sb = ttk.Scrollbar(self.history_frame, orient="vertical")
+        history_sb.pack(side=tk.RIGHT, fill=tk.Y)
+        self.history = tk.Text(
+            self.history_frame, wrap="word", state="disabled",
+            font=("Segoe UI", 10), padx=10, pady=10, relief="flat", bd=0,
+            highlightthickness=0, yscrollcommand=history_sb.set,
         )
-        self.history.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=4, pady=4)
+        history_sb.configure(command=self.history.yview)
+        self.history.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         # Markdown blocks, tables that refit on resize, the per-turn activity block.
         self._renderer = ChatRenderer(self.history)
         self._activity = None
@@ -1385,6 +1455,8 @@ class LlsmPanel:
         # Apply the theme: configure tags AND set tk.Text widget surfaces
         # explicitly (tk.Text does not inherit ttk theme — see plan).
         self._apply_theme()
+
+        self._schedule_theme_poll()
 
         # Show placeholder if input starts empty (it does).
         self._render_placeholder_if_empty()
@@ -1410,93 +1482,21 @@ class LlsmPanel:
         if killed:
             self._sysline("chat cancelled; SCIA state may be partial - call model_summary to verify")
 
-    # -------- Theme helpers (per plan: theme & accessibility ground rules) --------
-
-    def _resolve_rgb(self, value):
-        """Resolve any Tk color spec (#hex / named / SystemFoo) to an 8-bit RGB tuple.
-
-        Returns None on failure. Caller falls back to a baked-in reference value.
-        Critical for Windows: ttk.Style().lookup() often returns symbolic names
-        like 'SystemButtonFace', which winfo_rgb() resolves uniformly with hex.
-        """
-        if not value:
-            return None
-        try:
-            r16, g16, b16 = self.root.winfo_rgb(value)
-            return (r16 // 256, g16 // 256, b16 // 256)
-        except Exception:
-            return None
-
-    def _tint(self, base, accent, alpha=0.18):
-        """Blend `base` toward `accent` by `alpha` (0..1). Returns "#rrggbb".
-
-        On any TclError or unparseable input, falls back to the accent or to
-        a safe gray. Never returns None / "" — Tk tag config rejects those.
-        """
-        base_rgb = self._resolve_rgb(base) or self._resolve_rgb(_THEME_REFERENCE["bg"])
-        accent_rgb = self._resolve_rgb(accent) or self._resolve_rgb(_THEME_REFERENCE["fg"])
-        if base_rgb is None or accent_rgb is None:
-            if not self._tint_warned:
-                self._tint_warned = True
-                try:
-                    self._sysline(
-                        f"theme: could not resolve color (base={base!r}, accent={accent!r}); "
-                        "using built-in fallback"
-                    )
-                except Exception:
-                    pass
-            return _THEME_REFERENCE.get("muted", "#888888")
-        br, bg_, bb = base_rgb
-        ar, ag, ab = accent_rgb
-        r = int(br * (1 - alpha) + ar * alpha)
-        g = int(bg_ * (1 - alpha) + ag * alpha)
-        b = int(bb * (1 - alpha) + ab * alpha)
-        r = max(0, min(255, r))
-        g = max(0, min(255, g))
-        b = max(0, min(255, b))
-        return f"#{r:02x}{g:02x}{b:02x}"
+    # -------- Theme (colours live in conversation/theme.py) --------
 
     def _apply_theme(self):
-        """Resolve theme colors and apply them to chat tags AND tk.Text surfaces.
+        """Apply the active palette to chat tags, tk widget surfaces, menus and title bar.
 
-        Two halves: tag colors (per-message badges, separators) and widget
-        surfaces (history + input bg/fg/insertbackground). The latter is
-        critical because tk.Text does NOT inherit a ttk theme — without
-        explicit configuration the surface stays near-white even under a
-        dark ttk theme.
+        Colours come from theme.derive(palette); `bg` there is the content
+        surface (chat, input, tables), `chrome_bg` the window chrome. tk.Text,
+        tk.Label, tk.Frame and tk.Menu do NOT follow ttk styles, so each is
+        recoloured here explicitly. Safe to call again on a theme switch.
         """
-        try:
-            style = ttk.Style()
-            theme_bg = style.lookup(".", "background") or _THEME_REFERENCE["bg"]
-            theme_fg = style.lookup(".", "foreground") or _THEME_REFERENCE["fg"]
-        except Exception:
-            theme_bg = _THEME_REFERENCE["bg"]
-            theme_fg = _THEME_REFERENCE["fg"]
-
-        c = {
-            "bg":         theme_bg,
-            "fg":         theme_fg,
-            "muted":      self._tint(theme_bg, theme_fg, 0.45),
-            "separator":  self._tint(theme_bg, theme_fg, 0.18),
-            "user_fg":    self._tint(theme_fg, _THEME_REFERENCE["user_accent"], 0.65),
-            "llsm_fg":    self._tint(theme_fg, _THEME_REFERENCE["llsm_accent"], 0.55),
-            "error_fg":   _THEME_REFERENCE["error_accent"],
-            "system_fg":  self._tint(theme_fg, _THEME_REFERENCE["system_accent"], 0.6),
-            "user_bg":    self._tint(theme_bg, _THEME_REFERENCE["user_accent"], 0.18),
-            "llsm_bg":    self._tint(theme_bg, _THEME_REFERENCE["llsm_accent"], 0.16),
-            "error_bg":   self._tint(theme_bg, _THEME_REFERENCE["error_accent"], 0.20),
-            "system_bg":  self._tint(theme_bg, _THEME_REFERENCE["system_accent"], 0.10),
-            "thinking_bg": self._tint(theme_bg, _THEME_REFERENCE["thinking"], 0.22),
-            "running_bg":  self._tint(theme_bg, _THEME_REFERENCE["running"], 0.20),
-            "idle_bg":     self._tint(theme_bg, _THEME_REFERENCE["idle"], 0.10),
-            "error_pill_bg": self._tint(theme_bg, _THEME_REFERENCE["error_accent"], 0.25),
-            # Answer rendering: code, table header fill and alternate row tint.
-            "code_bg":       self._tint(theme_bg, theme_fg, 0.06),
-            "table_head_bg": self._tint(theme_bg, _THEME_REFERENCE["llsm_accent"], 0.14),
-            "table_alt_bg":  self._tint(theme_bg, theme_fg, 0.035),
-            "ok_fg":         self._tint(theme_fg, _THEME_REFERENCE["llsm_accent"], 0.75),
-            "link_fg":       self._tint(theme_fg, _THEME_REFERENCE["running"], 0.75),
-        }
+        p = self._palette
+        theme.set_current(p)
+        _THEME_REFERENCE.clear()
+        _THEME_REFERENCE.update(p.ref())
+        c = theme.derive(p)
         self._theme_colors = c
 
         # Configure chat tags. Body tags carry the role's foreground.
@@ -1506,34 +1506,134 @@ class LlsmPanel:
         tc("assistant", foreground=c["llsm_fg"],   font=("Segoe UI", 10), spacing1=2, spacing3=2)
         tc("error",     foreground=c["error_fg"],  font=("Segoe UI", 10), spacing1=2, spacing3=2)
         tc("system",    foreground=c["system_fg"], font=("Segoe UI", 9, "italic"))
-        # Badge tags carry bg + bold + leading accent bar (▎). Backgrounds
-        # may render ragged on Windows; the ▎ is the primary affordance.
-        tc("badge_user",   foreground=_THEME_REFERENCE["user_accent"],
+        # Badge tags carry bg + bold + leading accent bar. Backgrounds
+        # may render ragged on Windows; the bar is the primary affordance.
+        tc("badge_user",   foreground=p.user_accent,
            background=c["user_bg"],   font=("Segoe UI Semibold", 10), lmargin1=4)
-        tc("badge_llsm",   foreground=_THEME_REFERENCE["llsm_accent"],
+        tc("badge_llsm",   foreground=p.llsm_accent,
            background=c["llsm_bg"],   font=("Segoe UI Semibold", 10), lmargin1=4)
-        tc("badge_error",  foreground=_THEME_REFERENCE["error_accent"],
+        tc("badge_error",  foreground=p.error_accent,
            background=c["error_bg"],  font=("Segoe UI Semibold", 10), lmargin1=4)
         tc("badge_sys",    foreground=c["system_fg"],
            background=c["system_bg"], font=("Segoe UI Semibold", 9, "italic"), lmargin1=4)
         tc("timestamp",    foreground=c["muted"], font=("Segoe UI", 8, "italic"))
         tc("separator",    foreground=c["separator"], font=("Segoe UI", 9))
         tc("placeholder",  foreground=c["muted"], font=("Segoe UI", 10, "italic"))
+        # The placeholder is inserted into the INPUT widget, so its tag lives there too.
+        self.input_text.tag_configure("placeholder", foreground=c["muted"],
+                                      font=("Segoe UI", 10, "italic"))
         # Markdown styling (bold, code, headings, lists, tables, code blocks,
         # the activity block). Configured AFTER the body tags so Tk's
-        # creation-order priority lets them win for font/background.
+        # creation-order priority lets them win for font/background. Also
+        # recolours the margins of tables already on screen.
         self._renderer.configure(c, _THEME_REFERENCE)
 
-        # Configure tk.Text widget surfaces (history + input).
+        # Content surfaces (history + input).
         for w in (self.history, self.input_text):
             try:
-                w.configure(background=c["bg"], foreground=c["fg"],
-                            insertbackground=c["fg"])
+                w.configure(background=c["bg"], foreground=c["fg"], insertbackground=c["fg"],
+                            selectbackground=p.accent, selectforeground=p.accent_fg,
+                            inactiveselectbackground=p.button_active,
+                            highlightbackground=p.field_border, highlightcolor=p.accent)
             except Exception:
                 pass
+        # Chrome: window, caption strip, menu strip, title, chat frame border.
+        recolour = [
+            (self.root, dict(background=p.bg)),
+            (self.history_frame, dict(background=c["bg"], highlightbackground=p.field_border,
+                                      highlightcolor=p.field_border)),
+            (self.caption, dict(background=p.caption_bg)),
+            (self.caption_title, dict(background=p.caption_bg, foreground=p.fg)),
+            (self.caption_status, dict(background=p.caption_bg, foreground=p.muted)),
+            (self.caption_rule, dict(background=p.separator)),
+            (self.menu_strip, dict(background=p.caption_bg)),
+            (self.conv_title_label, dict(background=p.bg, foreground=p.fg)),
+        ]
+        recolour += [(mb, theme.menubutton_colors(p)) for mb in self._menu_buttons]
+        for widget, kw in recolour:
+            try:
+                widget.configure(**kw)
+            except Exception:
+                pass
+        self._recolour_menus()
+        try:
+            self.root.after_idle(theme.apply_titlebar, self.root, p.mode == theme.DARK_MODE)
+        except Exception:
+            pass
 
-        # Pill default (idle).
-        self._set_pill("idle")
+        # Pill in its current state (idle at startup), in the new colours.
+        self._set_pill(*self._pill_state)
+
+    def _theme_setting(self) -> str:
+        value = self._ui_settings_get("theme", theme.SYSTEM)
+        return value if value in theme.SETTINGS else theme.SYSTEM
+
+    def _on_theme_selected(self):
+        """View > Theme: persist the choice and restyle everything in place."""
+        setting = self._theme_var.get()
+        if setting not in theme.SETTINGS:
+            setting = theme.SYSTEM
+        self._ui_settings_set("theme", setting)
+        self.set_theme(setting)
+
+    def set_theme(self, setting: str):
+        """Switch to the palette for `setting` without a restart (does not persist it)."""
+        if self._theme_var.get() != setting:
+            self._theme_var.set(setting)   # keeps the menu tick and the poll in step
+        # A failed read of the Windows setting keeps the current palette.
+        self._palette = theme.palette_for(setting, fallback=self._palette.mode)
+        theme.apply_ttk(ttk.Style(self.root), self._palette, self.root)
+        self._apply_theme()
+        self._schedule_theme_poll()
+
+    def _schedule_theme_poll(self):
+        """Follow Windows: re-check the Windows app theme every few seconds.
+
+        Tk has no event for the Windows light/dark switch; reading one registry
+        value every THEME_POLL_MS is negligible. Runs only while the setting is
+        'system'.
+        """
+        if self._theme_poll_after is not None:
+            try:
+                self.root.after_cancel(self._theme_poll_after)
+            except Exception:
+                pass
+            self._theme_poll_after = None
+        if self._closing or self._theme_var.get() != theme.SYSTEM:
+            return
+        self._theme_poll_after = self.root.after(THEME_POLL_MS, self._on_theme_poll)
+
+    def _on_theme_poll(self):
+        self._theme_poll_after = None
+        if self._closing or self._theme_var.get() != theme.SYSTEM:
+            return
+        # A failed registry read keeps the current palette instead of flipping
+        # (here and again in set_theme, which reads the setting once more).
+        if theme.resolve_mode(theme.SYSTEM, fallback=self._palette.mode) != self._palette.mode:
+            self.set_theme(theme.SYSTEM)   # reschedules itself
+        else:
+            self._schedule_theme_poll()
+
+    def _recolour_menus(self):
+        """Every tk.Menu in the window, cascades rebuilt on each open included."""
+        menus = []
+        stack = [self.root]
+        while stack:
+            w = stack.pop()
+            try:
+                kids = w.winfo_children()
+            except Exception:
+                continue
+            for k in kids:
+                if isinstance(k, tk.Menu):
+                    menus.append(k)
+                stack.append(k)
+        kw = theme.menu_colors(self._palette)
+        for m in menus:
+            try:
+                m.configure(**kw)
+            except Exception:
+                pass
 
     # -------- Status pill (Phase B) --------
 
@@ -1547,6 +1647,8 @@ class LlsmPanel:
         """
         if not hasattr(self, "status_pill"):
             return
+        if state in ("idle", "thinking", "running", "error"):
+            self._pill_state = (state, detail)
         if state != "error" and self._pill_error_after is not None:
             try:
                 self.root.after_cancel(self._pill_error_after)
@@ -1561,7 +1663,7 @@ class LlsmPanel:
         elif state == "thinking":
             self.status_pill_var.set(f"{_GLYPH_PILL_THINKING} Thinking...")
             bg = c.get("thinking_bg", _THEME_REFERENCE["bg"])
-            fg = _THEME_REFERENCE["thinking"]
+            fg = c.get("thinking_fg", _THEME_REFERENCE["thinking"])
         elif state == "running":
             label = f"Running: {detail}" if detail else "Running"
             # Truncate to keep pill readable on narrow panels.
@@ -1569,14 +1671,14 @@ class LlsmPanel:
                 label = label[:57] + "..."
             self.status_pill_var.set(f"{_GLYPH_PILL_RUNNING} {label}")
             bg = c.get("running_bg", _THEME_REFERENCE["bg"])
-            fg = _THEME_REFERENCE["running"]
+            fg = c.get("running_fg", _THEME_REFERENCE["running"])
         elif state == "error":
             label = f"Error: {detail}" if detail else "Error"
             if len(label) > 60:
                 label = label[:57] + "..."
             self.status_pill_var.set(f"{_GLYPH_PILL_ERROR} {label}")
             bg = c.get("error_pill_bg", _THEME_REFERENCE["bg"])
-            fg = _THEME_REFERENCE["error_accent"]
+            fg = c.get("error_pill_fg", _THEME_REFERENCE["error_accent"])
         else:
             return
         try:
@@ -1680,10 +1782,10 @@ class LlsmPanel:
         """View menu checkbutton handler — show/hide the sidebar frame.
 
         Subtlety: pack_forget+pack appends the slave to the END of the pack
-        order. Re-packing without `before=self.history` would put sidebar
+        order. Re-packing without `before=self.history_frame` would put sidebar
         AFTER history, but history has fill=BOTH+expand=True and would
         already have claimed all the cavity — sidebar would render with
-        zero size. Using before=self.history inserts sidebar at its
+        zero size. Using before=self.history_frame inserts sidebar at its
         original position in the pack list so the layout matches the
         initial build_ui order.
         """
@@ -1694,7 +1796,7 @@ class LlsmPanel:
         try:
             if want:
                 self.sidebar_frame.pack(side=tk.RIGHT, fill=tk.Y,
-                                        before=self.history)
+                                        before=self.history_frame)
             else:
                 self.sidebar_frame.pack_forget()
         except Exception as exc:

@@ -142,13 +142,13 @@ class CredentialWizard(tk.Toplevel):
             # may raise ImportError.
             hint = self._sdk_install_hint_if_missing(spec)
             if hint:
-                ttk.Label(row, text=f"  ({hint} to enable)", foreground="#888").pack(side=tk.LEFT)
+                ttk.Label(row, text=f"  ({hint} to enable)", style="Muted.TLabel").pack(side=tk.LEFT)
 
         # Description label (refreshed when selection changes).
         self._desc_var = tk.StringVar(value="Pick a provider to see its description.")
         ttk.Separator(self._body, orient="horizontal").pack(fill=tk.X, pady=(10, 6))
         ttk.Label(self._body, textvariable=self._desc_var, wraplength=480,
-                  foreground="#444").pack(anchor="w")
+                  style="Muted.TLabel").pack(anchor="w")
 
         self._set_buttons(back=False, next_label="Next", next_enabled=False)
 
@@ -244,7 +244,7 @@ class CredentialWizard(tk.Toplevel):
 
         # Help link if we have one.
         if spec.help_url:
-            link = ttk.Label(self._body, text="Where to get this →", foreground="#1e6091", cursor="hand2")
+            link = ttk.Label(self._body, text="Where to get this →", style="Link.TLabel", cursor="hand2")
             link.pack(anchor="w", pady=(0, 6))
             link.bind("<Button-1>", lambda e: webbrowser.open(spec.help_url))
 
@@ -580,7 +580,7 @@ class ManageProvidersDialog(tk.Toplevel):
                        command=lambda s=spec: self._edit(s)).pack(side=tk.RIGHT, padx=(0, 6))
         if not any_configured:
             ttk.Label(self._body, text="(none configured yet — click 'Add new provider…')",
-                      foreground="#666").pack(anchor="w")
+                      style="Muted.TLabel").pack(anchor="w")
 
     def _add_new(self):
         wiz = CredentialWizard(self, on_saved=self._after_save)
