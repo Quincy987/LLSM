@@ -117,14 +117,15 @@ def _windows_prefers_light() -> bool:
     return bool(value)
 
 
-def resolve_mode(setting: str | None) -> str:
-    """'light' / 'dark' as given; 'system' (or anything else) follows Windows, light on error."""
+def resolve_mode(setting: str | None, fallback: str = LIGHT_MODE) -> str:
+    """'light' / 'dark' as given; 'system' (or anything else) follows Windows,
+    `fallback` when the Windows setting can't be read."""
     if setting in (LIGHT_MODE, DARK_MODE):
         return setting
     try:
         return LIGHT_MODE if _windows_prefers_light() else DARK_MODE
     except Exception:
-        return LIGHT_MODE
+        return fallback
 
 
 def palette_for(setting: str | None) -> Palette:

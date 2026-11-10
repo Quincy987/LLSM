@@ -790,7 +790,8 @@ class LlsmPanel:
         Not the native menubar: Windows always paints that white, which breaks
         the dark theme. Flat Menubuttons on the caption colour also look like a
         SCIA panel; a theme switch recolours them (_recolour_menus). Alt+F/V/T
-        and F10 still open them (Tk traverses Menubuttons by their underline).
+        and F10 open them as before: bound explicitly, because Tk's Windows
+        menu keys only drive a native menu bar.
         'Tools > Restart MCP server' lets the user force-restart without
         touching Task Manager; bound to Ctrl+R as well.
         """
@@ -876,9 +877,24 @@ class LlsmPanel:
                                        command=self._on_theme_selected)
         view.add_cascade(label="Theme", menu=theme_menu)
         view_mb.configure(menu=view)
+        # Alt+<underlined letter> opens that menu, F10 the first one.
+        for mb in self._menu_buttons:
+            letter = mb.cget("text")[int(mb.cget("underline"))].lower()
+            for key in (letter, letter.upper()):
+                self.root.bind_all(f"<Alt-KeyPress-{key}>",
+                                   lambda e, mb=mb: self._post_menu(mb))
+        self.root.bind_all("<F10>", lambda e: self._post_menu(self._menu_buttons[0]))
         # Keyboard shortcut for the restart action.
         if self._backend_kind == "claude-code":
             self.root.bind_all("<Control-r>", lambda e: (self._on_menu_restart_mcp(), "break"))
+
+    def _post_menu(self, menubutton):
+        """Open a menu-strip menu as a click would. Returns "break" for key bindings."""
+        try:
+            self.root.tk.call("tk::MbPost", str(menubutton))
+        except tk.TclError as exc:
+            print(f"[panel] could not open menu: {exc}", file=sys.stderr)
+        return "break"
 
     def _on_menu_restart_mcp(self):
         """User-requested MCP restart. Bypasses the watchdog cooldown but still
@@ -1580,7 +1596,8 @@ class LlsmPanel:
         self._theme_poll_after = None
         if self._closing or self._theme_var.get() != theme.SYSTEM:
             return
-        if theme.resolve_mode(theme.SYSTEM) != self._palette.mode:
+        # A failed registry read keeps the current palette instead of flipping.
+        if theme.resolve_mode(theme.SYSTEM, fallback=self._palette.mode) != self._palette.mode:
             self.set_theme(theme.SYSTEM)   # reschedules itself
         else:
             self._schedule_theme_poll()

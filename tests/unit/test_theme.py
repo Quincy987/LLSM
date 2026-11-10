@@ -18,6 +18,8 @@ def test_system_mode_never_raises(monkeypatch):
     monkeypatch.setattr(theme, "_windows_prefers_light", boom)
     assert theme.resolve_mode("system") == "light"
     assert theme.resolve_mode(None) == "light"
+    # The Follow-Windows poll passes the current mode so a failed read doesn't flip it.
+    assert theme.resolve_mode("system", fallback="dark") == "dark"
 
 
 @pytest.mark.parametrize("prefers_light, expected", [(True, "light"), (False, "dark")])
