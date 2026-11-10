@@ -790,8 +790,9 @@ class LlsmPanel:
         Not the native menubar: Windows always paints that white, which breaks
         the dark theme. Flat Menubuttons on the caption colour also look like a
         SCIA panel; a theme switch recolours them (_recolour_menus). Alt+F/V/T
-        and F10 open them as before: bound explicitly, because Tk's Windows
-        menu keys only drive a native menu bar.
+        open them as before: bound explicitly, because Tk's Windows menu keys
+        only drive a native menu bar. F10 can't be bound: Windows keeps it for
+        the window's system menu before Tk sees it.
         'Tools > Restart MCP server' lets the user force-restart without
         touching Task Manager; bound to Ctrl+R as well.
         """
@@ -877,19 +878,28 @@ class LlsmPanel:
                                        command=self._on_theme_selected)
         view.add_cascade(label="Theme", menu=theme_menu)
         view_mb.configure(menu=view)
-        # Alt+<underlined letter> opens that menu, F10 the first one.
+        # Alt+<underlined letter> opens that menu.
         for mb in self._menu_buttons:
             letter = mb.cget("text")[int(mb.cget("underline"))].lower()
             for key in (letter, letter.upper()):
                 self.root.bind_all(f"<Alt-KeyPress-{key}>",
-                                   lambda e, mb=mb: self._post_menu(mb))
-        self.root.bind_all("<F10>", lambda e: self._post_menu(self._menu_buttons[0]))
+                                   lambda e, mb=mb: self._post_menu(mb, e))
         # Keyboard shortcut for the restart action.
         if self._backend_kind == "claude-code":
             self.root.bind_all("<Control-r>", lambda e: (self._on_menu_restart_mcp(), "break"))
 
-    def _post_menu(self, menubutton):
-        """Open a menu-strip menu as a click would. Returns "break" for key bindings."""
+    def _post_menu(self, menubutton, event=None):
+        """Open a menu-strip menu as a click would. Returns "break" for key bindings.
+
+        The keys are bound on "all", so a key pressed in a dialog (history,
+        credentials) is left alone: the menus belong to the main window.
+        """
+        if event is not None:
+            try:
+                if event.widget.winfo_toplevel() is not self.root:
+                    return None
+            except Exception:   # widget given as a path string, or already gone
+                return None
         try:
             self.root.tk.call("tk::MbPost", str(menubutton))
         except tk.TclError as exc:

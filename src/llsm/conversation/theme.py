@@ -132,11 +132,6 @@ def palette_for(setting: str | None) -> Palette:
     return _PALETTES[resolve_mode(setting)]
 
 
-def current() -> Palette:
-    """The palette the panel last applied (LIGHT before anything is applied)."""
-    return _current
-
-
 def set_current(palette: Palette) -> None:
     global _current
     _current = palette

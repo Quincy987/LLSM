@@ -11,11 +11,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   content areas and SCIA's teal as the one accent; a caption strip ("LLSM" + SCIA/MCP
   status), flat buttons, a teal Send button, 9 pt chrome text. The native menu bar is
   replaced by a menu strip inside the window (Windows always paints the native one
-  white); Alt+F/V/T and F10 still open it. **View > Theme**: Light / Dark / Follow
+  white); Alt+F/V/T still open its menus. **View > Theme**: Light / Dark / Follow
   Windows (default, also follows a Windows switch while the panel runs), remembered in
   `~/.llsm/ui_settings.json` and applied without a restart, tables already in the chat
-  and the status pill's current state included. Dialogs (history, providers, credentials, diagnose) and the Windows title
-  bar follow the theme. All colours live in `conversation/theme.py`; both palettes
+  and the status pill's current state included. Dialogs (history, providers,
+  credentials, diagnose) and the Windows title bar follow the theme. All colours live in `conversation/theme.py`; both palettes
   are checked for WCAG AA text contrast. The input placeholder now shows grey italic.
 - **Answers render like VibeModel's.** A markdown-lite parser
   (`conversation/markdown_lite.py`) reads headings, nested and numbered lists,
