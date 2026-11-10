@@ -57,8 +57,10 @@ class FileMenuBuilder:
         self.on_open_history = on_open_history
         self.open_wizard_cb = open_wizard_cb
 
-    def build(self, menubar: tk.Menu) -> tk.Menu:
+    def build(self, menubar: tk.Misc) -> tk.Menu:
+        """The File menu, parented to `menubar` (a tk.Menu or a Menubutton)."""
         m = tk.Menu(menubar, tearoff=False, postcommand=self._refresh_dynamic)
+        self._file_menu = m
         m.add_command(label="New Chat  Ctrl+N", command=lambda: self.on_new(None))
 
         self._recent_menu = tk.Menu(m, tearoff=False)
@@ -80,6 +82,16 @@ class FileMenuBuilder:
         # Initial population so the cascades aren't empty before first hover.
         self._refresh_dynamic()
         return m
+
+    def menus(self) -> list[tk.Menu]:
+        """The menus this builder owns, for recolouring on a theme switch.
+
+        Cascades rebuilt on every open (per-provider model lists) are created
+        fresh with the current option defaults, so they aren't listed here.
+        """
+        return [m for m in (getattr(self, "_file_menu", None),
+                            getattr(self, "_recent_menu", None),
+                            getattr(self, "_models_menu", None)) if m is not None]
 
     def _refresh_dynamic(self) -> None:
         self._populate_recent()
