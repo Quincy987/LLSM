@@ -96,7 +96,7 @@ import win32process
 import winerror
 
 from . import mcp_supervisor
-from .conversation import theme
+from .conversation import stamps, theme
 from .conversation.chat_render import ChatRenderer
 from .conversation.menu import FileMenuBuilder, HistoryDialog
 from .conversation.session import ConversationSession
@@ -140,13 +140,15 @@ SINGLE_INSTANCE_MUTEX = "Global\\LLSMPanel"
 # color second; never color alone.
 _THEME_REFERENCE = dict(theme.LIGHT.ref())
 
-# Glyph vocabulary (per plan section "Theme & accessibility ground rules").
-_GLYPH_USER = "[YOU]"
-_GLYPH_LLSM = "[LLSM]"
-_GLYPH_ERR  = "[ERROR]"
-_GLYPH_SYS  = "[SYS]"
-_GLYPH_BAR  = "▎"   # ▎ left accent bar
-_GLYPH_SEP  = "─" * 36  # row of ─ for separators
+# Name shown above each message, and its tag (configured in _apply_theme).
+_WHO = {
+    "user": ("Jij", "who_user"),
+    "assistant": ("LLSM", "who_llsm"),
+    "error": ("Fout", "who_error"),
+}
+
+# Status glyphs (per plan section "Theme & accessibility ground rules"):
+# glyph + text first, color second.
 _GLYPH_PILL_IDLE     = "●"  # ●
 _GLYPH_PILL_THINKING = "◐"  # ◐
 _GLYPH_PILL_RUNNING  = "▶"  # ▶
@@ -252,7 +254,8 @@ class LlsmPanel:
         self._placeholder_active = False
         self._active_tools: list[str] = []         # stack of in-flight tools for pill
         self._pill_error_after = None              # after-id for auto-clear
-        self._sidebar_visible = True
+        # Model sidebar: closed unless the user opened it last time (View menu).
+        self._sidebar_visible = bool(self._ui_settings_get("sidebar_visible", False))
         self._sidebar_fetch_inflight = False
         self._sidebar_fetch_dirty = False
 
@@ -788,7 +791,7 @@ class LlsmPanel:
         """Menu strip inside the window: File / View / Tools.
 
         Not the native menubar: Windows always paints that white, which breaks
-        the dark theme. Flat Menubuttons on the caption colour also look like a
+        the dark theme. Flat Menubuttons on the strip colour also look like a
         SCIA panel; a theme switch recolours them (_recolour_menus). Alt+F/V/T
         open them as before: bound explicitly, because Tk's Windows menu keys
         only drive a native menu bar. F10 can't be bound: Windows keeps it for
@@ -796,7 +799,7 @@ class LlsmPanel:
         'Tools > Restart MCP server' lets the user force-restart without
         touching Task Manager; bound to Ctrl+R as well.
         """
-        strip = tk.Frame(self.root, bg=self._palette.caption_bg, bd=0, highlightthickness=0)
+        strip = tk.Frame(self.root, bg=self._palette.strip_bg, bd=0, highlightthickness=0)
         strip.pack(side=tk.TOP, fill=tk.X)
         self.menu_strip = strip
 
@@ -863,7 +866,7 @@ class LlsmPanel:
         tools_mb.configure(menu=tools)
         # View menu: sidebar toggle + theme.
         view = tk.Menu(view_mb, tearoff=False)
-        self._sidebar_visible_var = tk.BooleanVar(value=True)
+        self._sidebar_visible_var = tk.BooleanVar(value=self._sidebar_visible)
         view.add_checkbutton(
             label="Show Model Sidebar",
             onvalue=True, offvalue=False,
@@ -936,7 +939,12 @@ class LlsmPanel:
         window.title("LLSM diagnose")
         text = tk.Text(window, width=100, height=20, wrap="none", relief="flat",
                        font=("Consolas", 9), padx=8, pady=6)
-        text.insert("end", "Checking…")
+        # The SCIA / MCP status used to sit in a strip on the panel; it lives
+        # here now, on top of the report (and in what Copy puts on the clipboard).
+        def status() -> str:
+            return f"Panel: {self.status_var.get().strip()}\n\n"
+
+        text.insert("end", status() + "Checking…")
         text.configure(state="disabled")
         text.pack(fill="both", expand=True)
 
@@ -950,7 +958,7 @@ class LlsmPanel:
             if text.winfo_exists():
                 text.configure(state="normal")
                 text.delete("1.0", "end")
-                text.insert("end", report)
+                text.insert("end", status() + report)
                 text.configure(state="disabled")
 
         def work():
@@ -1095,11 +1103,11 @@ class LlsmPanel:
         replay rather than re-rendered + re-logged to chat.log.
         """
         if role == "user":
-            self._append("you", text, "user", ts=ts)
+            self._append(text, "user", ts=ts)
         elif role == "llsm":
-            self._append("LLSM", text, "assistant", ts=ts)
+            self._append(text, "assistant", ts=ts)
         elif role == "error":
-            self._append("error", text, "error", ts=ts)
+            self._append(text, "error", ts=ts)
 
     def _on_menu_new_chat(self, _model_id):
         if self._closing:
@@ -1322,7 +1330,7 @@ class LlsmPanel:
         # Route uncaught exceptions in Tk callbacks to panel.log instead of
         # default handling (which on Windows can silently kill mainloop).
         self.root.report_callback_exception = self._log_callback_exc
-        self.root.title(f"LLSM - {self._backend_kind}")
+        self.root.title("LLSM")
         if self._always_on_top:
             self.root.attributes("-topmost", True)
         # Theme first: ttk styles and the option defaults for plain Tk widgets
@@ -1332,46 +1340,34 @@ class LlsmPanel:
         theme.apply_ttk(ttk.Style(self.root), self._palette, self.root)
         theme.install_dialog_titlebars(self.root)
         self._build_menu()
-        # Wider default to accommodate the model-state sidebar.
-        default_w = PANEL_WIDTH + SIDEBAR_WIDTH
+        # Wider only when the model sidebar is open.
+        default_w = PANEL_WIDTH + (SIDEBAR_WIDTH if self._sidebar_visible else 0)
         self.root.geometry(f"{default_w}x800+0+0")
-        self.root.minsize(360 + SIDEBAR_WIDTH, 500)
+        self.root.minsize(360, 500)
 
-        # Caption strip, like the title of a docked SCIA panel: "LLSM" on the
-        # left, SCIA / MCP status on the right.
+        # One header line under the menu strip: conversation title on the left
+        # (click to rename), the activity status as small text on the right.
+        # The SCIA / MCP status is kept in status_var for Tools > Diagnose.
         p = self._palette
-        self.caption = tk.Frame(self.root, bg=p.caption_bg, height=26, bd=0, highlightthickness=0)
-        self.caption.pack(side=tk.TOP, fill=tk.X)
-        self.caption.pack_propagate(False)
-        self.caption_title = tk.Label(self.caption, text="LLSM", font=theme.CHROME_FONT_BOLD,
-                                      bg=p.caption_bg, fg=p.fg, padx=10)
-        self.caption_title.pack(side=tk.LEFT)
         self.status_var = tk.StringVar(value="searching for SCIA...    |    MCP: starting...")
-        self.caption_status = tk.Label(self.caption, textvariable=self.status_var, anchor="e",
-                                       font=theme.CHROME_FONT, bg=p.caption_bg, fg=p.muted, padx=10)
-        self.caption_status.pack(side=tk.RIGHT, fill=tk.X, expand=True)
-        self.caption_rule = tk.Frame(self.root, height=1, bg=p.separator, bd=0, highlightthickness=0)
-        self.caption_rule.pack(side=tk.TOP, fill=tk.X)
-
-        # Conversation title bar. Shows active conversation title + model.
-        # Click to rename.
-        self.conv_title_var = tk.StringVar(value="")
-        self.conv_title_label = tk.Label(
-            self.root, textvariable=self.conv_title_var, anchor="w",
-            padx=10, pady=3, font=theme.CHROME_FONT, cursor="hand2",
-        )
-        self.conv_title_label.pack(side=tk.TOP, fill=tk.X)
-        self.conv_title_label.bind("<Button-1>", lambda e: self._on_rename_active_conv())
-
+        self.header = tk.Frame(self.root, bg=p.bg, bd=0, highlightthickness=0)
+        self.header.pack(side=tk.TOP, fill=tk.X)
         # Status pill: live indicator of LLSM activity. Glyph + text first,
         # color second. State machine driven via outbox events from the
-        # worker thread.
+        # worker thread. Packed first so a long title can't push it out.
         self.status_pill_var = tk.StringVar(value=f"{_GLYPH_PILL_IDLE} Idle")
         self.status_pill = tk.Label(
-            self.root, textvariable=self.status_pill_var, anchor="w",
-            padx=10, pady=2, font=theme.CHROME_FONT_BOLD,
+            self.header, textvariable=self.status_pill_var, anchor="e",
+            padx=10, pady=4, font=theme.CHROME_FONT,
         )
-        self.status_pill.pack(side=tk.TOP, fill=tk.X)
+        self.status_pill.pack(side=tk.RIGHT)
+        self.conv_title_var = tk.StringVar(value="")
+        self.conv_title_label = tk.Label(
+            self.header, textvariable=self.conv_title_var, anchor="w",
+            padx=10, pady=4, font=theme.CHROME_FONT, cursor="hand2",
+        )
+        self.conv_title_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.conv_title_label.bind("<Button-1>", lambda e: self._on_rename_active_conv())
 
         # Bottom: input + buttons (build first so it reserves space; chat
         # area expands to fill the remainder).
@@ -1394,17 +1390,19 @@ class LlsmPanel:
 
         button_row = ttk.Frame(bottom)
         button_row.pack(side=tk.TOP, fill=tk.X)
+        self.send_btn = ttk.Button(button_row, text="Send", command=self._send,
+                                   style="Accent.TButton")
+        self.send_btn.pack(side=tk.RIGHT)
         self.cancel_btn = ttk.Button(button_row, text="Cancel", command=self._on_cancel,
                                      state="disabled")
-        self.cancel_btn.pack(side=tk.LEFT, padx=(0, 4))
-        self.send_btn = ttk.Button(button_row, text="Send (Enter)", command=self._send,
-                                   style="Accent.TButton")
-        self.send_btn.pack(side=tk.RIGHT, fill=tk.X, expand=True)
+        self.cancel_btn.pack(side=tk.RIGHT, padx=(0, 6))
 
-        # Center: chat history (left) + sidebar (right). Pack the sidebar
-        # first so it reserves its width; chat fills the remainder.
+        # Center: chat history (left) + sidebar (right, closed by default).
+        # Pack the sidebar first so it reserves its width; chat fills the
+        # remainder. View > Show Model Sidebar re-packs it before the chat.
         self.sidebar_frame = ttk.Frame(self.root, width=SIDEBAR_WIDTH)
-        self.sidebar_frame.pack(side=tk.RIGHT, fill=tk.Y)
+        if self._sidebar_visible:
+            self.sidebar_frame.pack(side=tk.RIGHT, fill=tk.Y)
         self.sidebar_frame.pack_propagate(False)
 
         ttk.Label(self.sidebar_frame, text="Model", anchor="w", style="Header.TLabel",
@@ -1426,7 +1424,7 @@ class LlsmPanel:
 
         # Chat history: a Text with a ttk scrollbar (ScrolledText's scrollbar
         # is a plain Tk one that ignores the theme).
-        self.history_frame = tk.Frame(self.root, bd=0, highlightthickness=1)
+        self.history_frame = tk.Frame(self.root, bd=0, highlightthickness=0)
         self.history_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=(6, 4), pady=(2, 0))
         history_sb = ttk.Scrollbar(self.history_frame, orient="vertical")
         history_sb.pack(side=tk.RIGHT, fill=tk.Y)
@@ -1461,11 +1459,7 @@ class LlsmPanel:
         # Show placeholder if input starts empty (it does).
         self._render_placeholder_if_empty()
 
-        self._sysline(
-            f"Welcome to LLSM. Backend: {self._backend_kind}. "
-            f"Press Enter to send, Shift+Enter for newline. "
-            f"Standalone mode - this window stays put when SCIA opens/closes."
-        )
+        self._sysline("Welkom bij LLSM. Enter verstuurt, Shift+Enter nieuwe regel.")
 
     def _on_return_key(self, event):
         self._send()
@@ -1502,22 +1496,23 @@ class LlsmPanel:
         # Configure chat tags. Body tags carry the role's foreground.
         tc = self.history.tag_configure
         # spacing1/3 give body lines a little more height than Tk's default.
-        tc("user",      foreground=c["user_fg"],   font=("Segoe UI", 10), spacing1=2, spacing3=2)
+        # Your messages sit on a soft block (fill inset by the margins); answers
+        # stay on the bare surface. The margins are filled too: they are the
+        # block's inner padding, and list items (whose own indent is smaller
+        # than 8 px) then still sit inside the block.
+        tc("user",      foreground=c["user_fg"],   font=("Segoe UI", 10), spacing1=2, spacing3=2,
+           background=c["user_bg"], lmargin1=8, lmargin2=8, rmargin=8,
+           lmargincolor=c["user_bg"], rmargincolor=c["user_bg"])
         tc("assistant", foreground=c["llsm_fg"],   font=("Segoe UI", 10), spacing1=2, spacing3=2)
         tc("error",     foreground=c["error_fg"],  font=("Segoe UI", 10), spacing1=2, spacing3=2)
         tc("system",    foreground=c["system_fg"], font=("Segoe UI", 9, "italic"))
-        # Badge tags carry bg + bold + leading accent bar. Backgrounds
-        # may render ragged on Windows; the bar is the primary affordance.
-        tc("badge_user",   foreground=p.user_accent,
-           background=c["user_bg"],   font=("Segoe UI Semibold", 10), lmargin1=4)
-        tc("badge_llsm",   foreground=p.llsm_accent,
-           background=c["llsm_bg"],   font=("Segoe UI Semibold", 10), lmargin1=4)
-        tc("badge_error",  foreground=p.error_accent,
-           background=c["error_bg"],  font=("Segoe UI Semibold", 10), lmargin1=4)
-        tc("badge_sys",    foreground=c["system_fg"],
-           background=c["system_bg"], font=("Segoe UI Semibold", 9, "italic"), lmargin1=4)
-        tc("timestamp",    foreground=c["muted"], font=("Segoe UI", 8, "italic"))
-        tc("separator",    foreground=c["separator"], font=("Segoe UI", 9))
+        # Header above each message: the name in small type, then the time in grey.
+        tc("who_user",     foreground=p.user_accent,  font=("Segoe UI Semibold", 9))
+        tc("who_llsm",     foreground=c["muted"],     font=("Segoe UI Semibold", 9))
+        tc("who_error",    foreground=p.error_accent, font=("Segoe UI Semibold", 9))
+        tc("timestamp",    foreground=c["muted"], font=("Segoe UI", 8))
+        # White space between turns instead of a rule.
+        tc("turn_gap",     font=("Segoe UI", 6), spacing1=6, spacing3=6)
         tc("placeholder",  foreground=c["muted"], font=("Segoe UI", 10, "italic"))
         # The placeholder is inserted into the INPUT widget, so its tag lives there too.
         self.input_text.tag_configure("placeholder", foreground=c["muted"],
@@ -1537,16 +1532,12 @@ class LlsmPanel:
                             highlightbackground=p.field_border, highlightcolor=p.accent)
             except Exception:
                 pass
-        # Chrome: window, caption strip, menu strip, title, chat frame border.
+        # Chrome: window, menu strip, header line, chat frame.
         recolour = [
             (self.root, dict(background=p.bg)),
-            (self.history_frame, dict(background=c["bg"], highlightbackground=p.field_border,
-                                      highlightcolor=p.field_border)),
-            (self.caption, dict(background=p.caption_bg)),
-            (self.caption_title, dict(background=p.caption_bg, foreground=p.fg)),
-            (self.caption_status, dict(background=p.caption_bg, foreground=p.muted)),
-            (self.caption_rule, dict(background=p.separator)),
-            (self.menu_strip, dict(background=p.caption_bg)),
+            (self.history_frame, dict(background=c["bg"])),
+            (self.menu_strip, dict(background=p.strip_bg)),
+            (self.header, dict(background=p.bg)),
             (self.conv_title_label, dict(background=p.bg, foreground=p.fg)),
         ]
         recolour += [(mb, theme.menubutton_colors(p)) for mb in self._menu_buttons]
@@ -1658,11 +1649,9 @@ class LlsmPanel:
         c = self._theme_colors or {}
         if state == "idle":
             self.status_pill_var.set(f"{_GLYPH_PILL_IDLE} Idle")
-            bg = c.get("idle_bg", _THEME_REFERENCE["bg"])
             fg = c.get("muted", _THEME_REFERENCE["muted"])
         elif state == "thinking":
             self.status_pill_var.set(f"{_GLYPH_PILL_THINKING} Thinking...")
-            bg = c.get("thinking_bg", _THEME_REFERENCE["bg"])
             fg = c.get("thinking_fg", _THEME_REFERENCE["thinking"])
         elif state == "running":
             label = f"Running: {detail}" if detail else "Running"
@@ -1670,19 +1659,18 @@ class LlsmPanel:
             if len(label) > 60:
                 label = label[:57] + "..."
             self.status_pill_var.set(f"{_GLYPH_PILL_RUNNING} {label}")
-            bg = c.get("running_bg", _THEME_REFERENCE["bg"])
             fg = c.get("running_fg", _THEME_REFERENCE["running"])
         elif state == "error":
             label = f"Error: {detail}" if detail else "Error"
             if len(label) > 60:
                 label = label[:57] + "..."
             self.status_pill_var.set(f"{_GLYPH_PILL_ERROR} {label}")
-            bg = c.get("error_pill_bg", _THEME_REFERENCE["bg"])
             fg = c.get("error_pill_fg", _THEME_REFERENCE["error_accent"])
         else:
             return
         try:
-            self.status_pill.configure(background=bg, foreground=fg)
+            # Plain text on the header line: no fill, the colour carries the state.
+            self.status_pill.configure(background=self._palette.bg, foreground=fg)
         except Exception:
             pass
 
@@ -1793,6 +1781,7 @@ class LlsmPanel:
         if want == self._sidebar_visible:
             return
         self._sidebar_visible = want
+        self._ui_settings_set("sidebar_visible", want)
         try:
             if want:
                 self.sidebar_frame.pack(side=tk.RIGHT, fill=tk.Y,
@@ -1801,6 +1790,16 @@ class LlsmPanel:
                 self.sidebar_frame.pack_forget()
         except Exception as exc:
             self._sysline(f"sidebar toggle failed: {exc}")
+            return
+        # The chat keeps its width: the window grows or shrinks by the sidebar
+        # (not when maximised; never below the minimum width).
+        try:
+            if self.root.state() == "normal":
+                width = self.root.winfo_width() + (SIDEBAR_WIDTH if want else -SIDEBAR_WIDTH)
+                min_w = self.root.minsize()[0]
+                self.root.geometry(f"{max(min_w, width)}x{self.root.winfo_height()}")
+        except Exception:
+            pass
 
     def _request_sidebar_refresh(self):
         """Tk-thread: kick a daemon thread to fetch a fresh snapshot.
@@ -2077,7 +2076,7 @@ class LlsmPanel:
             self.input_text.configure(height=INPUT_MIN_LINES)
         except Exception:
             pass
-        self._append("you", text, "user")
+        self._append(text, "user")
         _chat_log("USER", text)
         # Ensure an active conv exists before recording — covers the edge
         # where the user deleted the active conv from the History dialog.
@@ -2187,7 +2186,7 @@ class LlsmPanel:
             # discreet sysline instead, and don't record it into the new
             # conv's transcript either.
             if self._reply_belongs_to_active():
-                self._append("error", msg, "error")
+                self._append(msg, "error")
                 try:
                     self._conv_session.record_error(str(msg))
                 except Exception:
@@ -2247,7 +2246,7 @@ class LlsmPanel:
             # Default: assistant reply.
             _chat_log("LLSM", msg)
             if self._reply_belongs_to_active():
-                self._append("LLSM", msg, "assistant")
+                self._append(msg, "assistant")
                 try:
                     self._conv_session.record_assistant(str(msg))
                 except Exception:
@@ -2263,10 +2262,6 @@ class LlsmPanel:
                 self._sysline("reply discarded: conversation switched mid-flight")
 
     # -------- Helpers --------
-
-    @staticmethod
-    def _now_stamp():
-        return datetime.now().isoformat(timespec="seconds").replace("T", " ")
 
     def _render_markdown_body(self, body, base_tag):
         """Render body text into self.history (markdown-lite, see conversation/markdown_lite.py)."""
@@ -2294,53 +2289,34 @@ class LlsmPanel:
         if block is not None:
             block.finish()
 
-    def _append(self, who, text, tag, ts=None):
-        """Render a chat turn as a badge + timestamp + body + separator block.
+    def _append(self, text, tag, ts=None):
+        """Render a chat turn: a small name + time line, the body, then white space.
 
-        `tag` selects the body color (user / assistant / error / system).
-        Badge surface uses the matching badge_<role> tag (bold + bg + ▎).
+        `tag` selects the body style (user / assistant / error). Your messages
+        sit on a soft block (the `user` tag), answers on the bare surface.
         `ts` (optional) lets transcript replay show the message's ORIGINAL
         timestamp instead of "now"; live messages pass None and get the
         current time.
         """
-        # Map body tag -> badge tag + glyph.
-        if tag == "user":
-            badge_tag, glyph = "badge_user", _GLYPH_USER
-        elif tag == "assistant":
-            badge_tag, glyph = "badge_llsm", _GLYPH_LLSM
-        elif tag == "error":
-            badge_tag, glyph = "badge_error", _GLYPH_ERR
-        else:
-            badge_tag, glyph = "badge_sys", _GLYPH_SYS
-
-        if ts is None:
-            ts = self._now_stamp()
-        else:
-            # Normalise transcript ISO timestamps ("2025-01-01T00:00:00+00:00"
-            # or legacy "2025-01-01T00:00:00") to the same "YYYY-MM-DD HH:MM:SS"
-            # format _now_stamp produces. Skip TZ math; the date is the
-            # informative bit when re-reading old conversations.
-            ts = (ts or "").replace("T", " ").split("+", 1)[0].rstrip("Z").strip()
-            if not ts:
-                ts = self._now_stamp()
+        name, who_tag = _WHO.get(tag, _WHO["assistant"])
+        ts = stamps.short_stamp(stamps.local_stamp(ts) if ts else stamps.now_stamp())
         body = (text or "").rstrip()
 
         self.history.config(state="normal")
         try:
-            # Header row: ▎[ROLE]   <timestamp>
-            self.history.insert("end", f"{_GLYPH_BAR}{glyph}  ", badge_tag)
-            self.history.insert("end", f"{ts}\n", "timestamp")
+            self.history.insert("end", name, who_tag)
+            self.history.insert("end", f"  ·  {ts}\n", "timestamp")
             # Body (markdown-lite: **bold**, `code`, # headings, - bullets).
+            # It ends on its own newline; another one in the body's tag would
+            # add an empty (for your messages: filled) line.
             self._render_markdown_body(body, tag)
-            # Spacer + thin separator + spacer.
-            self.history.insert("end", "\n", tag)
-            self.history.insert("end", _GLYPH_SEP + "\n\n", "separator")
+            self.history.insert("end", "\n", "turn_gap")
             self.history.see("end")
         finally:
             self.history.config(state="disabled")
 
     def _sysline(self, text):
-        """One-line status from the panel (not the LLM). Greyed, italic, less prominent."""
+        """One-line status from the panel (not the LLM): time + grey italic text."""
         print(f"[panel/sys] {text}", file=sys.stderr)
         _chat_log("SYS", text)
         # Don't crash if the history widget isn't ready yet (early-construction
@@ -2349,9 +2325,9 @@ class LlsmPanel:
             return
         self.history.config(state="normal")
         try:
-            self.history.insert("end", f"{_GLYPH_BAR}{_GLYPH_SYS}  ", "badge_sys")
-            self.history.insert("end", f"{self._now_stamp()}\n", "timestamp")
-            self.history.insert("end", (text or "").rstrip() + "\n\n", "system")
+            self.history.insert("end", f"{stamps.short_stamp(stamps.now_stamp())}  ", "timestamp")
+            self.history.insert("end", (text or "").rstrip() + "\n", "system")
+            self.history.insert("end", "\n", "turn_gap")
             self.history.see("end")
         finally:
             self.history.config(state="disabled")

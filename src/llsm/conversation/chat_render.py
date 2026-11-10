@@ -139,7 +139,8 @@ class ChatRenderer:
         tc("md_act_args", foreground=c["separator"])
         for reg in self.tables():
             try:
-                tc(reg.state["tag"], lmargincolor=c["bg"], rmargincolor=c["bg"])
+                margin = self._margin_bg(reg.state["base"])
+                tc(reg.state["tag"], lmargincolor=margin, rmargincolor=margin)
             except (tk.TclError, KeyError):
                 pass
         self.t.tag_raise("sel")
@@ -148,6 +149,18 @@ class ChatRenderer:
 
     def _bg(self) -> str:
         return self._colors.get("bg") or theme.light_colors()["bg"]
+
+    def _margin_bg(self, base) -> str:
+        """Margin colour for a table: its message's own (e.g. the panel's block
+        behind your messages) when the base tag sets one, else the surface."""
+        for tag in base:
+            try:
+                colour = str(self.t.tag_cget(tag, "lmargincolor"))
+            except tk.TclError:
+                colour = ""
+            if colour:
+                return colour
+        return self._bg()
 
     def _ins(self, text: str, tags) -> None:
         self.t.insert("md_ins", text, tuple(tags))
@@ -415,8 +428,8 @@ class ChatRenderer:
         self.t.tag_configure(s["tag"], tabs=tuple(stops), lmargin1=TABLE_LEFT,
                              lmargin2=TABLE_LEFT, rmargin=max(0, pane - table_w),
                              # Tk fills the margins with the row colour unless told otherwise.
-                             lmargincolor=self._bg(),
-                             rmargincolor=self._bg())
+                             lmargincolor=self._margin_bg(base),
+                             rmargincolor=self._margin_bg(base))
         self.t.tag_raise("sel")
 
         hidden = 0 if s["open"] else tl.hidden_row_count(len(rows))

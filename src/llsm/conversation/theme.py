@@ -7,7 +7,7 @@ widgets and sets option defaults for plain Tk widgets; `apply_titlebar()` makes
 the Windows title bar follow.
 
 The light palette follows SCIA Engineer 24: grey window chrome (#f0f0f0), a
-slightly lighter caption, white content areas and SCIA's teal (its logo is
+slightly lighter menu strip, white content areas and SCIA's teal (its logo is
 #55c4be) as the single accent, darkened on light backgrounds so text stays
 readable (WCAG AA, checked in tests/unit/test_theme.py).
 """
@@ -30,7 +30,7 @@ class Palette:
     mode: str
     # Surfaces.
     bg: str              # window chrome (frames, toolbars, sidebar header)
-    caption_bg: str      # caption strip and menu strip
+    strip_bg: str        # menu strip
     surface: str         # content areas: chat, input, tree, lists
     fg: str
     muted: str
@@ -74,7 +74,7 @@ class Palette:
 
 LIGHT = Palette(
     mode=LIGHT_MODE,
-    bg="#f0f0f0", caption_bg="#f3f3f3", surface="#ffffff",
+    bg="#f0f0f0", strip_bg="#f3f3f3", surface="#ffffff",
     fg="#202020", muted="#6e6e6e", separator="#d4d4d4",
     accent="#1a7f79", accent_fg="#ffffff", accent_hover="#17736e",
     button_bg="#fafafa", button_hover="#e6f4f3", button_active="#cfe9e7",
@@ -86,13 +86,13 @@ LIGHT = Palette(
 
 DARK = Palette(
     mode=DARK_MODE,
-    bg="#2b2b2b", caption_bg="#252526", surface="#1e1e1e",
+    bg="#2b2b2b", strip_bg="#252526", surface="#1e1e1e",
     fg="#e6e6e6", muted="#9a9a9a", separator="#3c3c3c",
-    accent="#55c4be", accent_fg="#0f2a29", accent_hover="#6fd0cb",
+    accent="#4fb3ad", accent_fg="#0f2a29", accent_hover="#5fc1bb",
     button_bg="#333333", button_hover="#3a4a49", button_active="#2f5a57",
-    field_border="#4a4a4a",
-    user_accent="#55c4be", llsm_accent="#55c4be", error_accent="#ff6b6b",
-    system_accent="#9a9a9a", thinking="#e2b340", running="#55c4be", idle="#9a9a9a",
+    field_border="#3a3a3a",
+    user_accent="#4fb3ad", llsm_accent="#4fb3ad", error_accent="#ff6b6b",
+    system_accent="#9a9a9a", thinking="#e2b340", running="#4fb3ad", idle="#9a9a9a",
     ok="#7bc47f", link="#7fd3ce",
 )
 
@@ -191,10 +191,9 @@ def contrast(a: str, b: str) -> float:
 DERIVED_KEYS = (
     "bg", "fg", "muted", "separator",
     "user_fg", "llsm_fg", "error_fg", "system_fg",
-    "user_bg", "llsm_bg", "error_bg", "system_bg",
-    "thinking_bg", "running_bg", "idle_bg", "error_pill_bg",
+    "user_bg",
     "code_bg", "table_head_bg", "table_alt_bg", "ok_fg", "link_fg",
-    "chrome_bg", "caption_bg", "field_border", "accent", "accent_fg",
+    "chrome_bg", "strip_bg", "field_border", "accent", "accent_fg",
     "thinking_fg", "running_fg", "error_pill_fg",
 )
 
@@ -216,14 +215,8 @@ def derive(p: Palette) -> dict:
         "llsm_fg": tint(fg, p.llsm_accent, 0.15),
         "error_fg": p.error_accent,
         "system_fg": tint(fg, p.system_accent, 0.6),
-        "user_bg": tint(s, p.user_accent, 0.14),
-        "llsm_bg": tint(s, p.llsm_accent, 0.12),
-        "error_bg": tint(s, p.error_accent, 0.18),
-        "system_bg": tint(s, p.system_accent, 0.10),
-        "thinking_bg": tint(p.bg, p.thinking, 0.22),
-        "running_bg": tint(p.bg, p.running, 0.20),
-        "idle_bg": p.bg,
-        "error_pill_bg": tint(p.bg, p.error_accent, 0.25),
+        # Soft block behind your own messages.
+        "user_bg": tint(s, p.user_accent, 0.08),
         "thinking_fg": p.thinking,
         "running_fg": p.running,
         "error_pill_fg": p.error_accent,
@@ -233,7 +226,7 @@ def derive(p: Palette) -> dict:
         "ok_fg": p.ok,
         "link_fg": p.link,
         "chrome_bg": p.bg,
-        "caption_bg": p.caption_bg,
+        "strip_bg": p.strip_bg,
         "field_border": p.field_border,
         "accent": p.accent,
         "accent_fg": p.accent_fg,
@@ -277,7 +270,6 @@ def apply_ttk(style, p: Palette, root=None) -> None:
     )
     style.map(".", foreground=[("disabled", p.muted)])
     style.configure("TFrame", background=p.bg)
-    style.configure("Caption.TFrame", background=p.caption_bg)
     style.configure("TLabel", background=p.bg, foreground=p.fg)
     style.configure("Muted.TLabel", background=p.bg, foreground=p.muted)
     style.configure("Link.TLabel", background=p.bg, foreground=p.link)
@@ -297,7 +289,7 @@ def apply_ttk(style, p: Palette, root=None) -> None:
     )
     style.configure(
         "Accent.TButton", background=p.accent, foreground=p.accent_fg, bordercolor=p.accent,
-        lightcolor=p.accent, darkcolor=p.accent, font=CHROME_FONT_BOLD,
+        lightcolor=p.accent, darkcolor=p.accent, font=CHROME_FONT_BOLD, padding=(14, 4),
     )
     style.map(
         "Accent.TButton",
@@ -407,7 +399,7 @@ def apply_options(root, p: Palette) -> None:
         "*Menu.disabledForeground": p.muted,
         "*Menu.selectColor": p.fg,
         "*Menu.relief": "flat",
-        "*Menubutton.background": p.caption_bg,
+        "*Menubutton.background": p.strip_bg,
         "*Menubutton.foreground": p.fg,
         "*Menubutton.activeBackground": p.accent,
         "*Menubutton.activeForeground": p.accent_fg,
@@ -442,7 +434,7 @@ def menu_colors(p: Palette) -> dict:
 
 def menubutton_colors(p: Palette) -> dict:
     """Keyword arguments that recolour an existing menu-strip Menubutton."""
-    return dict(background=p.caption_bg, foreground=p.fg, activebackground=p.accent,
+    return dict(background=p.strip_bg, foreground=p.fg, activebackground=p.accent,
                 activeforeground=p.accent_fg)
 
 
