@@ -36,6 +36,7 @@ def _parser() -> argparse.ArgumentParser:
         sub.add_argument("--groepsfactor", type=float, help="Ménard group factor.")
         sub.add_argument("--replace", action="store_true", help="Overwrite supports this tool wrote earlier.")
         sub.add_argument("--allow-existing", action="store_true", help="Add to piles that already carry other line supports.")
+        sub.add_argument("--geometry-from", type=Path, dest="geometry_from", help="SCIA XML export to take the piles from when the .esa cannot be read.")
 
     preview = commands.add_parser("preview", help="Show what would be written. Changes nothing.")
     shared(preview)
@@ -97,5 +98,5 @@ def main(argv: list[str]) -> int:
         allow_existing=args.allow_existing,
     )
     if args.command == "preview":
-        return _report(preview_bedding(args.model, rows, request))
-    return _report(apply_bedding(args.model, rows, request, out_dir=args.out_dir))
+        return _report(preview_bedding(args.model, rows, request, geometry_from=args.geometry_from))
+    return _report(apply_bedding(args.model, rows, request, out_dir=args.out_dir, geometry_from=args.geometry_from))

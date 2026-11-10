@@ -842,6 +842,7 @@ class LlsmPanel:
             state=state,
         )
         tools.add_separator()
+        tools.add_command(label="Diagnose…", command=self._on_menu_diagnose)
         tools.add_command(label="Open panel.log folder", command=self._on_menu_open_log_folder)
         tools.add_separator()
         tools.add_command(label="Restart app  Ctrl+Shift+R",
@@ -888,6 +889,39 @@ class LlsmPanel:
         # rather than waiting through MCP_RESTART_COOLDOWN_S.
         self._mcp_last_restart = 0.0
         self._auto_restart_mcp(reason="user-requested")
+
+    def _on_menu_diagnose(self):
+        """The `llsm diagnose` report in a dialog, ready to copy into a mail."""
+        from . import diagnose
+
+        window = tk.Toplevel(self.root)
+        window.title("LLSM diagnose")
+        text = tk.Text(window, width=100, height=20, wrap="none")
+        text.insert("end", "Checking…")
+        text.configure(state="disabled")
+        text.pack(fill="both", expand=True)
+
+        def copy():
+            window.clipboard_clear()
+            window.clipboard_append(text.get("1.0", "end-1c"))
+
+        tk.Button(window, text="Copy", command=copy).pack(pady=6)
+
+        def show(report: str):
+            if text.winfo_exists():
+                text.configure(state="normal")
+                text.delete("1.0", "end")
+                text.insert("end", report)
+                text.configure(state="disabled")
+
+        def work():
+            try:
+                report = diagnose.format_report(diagnose.run_checks())
+            except Exception as exc:
+                report = f"Diagnose failed: {type(exc).__name__}: {exc}"
+            self.root.after(0, lambda: show(report))
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _on_menu_open_log_folder(self):
         """Open ~/.llsm in Explorer so user can grab logs / state files easily."""

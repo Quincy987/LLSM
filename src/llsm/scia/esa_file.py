@@ -76,6 +76,7 @@ class EsaModel:
     supports: list[LineSupport]
     saved_by: str | None = None  # e.g. "+D_344_24.0.3015.64"
     warnings: list[str] = field(default_factory=list)
+    source: str = "esa"  # "xml" for a hand export, whose values a .esa read cannot be compared with
 
 
 def iter_blocks(data: bytes) -> Iterator[bytes]:
@@ -259,4 +260,4 @@ def read_xml(path: Path) -> EsaModel:
                         float(cell("Stiffness Z").get("v")),
                     )
                 )
-    return EsaModel(members, supports)
+    return EsaModel(members, supports, source="xml")

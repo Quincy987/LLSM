@@ -42,6 +42,8 @@ def available_models():
         ModelRef("claude-code", "haiku",  display_name="Haiku (latest)"),
     ]
 
+ANSWER_RULES = "Answer in at most 5 lines, put a unit on every number, and show results as a table."
+
 # System-prompt snippet that runs ON TOP of the MCP server's instructions when
 # the persistent server is in use. Centralised here so this backend and
 # mcp_server.py don't drift on persistence/edit semantics.
@@ -58,7 +60,8 @@ PERSISTENT_SYSTEM_PROMPT = (
     "If delete_object returns blockers, delete those first or pass "
     "cascade=True. If update_node fails, the response's dependent_beams "
     "lists every beam that references the moved node — use it to plan "
-    "whether to reroute or delete those beams instead of retrying blindly."
+    "whether to reroute or delete those beams instead of retrying blindly. "
+    + ANSWER_RULES
 )
 
 
@@ -96,9 +99,13 @@ class ClaudeCodeBackend:
             "claude",
             "-p",
             *(["--resume", self.session_id] if self._session_started else ["--session-id", self.session_id]),
+            # No built-in tools at all: dontAsk still lets read-only shell commands through.
+            # Both flags take a list: keep another option after them, or they eat the prompt.
+            "--tools", "",
+            "--allowedTools", "mcp__llsm__*",
+            "--permission-mode", "dontAsk",
             "--model", self.model,
             "--output-format", "json",
-            "--permission-mode", "bypassPermissions",
         ]
         if self.mcp_config_json is not None:
             cmd += [
@@ -112,7 +119,8 @@ class ClaudeCodeBackend:
     def _run_once(self, message: str):
         cmd = self._build_cmd(message)
         if self.verbose:
-            print(f"[claude-code] $ {cmd}")
+            shown = ["<mcp-config>" if i and cmd[i - 1] == "--mcp-config" else part for i, part in enumerate(cmd)]
+            print(f"[claude-code] $ {shown}")  # the config holds the server's token
         try:
             self._current_proc = subprocess.Popen(
                 cmd,

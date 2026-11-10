@@ -11,6 +11,7 @@ from typing import Any
 import time
 
 from .builder import ModelBuilder
+from .autoclick import SciaDialogPending
 from .session import SciaSession
 
 
@@ -29,16 +30,25 @@ class LlsmContext:
         self.last_calc_ok: bool = False
         self.rapi: Any = None
         self.mesh_dirty: bool = False
+        self.model_name: str | None = None
 
     def ensure_session(self, visible: bool = False) -> SciaSession:
         if self.session is None:
             self.session = SciaSession(visible=visible)
+        try:
             self.session.start()
+        except SciaDialogPending:
+            raise  # keep the launch: the user answers, the caller retries
+        except Exception:
+            failed, self.session = self.session, None
+            failed.close()
+            raise
         return self.session
 
     def ensure_builder(self, name: str = "LLSM_Model") -> ModelBuilder:
         if self.builder is None:
             self.builder = ModelBuilder(name=name)
+            self.model_name = name
         return self.builder
 
     def close(self) -> None:
@@ -59,6 +69,7 @@ def new_model(ctx: LlsmContext, name: str = "LLSM_Model") -> dict:
     if ctx.builder is not None:
         ctx.builder.dispose()
     ctx.builder = ModelBuilder(name=name)
+    ctx.model_name = name
     return {"ok": True, "model_name": name, "items": ctx.builder.item_count()}
 
 
@@ -133,8 +144,11 @@ def model_summary(ctx: LlsmContext) -> dict:
 # ===================================================================
 
 def launch_scia(ctx: LlsmContext, visible: bool = False) -> dict:
-    ctx.ensure_session(visible=visible)
-    return {"ok": True, "visible": visible}
+    session = ctx.ensure_session(visible=visible)
+    result = {"ok": True, "visible": visible}
+    if session.foreign_at_start:
+        result["warning"] = "Another SCIA is running on this computer; LLSM leaves it alone."
+    return result
 
 
 def push_model(ctx: LlsmContext) -> dict:

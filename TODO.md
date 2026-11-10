@@ -19,11 +19,12 @@ Plan: `docs/09-plan-v0.4-existing-models.md` (order) + `docs/08-plan-v0.4-vibemo
 - [ ] Decode where existing supports sit on a pile (now only counted)
 
 ## Phase 2 — pilot readiness
-- [ ] Only manage SCIA PIDs LLSM started; auto-clicker whitelist, report unknown dialogs
-- [ ] ESA_XML: timeout, file-lock check, licence errors verbatim
-- [ ] `dontAsk` + `mcp__llsm__*` allowlist; token on every MCP HTTP request
-- [ ] install.cmd + Diagnose; CLI entry point for colleagues without an LLM licence
-- [ ] Fix test env leak in `test_credentials.py` (rotate the exposed key)
+- [x] Only manage SCIA PIDs LLSM started; auto-clicker whitelist, report unknown dialogs
+- [x] ESA_XML: timeout, file-lock check, licence errors verbatim
+- [x] `dontAsk` + `mcp__llsm__*` allowlist; token on every MCP HTTP request
+- [x] install.cmd + Diagnose; CLI entry point for colleagues without an LLM licence
+- [x] Fix test env leak in `test_credentials.py`
+- [ ] Rotate the API key that test once printed (owner)
 
 ## People
 - [ ] Reply to the hands-on engineer: real geo table + model copy; confirm GEF; k variant/units

@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.7 — Pilot readiness: safe around SCIA, guarded, installable (2026-11-10)
+
+### Added
+- **`install.cmd`** installs per user, without administrator rights.
+- **`llsm diagnose`** and **Tools > Diagnose…** report on Python, packages,
+  SCIA, the licence and the Claude CLI. Licence tokens are read for their
+  expiry date only.
+- **`llsm bedding --geometry-from export.xml`** takes the piles from a SCIA XML
+  export when the `.esa` cannot be read.
+
+### Changed
+- **LLSM only stops the SCIA it started.** It no longer closes a SCIA someone
+  opened by hand.
+- **Dialogs are no longer clicked blindly.** Only SCIA's Win32 licence question
+  is answered. Other dialogs, and the Qt licence notices, are reported in the
+  tool result within seconds instead of hanging the call;
+  `LLSM_ANSWER_LICENCE_NOTICES=1` answers the notices.
+- **The chat agent can only use LLSM's own tools** instead of running with all
+  permissions; it has no shell or file tools.
+- **The local MCP server needs a token on every request** and refuses browsers.
+- Every MCP tool result carries a short `state` block, and the model is asked
+  to answer in five lines with units on every number.
+
+- pythonnet stays below 3.1, the range LLSM is tested on.
+
+### Fixed
+- `test_credentials.py` no longer depends on API keys in the environment.
+
 ## v0.3.6 — Beddings on existing SCIA models (2026-11-09)
 
 ### Added

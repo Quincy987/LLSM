@@ -42,9 +42,13 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
 
+import anyio
+import uvicorn
 from mcp.server.fastmcp import FastMCP
 
 from . import bedding as bedding_tools
+from .mcp_guard import GuardMiddleware
+from .scia.autoclick import SciaDialogPending
 from .scia.loader import load as load_scia
 from .scia import tools as scia_tools
 from .scia.tools import LlsmContext
@@ -60,6 +64,43 @@ from .scia.tools import LlsmContext
 _TOOL_EXEC = ThreadPoolExecutor(max_workers=1, thread_name_prefix="llsm-tool")
 
 
+def _state_block(result: dict) -> dict:
+    """What the model is working on, attached to every tool result."""
+    if "saved_by" in result:  # a bedding result: the model is a file
+        return {"model": result.get("model"), "saved_by": result.get("saved_by")}
+    session = _ctx.session
+    if session is None:
+        scia = "not launched"
+    elif session.pending_dialog is not None:
+        scia = "waiting for an answer in SCIA"
+    elif _ctx.last_calc_ok:
+        scia = "analysed"
+    elif _ctx.project_opened:
+        scia = "pushed"
+    else:
+        scia = "launched"
+    items = _ctx.builder.item_count() if _ctx.builder is not None else 0
+    return {"model": _ctx.model_name, "counts": {"items": items}, "scia": scia}
+
+
+def _run_tool(fn: Callable, args: tuple, kwargs: dict):
+    """Run a tool body: a dialog SCIA waits on becomes a clear result, and every result carries the state."""
+    try:
+        result = fn(*args, **kwargs)
+    except SciaDialogPending as exc:
+        result = exc.as_result()
+    if not isinstance(result, dict):
+        return result
+    pending = _ctx.session.pending_dialog if _ctx.session is not None else None
+    if pending is not None and not result.get("ok", True) and not isinstance(result.get("error"), dict):
+        result = SciaDialogPending(pending).as_result()  # a tool body caught it and flattened it to text
+    try:
+        result["state"] = _state_block(result)
+    except Exception as exc:  # the state is a courtesy; it must not cost the result
+        print(f"[mcp] state block failed: {exc}", file=sys.stderr)
+    return result
+
+
 def _async_tool(mcp: FastMCP, fn: Callable):
     """Register `fn` as an MCP tool that runs in the worker executor.
 
@@ -71,7 +112,7 @@ def _async_tool(mcp: FastMCP, fn: Callable):
     async def _wrapped(*args, **kwargs):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            _TOOL_EXEC, lambda: fn(*args, **kwargs)
+            _TOOL_EXEC, lambda: _run_tool(fn, args, kwargs)
         )
     mcp.tool()(_wrapped)
     return _wrapped
@@ -87,7 +128,8 @@ INSTRUCTIONS_BASE = (
     "  3. launch_scia -> push_model -> run_analysis\n\n"
     "Units: lengths in mm; line loads in kN/m. Z axis is vertical (up positive); "
     "for gravity-like downward loads use direction='Z' with a NEGATIVE magnitude.\n\n"
-    "To put soil beddings on the piles of an existing saved model, use bedding_preview, then bedding_apply."
+    "To put soil beddings on the piles of an existing saved model, use bedding_preview, then bedding_apply.\n\n"
+    "Answer in at most 5 lines, put a unit on every number, and show results as a table."
 )
 
 INSTRUCTIONS_PERSISTENT = (
@@ -432,11 +474,7 @@ def _run_http(port_file: Path, pid_file: Path) -> None:
     from starlette.responses import JSONResponse, Response
 
     @mcp.custom_route("/admin/shutdown", methods=["POST"])
-    async def admin_shutdown(request: Request) -> Response:
-        provided = request.headers.get("X-LLSM-Shutdown-Token", "")
-        if not secrets.compare_digest(provided, token):
-            return JSONResponse({"error": "unauthorized"}, status_code=401)
-
+    async def admin_shutdown(_request: Request) -> Response:
         # Respond first, then schedule teardown so the response actually flushes.
         def _delayed_exit():
             time.sleep(0.2)
@@ -453,7 +491,8 @@ def _run_http(port_file: Path, pid_file: Path) -> None:
     pid_payload = json.dumps({
         "pid": os.getpid(),
         "port": port,
-        "shutdown_token": token,
+        "token": token,
+        "shutdown_token": token,  # older name; drop after one release
         "cmdline_marker": "llsm.mcp_server",
         "started_at": time.time(),
     })
@@ -464,7 +503,10 @@ def _run_http(port_file: Path, pid_file: Path) -> None:
 
     print(f"[mcp] http transport on http://127.0.0.1:{port}/mcp", file=sys.stderr)
     try:
-        mcp.run(transport="streamable-http")
+        app = mcp.streamable_http_app()
+        app.add_middleware(GuardMiddleware, token=token, port=port)
+        server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info"))
+        anyio.run(server.serve)
     finally:
         for f in (port_file, pid_file):
             try:

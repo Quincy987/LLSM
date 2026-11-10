@@ -17,15 +17,19 @@ from __future__ import annotations
 import argparse
 import sys
 
-from llsm.scia.loader import load as load_scia
-from llsm.llm.anthropic_backend import AnthropicBackend
-
 
 def main() -> int:
     # Before the parser: its `prompt` positional would swallow a subcommand.
     if len(sys.argv) > 1 and sys.argv[1] == "bedding":
         from llsm.bedding.cli import main as bedding_main
         return bedding_main(sys.argv[2:])
+    if len(sys.argv) > 1 and sys.argv[1] == "diagnose":
+        from llsm.diagnose import main as diagnose_main
+        return diagnose_main(sys.argv[2:])
+
+    # Not at module level: `llsm diagnose` has to run when these cannot be imported.
+    from llsm.llm.anthropic_backend import AnthropicBackend
+    from llsm.scia.loader import load as load_scia
 
     ap = argparse.ArgumentParser(prog="llsm", description="LLM-driven SCIA Engineer automation.")
     ap.add_argument("prompt", nargs="+", help="Natural-language request for the LLM.")
