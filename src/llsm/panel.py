@@ -171,6 +171,30 @@ _GLYPH_PILL_ERROR    = "⚠"  # ⚠
 # `**` are not mis-rendered as bold.
 _RE_MD_CODE = re.compile(r"`([^`]+)`")
 _RE_MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
+_RE_MD_TABLE_RULE = re.compile(r"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$")
+
+
+def _is_table_row(line: str) -> bool:
+    return line.startswith("|") and line.count("|") >= 2
+
+
+def _format_table(rows: list[str]) -> list[str]:
+    """Pipe-table lines -> aligned text lines; the separator row is dropped.
+
+    Cells keep their markdown as plain text: a table is read for its numbers.
+    """
+    cells = []
+    for row in rows:
+        if _RE_MD_TABLE_RULE.match(row.strip()):
+            continue
+        parts = [c.strip() for c in row.strip().strip("|").split("|")]
+        cells.append(parts)
+    if not cells:
+        return []
+    width = max(len(r) for r in cells)
+    cells = [r + [""] * (width - len(r)) for r in cells]
+    columns = [max(len(r[i]) for r in cells) for i in range(width)]
+    return ["  ".join(cell.ljust(columns[i]) for i, cell in enumerate(r)).rstrip() for r in cells]
 
 # Sidebar.
 SIDEBAR_WIDTH = 200
@@ -1523,6 +1547,8 @@ class LlsmPanel:
         tc("md_h2",     font=("Segoe UI", 12, "bold"), spacing1=6, spacing3=2)
         tc("md_h3",     font=("Segoe UI", 11, "bold"), spacing1=4, spacing3=2)
         tc("md_bullet", foreground=c["muted"])
+        tc("md_table",  font=("Consolas", 10))
+        tc("md_table_head", font=("Consolas", 10, "bold"))
 
         # Configure tk.Text widget surfaces (history + input).
         for w in (self.history, self.input_text):
@@ -2185,14 +2211,28 @@ class LlsmPanel:
     def _render_markdown_body(self, body, base_tag):
         """Render body text into self.history with markdown-lite styling.
 
-        Supports: **bold**, `code`, headings (# / ## / ###), and bullet
-        lines (- / * / •) which become '  • '. Each output line ends with
-        a newline tagged with the body tag so the role colour persists
+        Supports: **bold**, `code`, headings (# / ## / ###), bullet lines
+        (- / * / •) which become '  • ', and pipe tables, which are laid out
+        in a fixed-width font with the header in bold. Each output line ends
+        with a newline tagged with the body tag so the role colour persists
         across blank lines.
         """
         base_tags = (base_tag,)
-        for raw_line in body.splitlines() or [""]:
+        lines = body.splitlines() or [""]
+        i = 0
+        while i < len(lines):
+            raw_line = lines[i]
             stripped = raw_line.lstrip()
+            if _is_table_row(stripped):
+                block = []
+                while i < len(lines) and _is_table_row(lines[i].lstrip()):
+                    block.append(lines[i].lstrip())
+                    i += 1
+                for n, text in enumerate(_format_table(block)):
+                    tags = base_tags + (("md_table_head",) if n == 0 else ("md_table",))
+                    self.history.insert("end", text + "\n", tags)
+                continue
+            i += 1
             if stripped.startswith("### "):
                 self._insert_inline_md(stripped[4:], base_tags + ("md_h3",))
             elif stripped.startswith("## "):

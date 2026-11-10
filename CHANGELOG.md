@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### UX
+- **Chat panel lays out tables.** Markdown pipe tables in an answer were shown
+  as raw bars; they are now aligned columns in a fixed-width font with a bold
+  header, so the results tables the prompt asks for are readable.
+
 ## v0.3.7 — Pilot readiness: safe around SCIA, guarded, installable (2026-11-10)
 
 ### Added
