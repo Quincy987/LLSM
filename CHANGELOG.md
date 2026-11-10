@@ -15,8 +15,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Windows (default, also follows a Windows switch while the panel runs), remembered in
   `~/.llsm/ui_settings.json` and applied without a restart, tables already in the chat
   and the status pill's current state included. Dialogs (history, providers,
-  credentials, diagnose) and the Windows title bar follow the theme. All colours live in `conversation/theme.py`; both palettes
-  are checked for WCAG AA text contrast. The input placeholder now shows grey italic.
+  credentials, diagnose) and the Windows title bar follow the theme. All colours live
+  in `conversation/theme.py`; both palettes are checked for WCAG AA text contrast. The
+  input placeholder now shows grey italic.
 - **Answers render like VibeModel's.** A markdown-lite parser
   (`conversation/markdown_lite.py`) reads headings, nested and numbered lists,
   fenced code, pipe tables, rules, bold/italic/code/links; the panel draws them
