@@ -1,6 +1,7 @@
 """Chat times: transcripts in UTC are shown in local time, and short."""
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 
 from llsm.conversation import stamps
@@ -18,12 +19,14 @@ def test_legacy_stamp_without_offset_is_kept():
 
 
 def test_unreadable_stamp_falls_back_to_now():
-    assert stamps.local_stamp("garbage")[:10] == stamps.now_stamp()[:10]
-    assert stamps.local_stamp("")[:10] == stamps.now_stamp()[:10]
+    # A full local stamp (format check, so a minute or midnight rollover can't flake it).
+    for bad in ("garbage", ""):
+        assert re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d", stamps.local_stamp(bad))
 
 
 def test_short_stamp_today_and_before():
     assert stamps.short_stamp("2026-11-10 21:41:16", today="2026-11-10") == "21:41"
     assert stamps.short_stamp("2026-11-09 08:05:33", today="2026-11-10") == "2026-11-09 08:05"
-    assert stamps.short_stamp(stamps.now_stamp()) == stamps.now_stamp()[11:16]
+    # Default "today" is the real date, so a long-past stamp keeps its date.
+    assert stamps.short_stamp("2000-01-01 10:00:00") == "2000-01-01 10:00"
     assert stamps.short_stamp("") == ""

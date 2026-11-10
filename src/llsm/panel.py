@@ -1350,22 +1350,21 @@ class LlsmPanel:
         # The SCIA / MCP status is kept in status_var for Tools > Diagnose.
         p = self._palette
         self.status_var = tk.StringVar(value="searching for SCIA...    |    MCP: starting...")
-        self.header = tk.Frame(self.root, bg=p.bg, height=26, bd=0, highlightthickness=0)
+        self.header = tk.Frame(self.root, bg=p.bg, bd=0, highlightthickness=0)
         self.header.pack(side=tk.TOP, fill=tk.X)
-        self.header.pack_propagate(False)
         # Status pill: live indicator of LLSM activity. Glyph + text first,
         # color second. State machine driven via outbox events from the
         # worker thread. Packed first so a long title can't push it out.
         self.status_pill_var = tk.StringVar(value=f"{_GLYPH_PILL_IDLE} Idle")
         self.status_pill = tk.Label(
             self.header, textvariable=self.status_pill_var, anchor="e",
-            padx=10, font=theme.CHROME_FONT,
+            padx=10, pady=4, font=theme.CHROME_FONT,
         )
         self.status_pill.pack(side=tk.RIGHT)
         self.conv_title_var = tk.StringVar(value="")
         self.conv_title_label = tk.Label(
             self.header, textvariable=self.conv_title_var, anchor="w",
-            padx=10, font=theme.CHROME_FONT, cursor="hand2",
+            padx=10, pady=4, font=theme.CHROME_FONT, cursor="hand2",
         )
         self.conv_title_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.conv_title_label.bind("<Button-1>", lambda e: self._on_rename_active_conv())

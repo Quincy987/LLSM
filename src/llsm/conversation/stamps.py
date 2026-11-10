@@ -22,7 +22,10 @@ def local_stamp(iso: str | None) -> str:
     except ValueError:
         return now_stamp()
     if dt.tzinfo is not None:
-        dt = dt.astimezone()   # to local time
+        try:
+            dt = dt.astimezone()   # to local time
+        except (OSError, OverflowError, ValueError):
+            pass                   # out of the platform's range: show it unconverted
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 

@@ -10,8 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Rustiger paneel.** Twee balken bovenin (menu; gesprekstitel met de status
   rechts als klein tekstje), Send als gewone knop rechtsonder met Cancel ernaast,
   een kleine regel met naam en tijd ("Jij · 21:41"; datum erbij voor oudere
-  berichten; heropende gesprekken in je eigen tijdzone, niet meer in UTC) boven elk bericht i.p.v. gekleurde badges (jouw berichten op een zacht
-  blok), witruimte i.p.v. scheidingslijnen, geen rand om het chatvak. De
+  berichten; heropende gesprekken in je eigen tijdzone, niet meer in UTC) boven
+  elk bericht i.p.v. gekleurde badges (jouw berichten op een zacht blok), witruimte i.p.v. scheidingslijnen, geen rand om het chatvak. De
   modelzijbalk is standaard dicht en onthoudt of je hem openzet; het venster wordt
   breder of smaller met de zijbalk, zodat de chat even breed blijft. De
   SCIA/MCP-status staat alleen nog bovenaan Tools > Diagnose; de venstertitel is
