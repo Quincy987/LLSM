@@ -56,6 +56,8 @@ def test_contrast(palette):
     c = theme.derive(palette)
     assert theme.contrast(c["llsm_fg"], s) >= 4.5
     assert theme.contrast(c["user_fg"], s) >= 4.5
+    # Your own messages sit on a soft block; their text stays readable on it.
+    assert theme.contrast(c["user_fg"], c["user_bg"]) >= 4.5
 
 
 def test_ref_has_the_panel_reference_keys():

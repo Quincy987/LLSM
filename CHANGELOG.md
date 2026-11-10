@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### UX
+- **Rustiger paneel.** Twee balken bovenin (menu; gesprekstitel met de status
+  rechts als klein grijs tekstje), Send als gewone knop rechtsonder met Cancel ernaast,
+  een kleine naam-en-tijd-regel boven elk bericht i.p.v. gekleurde badges (jouw
+  berichten op een zacht blok), witruimte i.p.v. scheidingslijnen, geen rand om het
+  chatvak. De modelzijbalk is standaard dicht en onthoudt of je hem openzet. De
+  SCIA/MCP-status staat alleen nog bovenaan Tools > Diagnose; de venstertitel is
+  "LLSM" en de welkomstregel is korter. Donker gebruikt iets zachtere teal.
+
 ## v0.3.8 — SCIA look, dark mode and VibeModel-style answers (2026-11-10)
 
 ### UX
