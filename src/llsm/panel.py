@@ -1497,10 +1497,12 @@ class LlsmPanel:
         tc = self.history.tag_configure
         # spacing1/3 give body lines a little more height than Tk's default.
         # Your messages sit on a soft block (fill inset by the margins); answers
-        # stay on the bare surface.
+        # stay on the bare surface. The margins are filled too: they are the
+        # block's inner padding, and list items (whose own indent is smaller
+        # than 8 px) then still sit inside the block.
         tc("user",      foreground=c["user_fg"],   font=("Segoe UI", 10), spacing1=2, spacing3=2,
            background=c["user_bg"], lmargin1=8, lmargin2=8, rmargin=8,
-           lmargincolor=c["bg"], rmargincolor=c["bg"])
+           lmargincolor=c["user_bg"], rmargincolor=c["user_bg"])
         tc("assistant", foreground=c["llsm_fg"],   font=("Segoe UI", 10), spacing1=2, spacing3=2)
         tc("error",     foreground=c["error_fg"],  font=("Segoe UI", 10), spacing1=2, spacing3=2)
         tc("system",    foreground=c["system_fg"], font=("Segoe UI", 9, "italic"))
