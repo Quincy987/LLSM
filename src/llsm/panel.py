@@ -96,7 +96,7 @@ import win32process
 import winerror
 
 from . import mcp_supervisor
-from .conversation import theme
+from .conversation import stamps, theme
 from .conversation.chat_render import ChatRenderer
 from .conversation.menu import FileMenuBuilder, HistoryDialog
 from .conversation.session import ConversationSession
@@ -2262,19 +2262,6 @@ class LlsmPanel:
 
     # -------- Helpers --------
 
-    @staticmethod
-    def _now_stamp():
-        return datetime.now().isoformat(timespec="seconds").replace("T", " ")
-
-    @classmethod
-    def _short_stamp(cls, stamp: str) -> str:
-        """'YYYY-MM-DD HH:MM:SS' -> 'HH:MM' for today, 'YYYY-MM-DD HH:MM' otherwise."""
-        date, _, clock = (stamp or "").partition(" ")
-        clock = clock[:5]
-        if not clock:
-            return stamp
-        return clock if date == cls._now_stamp()[:10] else f"{date} {clock}"
-
     def _render_markdown_body(self, body, base_tag):
         """Render body text into self.history (markdown-lite, see conversation/markdown_lite.py)."""
         self._renderer.render(body, base_tag)
@@ -2311,17 +2298,7 @@ class LlsmPanel:
         current time.
         """
         name, who_tag = _WHO.get(tag, _WHO["assistant"])
-        if ts is None:
-            ts = self._now_stamp()
-        else:
-            # Normalise transcript ISO timestamps ("2025-01-01T00:00:00+00:00"
-            # or legacy "2025-01-01T00:00:00") to the same "YYYY-MM-DD HH:MM:SS"
-            # format _now_stamp produces. Skip TZ math; the date is the
-            # informative bit when re-reading old conversations.
-            ts = (ts or "").replace("T", " ").split("+", 1)[0].rstrip("Z").strip()
-            if not ts:
-                ts = self._now_stamp()
-        ts = self._short_stamp(ts)
+        ts = stamps.short_stamp(stamps.local_stamp(ts) if ts else stamps.now_stamp())
         body = (text or "").rstrip()
 
         self.history.config(state="normal")
@@ -2347,7 +2324,7 @@ class LlsmPanel:
             return
         self.history.config(state="normal")
         try:
-            self.history.insert("end", f"{self._short_stamp(self._now_stamp())}  ", "timestamp")
+            self.history.insert("end", f"{stamps.short_stamp(stamps.now_stamp())}  ", "timestamp")
             self.history.insert("end", (text or "").rstrip() + "\n", "system")
             self.history.insert("end", "\n", "turn_gap")
             self.history.see("end")
