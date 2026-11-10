@@ -270,7 +270,6 @@ def apply_ttk(style, p: Palette, root=None) -> None:
     )
     style.map(".", foreground=[("disabled", p.muted)])
     style.configure("TFrame", background=p.bg)
-    style.configure("Caption.TFrame", background=p.strip_bg)
     style.configure("TLabel", background=p.bg, foreground=p.fg)
     style.configure("Muted.TLabel", background=p.bg, foreground=p.muted)
     style.configure("Link.TLabel", background=p.bg, foreground=p.link)

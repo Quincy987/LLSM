@@ -941,8 +941,10 @@ class LlsmPanel:
                        font=("Consolas", 9), padx=8, pady=6)
         # The SCIA / MCP status used to sit in a strip on the panel; it lives
         # here now, on top of the report (and in what Copy puts on the clipboard).
-        status = f"Panel: {self.status_var.get().strip()}\n\n"
-        text.insert("end", status + "Checking…")
+        def status() -> str:
+            return f"Panel: {self.status_var.get().strip()}\n\n"
+
+        text.insert("end", status() + "Checking…")
         text.configure(state="disabled")
         text.pack(fill="both", expand=True)
 
@@ -956,7 +958,7 @@ class LlsmPanel:
             if text.winfo_exists():
                 text.configure(state="normal")
                 text.delete("1.0", "end")
-                text.insert("end", status + report)
+                text.insert("end", status() + report)
                 text.configure(state="disabled")
 
         def work():
@@ -1101,11 +1103,11 @@ class LlsmPanel:
         replay rather than re-rendered + re-logged to chat.log.
         """
         if role == "user":
-            self._append("you", text, "user", ts=ts)
+            self._append(text, "user", ts=ts)
         elif role == "llsm":
-            self._append("LLSM", text, "assistant", ts=ts)
+            self._append(text, "assistant", ts=ts)
         elif role == "error":
-            self._append("error", text, "error", ts=ts)
+            self._append(text, "error", ts=ts)
 
     def _on_menu_new_chat(self, _model_id):
         if self._closing:
@@ -1787,6 +1789,16 @@ class LlsmPanel:
                 self.sidebar_frame.pack_forget()
         except Exception as exc:
             self._sysline(f"sidebar toggle failed: {exc}")
+            return
+        # The chat keeps its width: the window grows or shrinks by the sidebar
+        # (not when maximised; never below the minimum width).
+        try:
+            if self.root.state() == "normal":
+                width = self.root.winfo_width() + (SIDEBAR_WIDTH if want else -SIDEBAR_WIDTH)
+                min_w = self.root.minsize()[0]
+                self.root.geometry(f"{max(min_w, width)}x{self.root.winfo_height()}")
+        except Exception:
+            pass
 
     def _request_sidebar_refresh(self):
         """Tk-thread: kick a daemon thread to fetch a fresh snapshot.
@@ -2063,7 +2075,7 @@ class LlsmPanel:
             self.input_text.configure(height=INPUT_MIN_LINES)
         except Exception:
             pass
-        self._append("you", text, "user")
+        self._append(text, "user")
         _chat_log("USER", text)
         # Ensure an active conv exists before recording — covers the edge
         # where the user deleted the active conv from the History dialog.
@@ -2173,7 +2185,7 @@ class LlsmPanel:
             # discreet sysline instead, and don't record it into the new
             # conv's transcript either.
             if self._reply_belongs_to_active():
-                self._append("error", msg, "error")
+                self._append(msg, "error")
                 try:
                     self._conv_session.record_error(str(msg))
                 except Exception:
@@ -2233,7 +2245,7 @@ class LlsmPanel:
             # Default: assistant reply.
             _chat_log("LLSM", msg)
             if self._reply_belongs_to_active():
-                self._append("LLSM", msg, "assistant")
+                self._append(msg, "assistant")
                 try:
                     self._conv_session.record_assistant(str(msg))
                 except Exception:
@@ -2253,6 +2265,15 @@ class LlsmPanel:
     @staticmethod
     def _now_stamp():
         return datetime.now().isoformat(timespec="seconds").replace("T", " ")
+
+    @classmethod
+    def _short_stamp(cls, stamp: str) -> str:
+        """'YYYY-MM-DD HH:MM:SS' -> 'HH:MM' for today, 'YYYY-MM-DD HH:MM' otherwise."""
+        date, _, clock = (stamp or "").partition(" ")
+        clock = clock[:5]
+        if not clock:
+            return stamp
+        return clock if date == cls._now_stamp()[:10] else f"{date} {clock}"
 
     def _render_markdown_body(self, body, base_tag):
         """Render body text into self.history (markdown-lite, see conversation/markdown_lite.py)."""
@@ -2280,7 +2301,7 @@ class LlsmPanel:
         if block is not None:
             block.finish()
 
-    def _append(self, who, text, tag, ts=None):
+    def _append(self, text, tag, ts=None):
         """Render a chat turn: a small name + time line, the body, then white space.
 
         `tag` selects the body style (user / assistant / error). Your messages
@@ -2300,6 +2321,7 @@ class LlsmPanel:
             ts = (ts or "").replace("T", " ").split("+", 1)[0].rstrip("Z").strip()
             if not ts:
                 ts = self._now_stamp()
+        ts = self._short_stamp(ts)
         body = (text or "").rstrip()
 
         self.history.config(state="normal")
@@ -2325,8 +2347,7 @@ class LlsmPanel:
             return
         self.history.config(state="normal")
         try:
-            clock = self._now_stamp().rsplit(" ", 1)[-1]
-            self.history.insert("end", f"{clock}  ", "timestamp")
+            self.history.insert("end", f"{self._short_stamp(self._now_stamp())}  ", "timestamp")
             self.history.insert("end", (text or "").rstrip() + "\n", "system")
             self.history.insert("end", "\n", "turn_gap")
             self.history.see("end")
