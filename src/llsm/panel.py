@@ -80,7 +80,6 @@ def _chat_log(role: str, text: str) -> None:
 # === Now safe to import project modules - failures land in panel.log ===
 import argparse
 import queue
-import re
 import signal
 import socket
 import threading
@@ -97,6 +96,7 @@ import win32process
 import winerror
 
 from . import mcp_supervisor
+from .conversation.chat_render import ChatRenderer
 from .conversation.menu import FileMenuBuilder, HistoryDialog
 from .conversation.session import ConversationSession
 from .conversation.view import ConversationView
@@ -165,36 +165,6 @@ _GLYPH_PILL_IDLE     = "●"  # ●
 _GLYPH_PILL_THINKING = "◐"  # ◐
 _GLYPH_PILL_RUNNING  = "▶"  # ▶
 _GLYPH_PILL_ERROR    = "⚠"  # ⚠
-
-# Markdown-lite regexes for chat-body rendering. Code is intentionally listed
-# first in the inline-render candidate list so backtick literals containing
-# `**` are not mis-rendered as bold.
-_RE_MD_CODE = re.compile(r"`([^`]+)`")
-_RE_MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
-_RE_MD_TABLE_RULE = re.compile(r"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$")
-
-
-def _is_table_row(line: str) -> bool:
-    return line.startswith("|") and line.count("|") >= 2
-
-
-def _format_table(rows: list[str]) -> list[str]:
-    """Pipe-table lines -> aligned text lines; the separator row is dropped.
-
-    Cells keep their markdown as plain text: a table is read for its numbers.
-    """
-    cells = []
-    for row in rows:
-        if _RE_MD_TABLE_RULE.match(row.strip()):
-            continue
-        parts = [c.strip() for c in row.strip().strip("|").split("|")]
-        cells.append(parts)
-    if not cells:
-        return []
-    width = max(len(r) for r in cells)
-    cells = [r + [""] * (width - len(r)) for r in cells]
-    columns = [max(len(r[i]) for r in cells) for i in range(width)]
-    return ["  ".join(cell.ljust(columns[i]) for i, cell in enumerate(r)).rstrip() for r in cells]
 
 # Sidebar.
 SIDEBAR_WIDTH = 200
@@ -1069,6 +1039,8 @@ class LlsmPanel:
             self.history.config(state="disabled")
         except Exception:
             pass
+        self._renderer.reset()
+        self._activity = None
 
     def _render_replay_message(self, role: str, text: str, ts: str) -> None:
         """ConversationView callback — render one historical message into the chat widget.
@@ -1395,6 +1367,9 @@ class LlsmPanel:
             font=("Segoe UI", 10), padx=10, pady=10,
         )
         self.history.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=4, pady=4)
+        # Markdown blocks, tables that refit on resize, the per-turn activity block.
+        self._renderer = ChatRenderer(self.history)
+        self._activity = None
 
         # ConversationView is the only thing that touches BOTH the chat
         # widget and the title StringVar — keeps the panel free of the
@@ -1515,14 +1490,21 @@ class LlsmPanel:
             "running_bg":  self._tint(theme_bg, _THEME_REFERENCE["running"], 0.20),
             "idle_bg":     self._tint(theme_bg, _THEME_REFERENCE["idle"], 0.10),
             "error_pill_bg": self._tint(theme_bg, _THEME_REFERENCE["error_accent"], 0.25),
+            # Answer rendering: code, table header fill and alternate row tint.
+            "code_bg":       self._tint(theme_bg, theme_fg, 0.06),
+            "table_head_bg": self._tint(theme_bg, _THEME_REFERENCE["llsm_accent"], 0.14),
+            "table_alt_bg":  self._tint(theme_bg, theme_fg, 0.035),
+            "ok_fg":         self._tint(theme_fg, _THEME_REFERENCE["llsm_accent"], 0.75),
+            "link_fg":       self._tint(theme_fg, _THEME_REFERENCE["running"], 0.75),
         }
         self._theme_colors = c
 
         # Configure chat tags. Body tags carry the role's foreground.
         tc = self.history.tag_configure
-        tc("user",      foreground=c["user_fg"],   font=("Segoe UI", 10))
-        tc("assistant", foreground=c["llsm_fg"],   font=("Segoe UI", 10))
-        tc("error",     foreground=c["error_fg"],  font=("Segoe UI", 10))
+        # spacing1/3 give body lines a little more height than Tk's default.
+        tc("user",      foreground=c["user_fg"],   font=("Segoe UI", 10), spacing1=2, spacing3=2)
+        tc("assistant", foreground=c["llsm_fg"],   font=("Segoe UI", 10), spacing1=2, spacing3=2)
+        tc("error",     foreground=c["error_fg"],  font=("Segoe UI", 10), spacing1=2, spacing3=2)
         tc("system",    foreground=c["system_fg"], font=("Segoe UI", 9, "italic"))
         # Badge tags carry bg + bold + leading accent bar (▎). Backgrounds
         # may render ragged on Windows; the ▎ is the primary affordance.
@@ -1537,18 +1519,10 @@ class LlsmPanel:
         tc("timestamp",    foreground=c["muted"], font=("Segoe UI", 8, "italic"))
         tc("separator",    foreground=c["separator"], font=("Segoe UI", 9))
         tc("placeholder",  foreground=c["muted"], font=("Segoe UI", 10, "italic"))
-        # Inline markdown styling. Stacked on top of body tags (user/assistant/
-        # error/system) so the role colour wins for foreground; these tags only
-        # override font/background. Configured AFTER body tags so Tk's
-        # creation-order priority lets them win for font/bg.
-        tc("md_bold",   font=("Segoe UI", 10, "bold"))
-        tc("md_code",   font=("Consolas", 10), background=c["system_bg"])
-        tc("md_h1",     font=("Segoe UI", 14, "bold"), spacing1=8, spacing3=2)
-        tc("md_h2",     font=("Segoe UI", 12, "bold"), spacing1=6, spacing3=2)
-        tc("md_h3",     font=("Segoe UI", 11, "bold"), spacing1=4, spacing3=2)
-        tc("md_bullet", foreground=c["muted"])
-        tc("md_table",  font=("Consolas", 10))
-        tc("md_table_head", font=("Consolas", 10, "bold"))
+        # Markdown styling (bold, code, headings, lists, tables, code blocks,
+        # the activity block). Configured AFTER the body tags so Tk's
+        # creation-order priority lets them win for font/background.
+        self._renderer.configure(c, _THEME_REFERENCE)
 
         # Configure tk.Text widget surfaces (history + input).
         for w in (self.history, self.input_text):
@@ -1974,8 +1948,12 @@ class LlsmPanel:
                 args_summary = self._format_tool_args(payload)
                 self.outbox.put(("tool_start", (tool_name, args_summary)))
             elif phase == "end":
-                ok = bool(payload)
-                self.outbox.put(("tool_end", (tool_name, ok)))
+                # payload: {"ok": bool, "error": str} (or a bare bool from older callers)
+                if isinstance(payload, dict):
+                    ok, error = bool(payload.get("ok")), str(payload.get("error") or "")
+                else:
+                    ok, error = bool(payload), ""
+                self.outbox.put(("tool_end", (tool_name, ok, error)))
         except Exception:
             # Never propagate into the backend's tool dispatch.
             pass
@@ -2019,6 +1997,7 @@ class LlsmPanel:
         self.cancel_btn.config(state="normal")
         # Pill: immediately Thinking; tool_start events will refine this.
         self._set_pill("thinking")
+        self._start_activity()
         # Capture the conversation we're chatting in. If the user switches
         # mid-flight (api backend can't be cancelled mid-request), the reply
         # would otherwise land in the new conversation's transcript.
@@ -2093,6 +2072,7 @@ class LlsmPanel:
             # Authoritative reset for the pill: clear any per-tool tracking
             # so a missed tool_end (cancel, exception) cannot leave us stuck.
             self._active_tools = []
+            self._finish_activity()
             if self._pill_error_after is None:
                 # Don't stomp on a still-flashing error pill.
                 self._set_pill("idle")
@@ -2124,12 +2104,16 @@ class LlsmPanel:
             self._active_tools.append(tool_name)
             label = f"{tool_name}({args_summary})" if args_summary else f"{tool_name}()"
             self._set_pill("running", label)
+            if self._activity is not None:
+                self._activity.tool_start(tool_name, args_summary)
         elif kind == "tool_end":
-            # msg = (tool_name, ok)
+            # msg = (tool_name, ok, first error line)
             try:
-                tool_name, ok = msg
+                tool_name, ok, error = (tuple(msg) + ("",))[:3]
             except (TypeError, ValueError):
                 return
+            if self._activity is not None:
+                self._activity.tool_end(tool_name, ok, error)
             if self._active_tools:
                 # Pop the most recent matching entry; tools are usually serial.
                 try:
@@ -2182,74 +2166,31 @@ class LlsmPanel:
     def _now_stamp():
         return datetime.now().isoformat(timespec="seconds").replace("T", " ")
 
-    def _insert_inline_md(self, line, base_tags):
-        """Insert one line into self.history with inline `code` and **bold** styling.
-
-        Code is checked first so backtick literals containing markdown
-        punctuation (e.g. `**foo**`) render as code, not bold. Stacked tags
-        keep the role's foreground colour while overriding font/background.
-        """
-        pos = 0
-        while pos < len(line):
-            best = None
-            for pat, style in (
-                (_RE_MD_CODE, "md_code"),
-                (_RE_MD_BOLD, "md_bold"),
-            ):
-                m = pat.search(line, pos)
-                if m and (best is None or m.start() < best[0].start()):
-                    best = (m, style)
-            if best is None:
-                self.history.insert("end", line[pos:], base_tags)
-                return
-            m, style = best
-            if m.start() > pos:
-                self.history.insert("end", line[pos:m.start()], base_tags)
-            self.history.insert("end", m.group(1), base_tags + (style,))
-            pos = m.end()
-
     def _render_markdown_body(self, body, base_tag):
-        """Render body text into self.history with markdown-lite styling.
+        """Render body text into self.history (markdown-lite, see conversation/markdown_lite.py)."""
+        self._renderer.render(body, base_tag)
 
-        Supports: **bold**, `code`, headings (# / ## / ###), bullet lines
-        (- / * / •) which become '  • ', and pipe tables, which are laid out
-        in a fixed-width font with the header in bold. Each output line ends
-        with a newline tagged with the body tag so the role colour persists
-        across blank lines.
-        """
-        base_tags = (base_tag,)
-        lines = body.splitlines() or [""]
-        i = 0
-        while i < len(lines):
-            raw_line = lines[i]
-            stripped = raw_line.lstrip()
-            if _is_table_row(stripped):
-                block = []
-                while i < len(lines) and _is_table_row(lines[i].lstrip()):
-                    block.append(lines[i].lstrip())
-                    i += 1
-                for n, text in enumerate(_format_table(block)):
-                    tags = base_tags + (("md_table_head",) if n == 0 else ("md_table",))
-                    self.history.insert("end", text + "\n", tags)
-                continue
-            i += 1
-            if stripped.startswith("### "):
-                self._insert_inline_md(stripped[4:], base_tags + ("md_h3",))
-            elif stripped.startswith("## "):
-                self._insert_inline_md(stripped[3:], base_tags + ("md_h2",))
-            elif stripped.startswith("# "):
-                self._insert_inline_md(stripped[2:], base_tags + ("md_h1",))
-            elif stripped.startswith("- ") or stripped.startswith("* "):
-                indent = raw_line[: len(raw_line) - len(stripped)]
-                self.history.insert("end", indent + "  • ", base_tags + ("md_bullet",))
-                self._insert_inline_md(stripped[2:], base_tags)
-            elif stripped.startswith("• "):
-                indent = raw_line[: len(raw_line) - len(stripped)]
-                self.history.insert("end", indent + "  • ", base_tags + ("md_bullet",))
-                self._insert_inline_md(stripped[2:], base_tags)
-            else:
-                self._insert_inline_md(raw_line, base_tags)
-            self.history.insert("end", "\n", base_tags)
+    # -------- Activity block (one per turn, above the answer) --------
+
+    def _start_activity(self):
+        try:
+            self._activity = self._renderer.start_activity()
+        except Exception as exc:
+            self._activity = None
+            print(f"[panel] activity block failed: {exc}", file=sys.stderr)
+            return
+        self._safe_after(1000, self._activity_tick, self._activity)
+
+    def _activity_tick(self, block):
+        if block is not self._activity or block.log.done or self._closing:
+            return
+        block.refresh()
+        self._safe_after(1000, self._activity_tick, block)
+
+    def _finish_activity(self):
+        block, self._activity = self._activity, None
+        if block is not None:
+            block.finish()
 
     def _append(self, who, text, tag, ts=None):
         """Render a chat turn as a badge + timestamp + body + separator block.

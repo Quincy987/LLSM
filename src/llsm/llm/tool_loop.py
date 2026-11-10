@@ -62,8 +62,8 @@ def invoke_tool(
     serialize them without dropping the loop.
 
     `on_tool_event(phase, name, payload)` fires once before
-    (phase="start", payload=args) and once after (phase="end", payload=ok)
-    each call. Best-effort: callback exceptions are swallowed so the panel
+    (phase="start", payload=args) and once after (phase="end",
+    payload={"ok": bool, "error": str}) each call. Best-effort: callback exceptions are swallowed so the panel
     queue can never break tool execution.
     """
     def _emit(phase: str, payload):
@@ -76,12 +76,12 @@ def invoke_tool(
 
     if name not in TOOL_NAMES:
         _emit("start", args)
-        _emit("end", False)
+        _emit("end", {"ok": False, "error": f"unknown tool {name!r}"})
         return {"ok": False, "error": f"unknown tool {name!r}"}
     fn = getattr(scia_tools, name, None)
     if fn is None:
         _emit("start", args)
-        _emit("end", False)
+        _emit("end", {"ok": False, "error": f"tool {name!r} not implemented"})
         return {"ok": False, "error": f"tool {name!r} not implemented"}
     if verbose:
         print(f"[tool] {name}({args})")
@@ -89,10 +89,11 @@ def invoke_tool(
     try:
         result = fn(ctx, **args)
     except Exception as e:
-        _emit("end", False)
+        _emit("end", {"ok": False, "error": f"{type(e).__name__}: {e}"})
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
     ok = bool(result.get("ok", True)) if isinstance(result, dict) else True
-    _emit("end", ok)
+    error = str(result.get("error") or "") if isinstance(result, dict) and not ok else ""
+    _emit("end", {"ok": ok, "error": error})
     return result
 
 
