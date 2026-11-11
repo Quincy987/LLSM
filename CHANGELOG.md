@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.10 — Air and polish in the panel (2026-11-11)
+
 ### UX
 - **Lucht en polish.** Een vaste luchtschaal in de chat: een halve regel wit tussen
   alinea's, lijsten, tabellen en code, een hele regel tussen berichten, ruimere koppen
