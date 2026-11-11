@@ -44,8 +44,25 @@ TEXTS = {
 CODE_FOLD_OVER = 20
 CODE_SHOWN = 12
 
-BODY_FONT = ("Segoe UI", 10)
+BODY_FONT = theme.BODY_FONT
 MONO_FONT = ("Consolas", 9)
+HEAD_FAMILY = "Segoe UI Semibold"
+
+# Vertical rhythm of the chat, in px. One scale for every block so answers read
+# as separate paragraphs, lists, tables and code instead of one slab.
+SPACING = {
+    "para": 8,           # white space between blocks (half a line)
+    "line": 3,           # extra above and below every body line
+    "item": 5,           # above each list item (a bit more than a line)
+    "h1": (14, 4),       # above / below headings
+    "h2": (12, 3),
+    "h3": (10, 2),
+    "cell": 5,           # inside table rows, above and below
+    "links": (4, 2),     # the "Kopiëren" line under a table
+    "code": 1,           # above and below each code line
+    "act": 2,            # activity block lines
+    "act_head": 3,       # below the activity block's summary line
+}
 LIST_INDENT = 18      # px per nesting level
 LIST_MARKER = 20      # px from the marker to the item text
 TABLE_LEFT = 4        # px from the text edge to the table
@@ -97,40 +114,45 @@ class ChatRenderer:
         self._colors = c
         tc = self.t.tag_configure
         link = c["link_fg"]
-        tc("md_bold", font=("Segoe UI", 10, "bold"))
-        tc("md_italic", font=("Segoe UI", 10, "italic"))
-        tc("md_bolditalic", font=("Segoe UI", 10, "bold italic"))
+        family, size = BODY_FONT
+        sp = SPACING
+        tc("md_bold", font=(family, size, "bold"))
+        tc("md_italic", font=(family, size, "italic"))
+        tc("md_bolditalic", font=(family, size, "bold italic"))
         tc("md_code", font=("Consolas", 9), background=c["code_bg"])
         tc("md_pad", font=("Consolas", 9))
         tc("md_link", underline=True, foreground=link)
         tc("md_url", foreground=c["muted"], font=("Segoe UI", 9))
-        tc("md_h1", font=("Segoe UI", 12, "bold"), spacing1=6, spacing3=2)
-        tc("md_h2", font=("Segoe UI", 11, "bold"), spacing1=5, spacing3=2)
-        tc("md_h3", font=("Segoe UI", 10, "bold"), spacing1=4, spacing3=1)
-        tc("md_gap", font=("Segoe UI", 3), spacing1=0, spacing3=0)
+        tc("md_h1", font=(HEAD_FAMILY, 13), spacing1=sp["h1"][0], spacing3=sp["h1"][1])
+        tc("md_h2", font=(HEAD_FAMILY, 11), spacing1=sp["h2"][0], spacing3=sp["h2"][1])
+        tc("md_h3", font=(HEAD_FAMILY, 10), spacing1=sp["h3"][0], spacing3=sp["h3"][1])
+        tc("md_gap", font=(family, 1), spacing1=sp["para"], spacing3=0)
         tc("md_bullet", foreground=c["muted"])
         for level in range(len(_BULLETS)):
             left = 4 + level * LIST_INDENT
-            tc(f"md_li{level}", lmargin1=left, lmargin2=left + LIST_MARKER, tabs=(left + LIST_MARKER,))
+            tc(f"md_li{level}", lmargin1=left, lmargin2=left + LIST_MARKER, tabs=(left + LIST_MARKER,),
+               spacing1=sp["item"])
             tc(f"md_li{level}c", lmargin1=left + LIST_MARKER, lmargin2=left + LIST_MARKER)
         tc("md_codeblock", font=MONO_FONT, background=c["code_bg"],
-           lmargin1=12, lmargin2=12, rmargin=6, spacing1=0, spacing3=0,
+           lmargin1=12, lmargin2=12, rmargin=6, spacing1=sp["code"], spacing3=sp["code"],
            relief="solid", borderwidth=1, wrap="char")
         tc("md_codepad", font=("Consolas", 3), background=c["code_bg"],
            lmargin1=12, lmargin2=12, rmargin=6, spacing1=0, spacing3=0,
            relief="solid", borderwidth=1)
         tc("md_hr", font=("Segoe UI", 1), background=c["separator"],
            spacing1=0, spacing3=0, lmargin1=4, rmargin=4)
-        tc("md_th", font=("Segoe UI", 10, "bold"), background=c["table_head_bg"])
+        tc("md_th", font=(family, size, "bold"), background=c["table_head_bg"])
         tc("md_tr0", background=c["bg"])
         tc("md_tr1", background=c["table_alt_bg"])
-        tc("md_rowtop", spacing1=3)
-        tc("md_rowbot", spacing3=3)
-        tc("md_tbllinks", font=("Segoe UI", 9), spacing1=3, spacing3=2)
+        tc("md_rowtop", spacing1=sp["cell"])
+        tc("md_rowbot", spacing3=sp["cell"])
+        # The block after a table brings its own md_gap, so no extra space below.
+        tc("md_tbllinks", font=(family, 9), spacing1=sp["links"][0], spacing3=sp["links"][1])
         tc("md_action", foreground=link, underline=True)
         tc("md_act", font=("Segoe UI", 9), foreground=c["muted"],
-           lmargin1=8, lmargin2=26, spacing1=1, spacing3=1)
-        tc("md_act_head", font=("Segoe UI Semibold", 9), foreground=c["muted"])
+           lmargin1=8, lmargin2=26, spacing1=sp["act"], spacing3=sp["act"])
+        tc("md_act_head", font=("Segoe UI Semibold", 9), foreground=c["muted"],
+           spacing3=sp["act_head"])
         tc("md_act_ok", foreground=c["ok_fg"])
         tc("md_act_fail", foreground=c["error_fg"])
         tc("md_act_run", foreground=link)
@@ -170,9 +192,18 @@ class ChatRenderer:
         return f"{prefix}{self._seq}"
 
     def _bind_action(self, tag: str, callback: Callable[[], None]) -> None:
+        """Clickable text: hand cursor and the hover colour while the mouse is over it."""
+        def enter(_e):
+            self.t.configure(cursor="hand2")
+            self.t.tag_configure(tag, foreground=self._colors.get("accent_hover", ""))
+
+        def leave(_e):
+            self.t.configure(cursor="")
+            self.t.tag_configure(tag, foreground="")   # back to md_action's colour
+
         self.t.tag_bind(tag, "<Button-1>", lambda e: (callback(), "break")[1])
-        self.t.tag_bind(tag, "<Enter>", lambda e: self.t.configure(cursor="hand2"))
-        self.t.tag_bind(tag, "<Leave>", lambda e: self.t.configure(cursor=""))
+        self.t.tag_bind(tag, "<Enter>", enter)
+        self.t.tag_bind(tag, "<Leave>", leave)
 
     def _region(self, kind: str, draw: Callable[[_Region], None], state: dict | None = None) -> _Region:
         """Draw a region at md_ins and remember its marks. The caller adds its final newline."""
@@ -299,7 +330,7 @@ class ChatRenderer:
             self._ins("\n", base)
             return
         for n, block in enumerate(blocks):
-            if n:
+            if n and not isinstance(block, Heading):
                 self._ins("\n", base + ("md_gap",))
             if isinstance(block, Paragraph):
                 for line in block.lines:

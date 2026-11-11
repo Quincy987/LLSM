@@ -71,3 +71,12 @@ def test_tint_and_blend():
     assert theme.tint("#000000", "#ffffff", 0.5) == "#7f7f7f"
     assert theme.tint("#fff", "#000", 0.0) == "#ffffff"
     assert theme.tint("SystemButtonFace", "#000000") == theme.LIGHT.muted
+
+
+def test_body_font_and_hover_colour():
+    assert theme.BODY_FONT == ("Segoe UI", 10)
+    assert "accent_hover" in theme.DERIVED_KEYS
+    for palette in (theme.LIGHT, theme.DARK):
+        # A hover colour on clickable chat text: at least 3:1 on the surface.
+        assert theme.contrast(palette.accent_hover, palette.surface) >= 3.0
+        assert theme.derive(palette)["accent_hover"] == palette.accent_hover
