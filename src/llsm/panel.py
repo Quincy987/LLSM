@@ -97,7 +97,8 @@ import winerror
 
 from . import mcp_supervisor
 from .conversation import stamps, theme
-from .conversation.chat_render import ChatRenderer
+from .conversation.chat_render import SPACING, ChatRenderer
+from .conversation.composer import Composer
 from .conversation.menu import FileMenuBuilder, HistoryDialog
 from .conversation.session import ConversationSession
 from .conversation.view import ConversationView
@@ -180,7 +181,7 @@ PILL_ERROR_CLEAR_MS = 3000
 THEME_POLL_MS = 5000
 
 # Placeholder text for the input.
-PLACEHOLDER_TEXT = "Describe your model... (Enter sends, Shift+Enter newline)"
+PLACEHOLDER_TEXT = "Beschrijf je model… (Enter verstuurt, Shift+Enter nieuwe regel)"
 
 
 def _find_scia_main_hwnd():
@@ -655,8 +656,7 @@ class LlsmPanel:
                 # rotated) session_id.
                 self._backend = None
                 self.busy = False
-                self.send_btn.config(state="normal", text="Send (Enter)")
-                self.cancel_btn.config(state="disabled")
+                self._composer.set_busy(False)
                 self._sysline(
                     f"MCP server restarted at {self._mcp_handle.url}; "
                     "conversation continues via session-id. Re-send your last message if needed."
@@ -1368,16 +1368,23 @@ class LlsmPanel:
         )
         self.conv_title_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.conv_title_label.bind("<Button-1>", lambda e: self._on_rename_active_conv())
+        # Hover: it's clickable (rename), so it looks like it while the mouse is on it.
+        self.conv_title_label.bind("<Enter>", lambda e: self.conv_title_label.configure(
+            foreground=self._palette.accent, font=theme.CHROME_FONT + ("underline",)))
+        self.conv_title_label.bind("<Leave>", lambda e: self.conv_title_label.configure(
+            foreground=self._palette.fg, font=theme.CHROME_FONT))
 
-        # Bottom: input + buttons (build first so it reserves space; chat
-        # area expands to fill the remainder).
-        bottom = ttk.Frame(self.root, padding=(6, 6))
+        # Bottom: the input bar (built first so it reserves space; the chat
+        # area expands to fill the remainder). The Composer draws the rounded
+        # box and the send/stop button; every key binding stays here, on its
+        # text. FocusIn/FocusOut use add="+" because the Composer has its own
+        # (border colour) on the same events.
+        bottom = ttk.Frame(self.root, padding=(6, 4, 6, 6))
         bottom.pack(side=tk.BOTTOM, fill=tk.X)
-
-        self.input_text = tk.Text(bottom, height=INPUT_MIN_LINES, wrap="word",
-                                  font=("Segoe UI", 10), relief="flat", bd=0,
-                                  highlightthickness=1, padx=8, pady=6)
-        self.input_text.pack(side=tk.TOP, fill=tk.X, padx=0, pady=(0, 6))
+        self._composer = Composer(bottom, on_send=self._send, on_cancel=self._on_cancel,
+                                  colors=theme.derive(self._palette), lines=INPUT_MIN_LINES)
+        self._composer.pack(side=tk.TOP, fill=tk.X)
+        self.input_text = self._composer.text
 
         # Enter sends, Shift+Enter inserts a newline (Tk default).
         self.input_text.bind("<Return>", self._on_return_key)
@@ -1385,17 +1392,8 @@ class LlsmPanel:
         self.input_text.bind("<Control-Return>", self._on_return_key)
         # Auto-grow + placeholder bindings.
         self.input_text.bind("<KeyRelease>", self._on_input_keyrelease)
-        self.input_text.bind("<FocusIn>", self._on_input_focus_in)
-        self.input_text.bind("<FocusOut>", self._on_input_focus_out)
-
-        button_row = ttk.Frame(bottom)
-        button_row.pack(side=tk.TOP, fill=tk.X)
-        self.send_btn = ttk.Button(button_row, text="Send", command=self._send,
-                                   style="Accent.TButton")
-        self.send_btn.pack(side=tk.RIGHT)
-        self.cancel_btn = ttk.Button(button_row, text="Cancel", command=self._on_cancel,
-                                     state="disabled")
-        self.cancel_btn.pack(side=tk.RIGHT, padx=(0, 6))
+        self.input_text.bind("<FocusIn>", self._on_input_focus_in, add="+")
+        self.input_text.bind("<FocusOut>", self._on_input_focus_out, add="+")
 
         # Center: chat history (left) + sidebar (right, closed by default).
         # Pack the sidebar first so it reserves its width; chat fills the
@@ -1430,7 +1428,7 @@ class LlsmPanel:
         history_sb.pack(side=tk.RIGHT, fill=tk.Y)
         self.history = tk.Text(
             self.history_frame, wrap="word", state="disabled",
-            font=("Segoe UI", 10), padx=10, pady=10, relief="flat", bd=0,
+            font=theme.BODY_FONT, padx=10, pady=10, relief="flat", bd=0,
             highlightthickness=0, yscrollcommand=history_sb.set,
         )
         history_sb.configure(command=self.history.yview)
@@ -1500,23 +1498,27 @@ class LlsmPanel:
         # stay on the bare surface. The margins are filled too: they are the
         # block's inner padding, and list items (whose own indent is smaller
         # than 8 px) then still sit inside the block.
-        tc("user",      foreground=c["user_fg"],   font=("Segoe UI", 10), spacing1=2, spacing3=2,
+        line = SPACING["line"]
+        tc("user",      foreground=c["user_fg"],   font=theme.BODY_FONT, spacing1=line, spacing3=line,
            background=c["user_bg"], lmargin1=8, lmargin2=8, rmargin=8,
            lmargincolor=c["user_bg"], rmargincolor=c["user_bg"])
-        tc("assistant", foreground=c["llsm_fg"],   font=("Segoe UI", 10), spacing1=2, spacing3=2)
-        tc("error",     foreground=c["error_fg"],  font=("Segoe UI", 10), spacing1=2, spacing3=2)
-        tc("system",    foreground=c["system_fg"], font=("Segoe UI", 9, "italic"))
+        tc("assistant", foreground=c["llsm_fg"],   font=theme.BODY_FONT, spacing1=line, spacing3=line)
+        tc("error",     foreground=c["error_fg"],  font=theme.BODY_FONT, spacing1=line, spacing3=line)
+        tc("system",    foreground=c["muted"],     font=("Segoe UI", 9, "italic"))
         # Header above each message: the name in small type, then the time in grey.
         tc("who_user",     foreground=p.user_accent,  font=("Segoe UI Semibold", 9))
         tc("who_llsm",     foreground=c["muted"],     font=("Segoe UI Semibold", 9))
         tc("who_error",    foreground=p.error_accent, font=("Segoe UI Semibold", 9))
         tc("timestamp",    foreground=c["muted"], font=("Segoe UI", 8))
-        # White space between turns instead of a rule.
-        tc("turn_gap",     font=("Segoe UI", 6), spacing1=6, spacing3=6)
-        tc("placeholder",  foreground=c["muted"], font=("Segoe UI", 10, "italic"))
+        # The name + time line: air above (it can follow an activity block
+        # directly) and a little below, before the message itself.
+        tc("who_line",     spacing1=6, spacing3=4)
+        # A full line of white space between turns instead of a rule.
+        tc("turn_gap",     font=("Segoe UI", 1), spacing1=14, spacing3=0)
+        tc("placeholder",  foreground=c["muted"], font=theme.BODY_FONT + ("italic",))
         # The placeholder is inserted into the INPUT widget, so its tag lives there too.
         self.input_text.tag_configure("placeholder", foreground=c["muted"],
-                                      font=("Segoe UI", 10, "italic"))
+                                      font=theme.BODY_FONT + ("italic",))
         # Markdown styling (bold, code, headings, lists, tables, code blocks,
         # the activity block). Configured AFTER the body tags so Tk's
         # creation-order priority lets them win for font/background. Also
@@ -1541,6 +1543,7 @@ class LlsmPanel:
             (self.conv_title_label, dict(background=p.bg, foreground=p.fg)),
         ]
         recolour += [(mb, theme.menubutton_colors(p)) for mb in self._menu_buttons]
+        self._composer.apply_colors(c)
         for widget, kw in recolour:
             try:
                 widget.configure(**kw)
@@ -1718,6 +1721,10 @@ class LlsmPanel:
         if self._placeholder_active:
             return
         try:
+            self._composer.set_enabled(bool(self.input_text.get("1.0", "end-1c").strip()))
+        except Exception:
+            pass
+        try:
             end_idx = self.input_text.index("end-1c")
             line_count = int(end_idx.split(".")[0])
         except Exception:
@@ -1741,6 +1748,7 @@ class LlsmPanel:
             return
         if current == "":
             self._placeholder_active = True
+            self._composer.set_enabled(False)
             try:
                 self.input_text.delete("1.0", "end")
                 self.input_text.insert("1.0", PLACEHOLDER_TEXT, "placeholder")
@@ -2071,6 +2079,7 @@ class LlsmPanel:
         if not text:
             return
         self.input_text.delete("1.0", "end")
+        self._composer.set_enabled(False)
         # Reset auto-grown height.
         try:
             self.input_text.configure(height=INPUT_MIN_LINES)
@@ -2094,8 +2103,7 @@ class LlsmPanel:
         except Exception as exc:
             print(f"[panel] record_user failed: {exc}", file=sys.stderr)
         self.busy = True
-        self.send_btn.config(state="disabled", text="...")
-        self.cancel_btn.config(state="normal")
+        self._composer.set_busy(True)
         # Pill: immediately Thinking; tool_start events will refine this.
         self._set_pill("thinking")
         self._start_activity()
@@ -2168,8 +2176,7 @@ class LlsmPanel:
         if kind == "__done__":
             self.busy = False
             self._inflight_conv_id = None
-            self.send_btn.config(state="normal", text="Send (Enter)")
-            self.cancel_btn.config(state="disabled")
+            self._composer.set_busy(False)
             # Authoritative reset for the pill: clear any per-tool tracking
             # so a missed tool_end (cancel, exception) cannot leave us stuck.
             self._active_tools = []
@@ -2304,8 +2311,8 @@ class LlsmPanel:
 
         self.history.config(state="normal")
         try:
-            self.history.insert("end", name, who_tag)
-            self.history.insert("end", f"  ·  {ts}\n", "timestamp")
+            self.history.insert("end", name, (who_tag, "who_line"))
+            self.history.insert("end", f" · {ts}\n", ("timestamp", "who_line"))
             # Body (markdown-lite: **bold**, `code`, # headings, - bullets).
             # It ends on its own newline; another one in the body's tag would
             # add an empty (for your messages: filled) line.

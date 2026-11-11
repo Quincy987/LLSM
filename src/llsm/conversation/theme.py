@@ -23,6 +23,8 @@ SETTINGS = (LIGHT_MODE, DARK_MODE, SYSTEM)
 
 CHROME_FONT = ("Segoe UI", 9)
 CHROME_FONT_BOLD = ("Segoe UI Semibold", 9)
+# Chat and input text; the renderer and the panel both read it from here.
+BODY_FONT = ("Segoe UI", 10)
 
 
 @dataclass(frozen=True)
@@ -193,7 +195,7 @@ DERIVED_KEYS = (
     "user_fg", "llsm_fg", "error_fg", "system_fg",
     "user_bg",
     "code_bg", "table_head_bg", "table_alt_bg", "ok_fg", "link_fg",
-    "chrome_bg", "strip_bg", "field_border", "accent", "accent_fg",
+    "chrome_bg", "strip_bg", "field_border", "accent", "accent_fg", "accent_hover",
     "thinking_fg", "running_fg", "error_pill_fg",
 )
 
@@ -230,6 +232,7 @@ def derive(p: Palette) -> dict:
         "field_border": p.field_border,
         "accent": p.accent,
         "accent_fg": p.accent_fg,
+        "accent_hover": p.accent_hover,
     }
 
 
@@ -401,8 +404,8 @@ def apply_options(root, p: Palette) -> None:
         "*Menu.relief": "flat",
         "*Menubutton.background": p.strip_bg,
         "*Menubutton.foreground": p.fg,
-        "*Menubutton.activeBackground": p.accent,
-        "*Menubutton.activeForeground": p.accent_fg,
+        "*Menubutton.activeBackground": p.button_hover,
+        "*Menubutton.activeForeground": p.fg,
         "*Entry.background": p.surface,
         "*Entry.foreground": p.fg,
         "*Entry.insertBackground": p.fg,
@@ -434,8 +437,8 @@ def menu_colors(p: Palette) -> dict:
 
 def menubutton_colors(p: Palette) -> dict:
     """Keyword arguments that recolour an existing menu-strip Menubutton."""
-    return dict(background=p.strip_bg, foreground=p.fg, activebackground=p.accent,
-                activeforeground=p.accent_fg)
+    return dict(background=p.strip_bg, foreground=p.fg, activebackground=p.button_hover,
+                activeforeground=p.fg)
 
 
 # ------------------------------------------------------------------ title bar
