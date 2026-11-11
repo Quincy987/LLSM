@@ -12,8 +12,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (Semibold) en tabelcellen, iets meer regelafstand. Een afgeronde invoerbalk die
   meegroeit met de tekst, met een ronde verzendknop (grijs zolang er niets te versturen
   is) die tijdens een antwoord een stopknop wordt (Esc stopt ook); de losse Send- en
-  Cancel-knoppen vervallen. Zachte hover op het menu, de gesprekstitel en klikbare chat-acties
-  ("Kopiëren", "… nog N rijen"). Nederlandse placeholder in de invoerbalk.
+  Cancel-knoppen vervallen. Zachte hover op het menu, de gesprekstitel en klikbare
+  chat-acties ("Kopiëren", "… nog N rijen"). Nederlandse placeholder in de
+  invoerbalk.
 
 ## v0.3.9 — Calmer panel (2026-11-10)
 
