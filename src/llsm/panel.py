@@ -1394,6 +1394,8 @@ class LlsmPanel:
         self.input_text.bind("<KeyRelease>", self._on_input_keyrelease)
         self.input_text.bind("<FocusIn>", self._on_input_focus_in, add="+")
         self.input_text.bind("<FocusOut>", self._on_input_focus_out, add="+")
+        # Esc stops a running answer (the keyboard route the Cancel button had).
+        self.input_text.bind("<Escape>", self._on_escape_key)
 
         # Center: chat history (left) + sidebar (right, closed by default).
         # Pack the sidebar first so it reserves its width; chat fills the
@@ -1462,6 +1464,12 @@ class LlsmPanel:
     def _on_return_key(self, event):
         self._send()
         return "break"  # suppress default newline insertion
+
+    def _on_escape_key(self, event):
+        if self.busy:
+            self._on_cancel()
+            return "break"
+        return None
 
     def _on_cancel(self):
         if self._backend is None or not self.busy:

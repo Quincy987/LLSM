@@ -192,7 +192,7 @@ def contrast(a: str, b: str) -> float:
 
 DERIVED_KEYS = (
     "bg", "fg", "muted", "separator",
-    "user_fg", "llsm_fg", "error_fg", "system_fg",
+    "user_fg", "llsm_fg", "error_fg",
     "user_bg",
     "code_bg", "table_head_bg", "table_alt_bg", "ok_fg", "link_fg",
     "chrome_bg", "strip_bg", "field_border", "accent", "accent_fg", "accent_hover",
@@ -216,7 +216,6 @@ def derive(p: Palette) -> dict:
         "user_fg": tint(fg, p.user_accent, 0.35),
         "llsm_fg": tint(fg, p.llsm_accent, 0.15),
         "error_fg": p.error_accent,
-        "system_fg": tint(fg, p.system_accent, 0.6),
         # Soft block behind your own messages.
         "user_bg": tint(s, p.user_accent, 0.08),
         "thinking_fg": p.thinking,
