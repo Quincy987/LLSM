@@ -85,7 +85,7 @@ original's SHA-256 unchanged. The calculated reactions of that output are S3's.
 ## Regression
 
 - Bedding on a copy of the demo model: `llsm bedding apply` 96 of 96 confirmed, 43.6 s.
-- `pytest tests/unit`: 359 passed.
+- `pytest tests/unit`: 360 passed.
 - `tests/live/test_moving_load_live.py` (LLSM_LIVE=1, LLSM_LIVE_DECK = the plate fixture): 2 passed in 170 s,
   the hand case and the same request again with and without `replace`. After the review the
   XML writes numbers in plain decimals (no exponent); the hand case was run again on ESA_XML

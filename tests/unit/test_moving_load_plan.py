@@ -265,3 +265,36 @@ def test_polyline_chainage_turns_the_corner():
     point, direction = path.at(1500)
     assert point == pytest.approx((1000, 500)) and direction == pytest.approx((0, 1))
     assert path.length == pytest.approx(2000)
+
+
+def test_random_plans_hold_their_invariants():
+    """Every case carries the whole vehicle, names are unique, the last position is at the path end."""
+    import random
+    import xml.etree.ElementTree as ET
+
+    from llsm.moving_load.apply import update_xml
+
+    rng = random.Random(7)
+    big = model(plates=(Plate("D", (1, 2, 3, 4), ((-100, -100, 0), (100, -100, 0), (100, 100, 0), (-100, 100, 0))),))
+    checked = 0
+    for _ in range(300):
+        points = [(rng.uniform(-50000, 50000), rng.uniform(-50000, 50000))]
+        for _ in range(rng.randint(1, 4)):
+            points.append((points[-1][0] + rng.uniform(-20000, 20000), points[-1][1] + rng.uniform(-20000, 20000)))
+        axles = [{"load_kn": rng.uniform(1, 300), "offset_mm": 0}] + [
+            {"load_kn": rng.uniform(1, 300), "offset_mm": rng.uniform(100, 5000)} for _ in range(rng.randint(0, 3))
+        ]
+        vehicle = make_vehicle(axles=axles, track_mm=rng.choice([None, rng.uniform(500, 3000)]))
+        path = RoadPath.parse(points)
+        plan = build_plan(big, vehicle, path, path.length / rng.randint(1, 30), last_step=rng.choice(["exact", "short"]),
+                          lateral_offset_mm=rng.uniform(-2000, 2000), allow_many=True)
+        if plan.problems:
+            continue
+        checked += 1
+        names = [l.name for l in plan.loads] + [c.name for c in plan.cases]
+        assert len(names) == len(set(names))
+        for case in plan.cases:
+            assert -sum(l.value_kn for l in plan.loads_of(case.name)) == pytest.approx(vehicle.total_kn)
+        assert plan.cases[-1].front_chainage_mm == pytest.approx(path.length, abs=0.02)
+        ET.fromstring(update_xml(plan))
+    assert checked > 100
