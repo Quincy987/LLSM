@@ -1,0 +1,94 @@
+# Phase 3 verification — moving load positions on a saved SCIA model
+
+Date: 2026-11-12. SCIA Engineer 24.0.3015.64, ESA_XML, on copies only. Plan:
+`docs/10-plan-moving-load.md`. Scripts: `phase0/moving_load/` (models and logs in the
+gitignored `phase0/xml_route/work/` folder).
+
+## Decision
+
+**GO, for plate decks and beam decks.** ESA_XML writes a load group, load cases and point
+forces into a saved model in one update; SCIA takes the values as N and m; the forces land
+on the plate (the column forces add up to the loads, exactly, and split as the hand
+calculation says); and every object reads back from the saved file. One value in an
+unrelated table changes on every update (see S5); it is recorded, not explained.
+
+## Test models
+
+- **Plate deck** `plate_base.esa`, built through XML from the kademuur template
+  (`make_plate.py`): plate D1, 6000 × 4000 mm, 300 mm, C20/25, at z = 0, on four 1 m
+  columns C1–C4 (D 400 mm) with fixed feet. The plan asked for line supports along the
+  short edges; columns were used instead because the template's result document exports
+  1D internal forces and no reactions: the columns' axial forces are the reactions.
+- **Beam** `pile_base.esa` from phase 0: one member B1, (0, 0, 0) to (0, −2.5, −10) m.
+- **Real** the kademuur demo model (`kademuur_kaal.esa`, 32 piles, deck E1, wall E2), read
+  only, plus a bedding regression on a copy.
+
+## Criteria
+
+| # | Criterion | Result | Evidence |
+|---|---|---|---|
+| S1 | Group + 3 cases + free point loads in one update | **PASS** | `spike.py s1`: exit 0 in 22 s. SCIA's object log in the saved file: point forces free 0 → 12, load cases 1 → 4, load groups 1 → 2. All 12 names read back. |
+| S2 | Units and coordinates | **PASS, by calculation** | Literal −100000 at (1.7, 1.0) is stored as −100000.0 at x 1.7, y 1.0 (reader). That SCIA reads these as N and m follows from S3: in kN the reactions would be 1000× smaller, in mm the loads would miss the plate. The GUI check is the screenshot below. |
+| S3 | Loads land on the plate | **PASS** | `spike.py s3` and `reactions.py` on the product's own output: the 3 cases in one linear combination, calculated (LIN, 33–41 s). Column forces −232.7 / −217.3 / −217.3 / −232.7 kN, sum **900.0 kN = 900.0 kN** of loads read back (ratio 1.0000). Hand: moments of the loads about x = 0 give 2610 kNm, so 435 kN at x = 6 m (217.5 per column) and 465 kN at x = 0 (232.5): matches to 0.2 kN, the rest is the frame action of the fixed columns. |
+| S4 | Point load on a beam by name + relative x | **PASS** | `spike.py s4` and `llsm moving-load apply --deck beam --member B1`: stored member id 1, positions 0.25 / 0.75 (spike) and 0 / 0.5 / 1 (product), values −10000 / −20000 N. |
+| S5 | Nothing else changed | **PASS, one value unexplained** | `diff_aligned.py` against two plain re-saves (phase 0's index diff cannot handle an added block). Ours: the new free-load block, the group and case blocks. Bookkeeping: a counter 12 → 13, the object log text, the revision history. Results flagged out of date: in the three FE result tables one flag per entry 1 → 0. **Unexplained: in the UCS record ("Huidig UCS") one u32 1012 → 0**, like phase 0's code-manager 100 → 0. Members, nodes, plates and every other load object compare equal in the reader. |
+| S6 | Read-back from the saved file | **PASS** | New `read_loads` (`llsm.scia.esa_file`): nodes, plates with outline, load groups (relation, load), load cases (action, their load ids), free and beam point forces (value, x/y or member + position, case id). Every table cross-checked against SCIA's object log; on the real kademuur model too (74 nodes, 2 plates, 6 groups, 8 cases), no format error. |
+| S7 | Same name again | **Overwrites** | `spike.py s7`: writing s1's update again with W1 at −123000 on the output: still 12 loads, W1 now −123000. As with supports, a name is a key: the tool refuses existing names unless `replace`, and `replace` only touches names starting with `LLSM-ML `. |
+| S8 | Envelope combination | **Written, not in v1** | `spike.py s8`: exit 0, the combination is stored with three coefficients 1.0. The reader does not decode combinations, so it could not be checked after writing; v1 leaves it out. The group is exclusive, so SCIA's own envelope takes one position at a time. |
+
+## Enum values, measured
+
+| Field | Value written | Stored | Read as |
+|---|---|---|---|
+| Load group, Relation | 1 (spike), 2 (probe) | byte 1 after the name: 1, 2 | 0 standard, 1 exclusive, 2 together |
+| Load group, Load | 1 (spike), 0 (probe) | byte 3: 1, 0 | 0 permanent, 1 variable |
+| Load case, Action type | 1 (spike), 0 (probe) | byte 3: 1, 0 | 0 permanent, 1 variable |
+
+The meaning of the numbers is confirmed on the real kademuur model: its groups "Verkeer",
+"Boom", "IJs" and "Aanmeer" read as variable/standard, "Aanvaring" (collision) as
+variable/exclusive, its case "BG6 Var" as variable and "BG6 Perm" as permanent.
+
+## Hand case, end to end through the product
+
+`apply_moving_load` on a copy of the plate deck: axles 200 kN (front) and 100 kN 1200 mm
+behind, track 2000 mm, path (500, 2000) → (4900, 2000) mm, step 1600 mm.
+
+| Case | Front axle x (mm) | Rear axle x (mm) | Wheels (kN) | Total (kN) |
+|---|---|---|---|---|
+| LLSM-ML TS1 01 | 1700 | 500 | 2 × −100 at y 1000 / 3000, 2 × −50 | −300 |
+| LLSM-ML TS1 02 | 3300 | 2100 | same | −300 |
+| LLSM-ML TS1 03 | 4900 | 3700 | same | −300 |
+
+Result: 12 of 12 loads and 3 of 3 cases confirmed from the saved file (value exact, x and y
+within 0.1 mm, each case's loads on one case, each case listing exactly its loads, the group
+exclusive and variable holding exactly these cases), no other changes, ESA_XML 22 s, the
+original's SHA-256 unchanged. The calculated reactions of that output are S3's.
+
+## Edge cases
+
+| Case | What happens |
+|---|---|
+| Step does not divide the travel | Refused, with the three nearest steps that do; `last_step="short"` adds a last position at the path end. |
+| Wheel off the deck | Refused, listing each wheel and its position. A wheel within 1 mm of an edge counts as on it. |
+| Path beside a beam deck | Refused when an axle is more than 1 mm off the beam axis. |
+| Wall (vertical 2D member) | Not a deck. A model with walls only asks for `deck_outline_mm`. |
+| Outline not readable | Asks for `deck_outline_mm` (and `deck_z_mm`). |
+| More than 200 positions | Refused unless `allow_many`. |
+| Existing names | Refused; with `replace`, only LLSM's own; leftovers of a longer earlier run are named in a warning. |
+
+## Regression
+
+- Bedding on a copy of the demo model: `llsm bedding apply` 96 of 96 confirmed, 43.6 s.
+- `pytest tests/unit`: 325 passed.
+
+## Screenshot
+
+`img/phase3-moving-load-case02.png`: case LLSM-ML TS1 02 in SCIA. See the demo report if it is
+missing: the Qt panels do not render through window capture (phase 0).
+
+## Open
+
+1. The UCS value 1012 → 0 (S5), with phase 0's code-manager 100 → 0: probably one mechanism.
+2. Free loads with z ≠ 0: z is written, but not found in the record; it is not compared.
+3. Combinations in the reader, so an envelope can be written and checked (S8).
+4. Plates with arcs: the outline check joins the corner nodes with straight lines.

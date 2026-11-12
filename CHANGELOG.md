@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Rijdende belasting op een bestaand model ("treintje").** `llsm moving-load
+  preview|apply` en de MCP-tools `moving_load_preview` / `moving_load_apply`
+  zetten een voertuig op elke stap langs een rijlijn op een opgeslagen `.esa`:
+  één belastinggeval per positie van de vooras, alle in één exclusieve,
+  variabele belastinggroep `LLSM-ML <naam>`, zodat een combinatie steeds één
+  positie neemt. Voertuig: eigen aslijst (kN, afstand achter de vooras in mm,
+  spoorbreedte) of de LM1-tandem uit EN 1991-2 (TS1/TS2/TS3, α als factor).
+  De rijlijn is een lijn of polylijn in plan; de wielen staan haaks erop, dus
+  een scheve kruising is gewoon een scheve rijlijn. Op een plaat komt per wiel
+  een vrije puntlast, op een balk één last per as. Weigert een stap die niet
+  past (met stappen die wel passen), wielen naast het dek, een rijlijn naast de
+  balkas, namen die al bestaan, en meer dan 200 posities zonder bevestiging.
+  Schrijft een nieuwe `<model>_llsm-NN.esa`, leest elke last, elk geval en de
+  groep terug en meldt `ok` alleen als alles klopt; het origineel blijft
+  onaangeroerd.
+- **`read_loads`** in `llsm.scia.esa_file` leest knopen, 2D-delen met hun
+  omtrek, belastinggroepen, belastinggevallen en puntlasten uit een opgeslagen
+  model, gecontroleerd tegen de objecttellingen die SCIA in het bestand logt.
+  Bedding gebruikt het niet, dus een onbekende indeling kan een bedding niet
+  blokkeren. **`llsm.scia.load_xml`** bouwt de XML-update voor groepen,
+  gevallen en puntlasten; `esa_xml.run_update` neemt het definitiebestand als
+  parameter.
+
+### Verified
+- **Spike en handberekening** in `docs/verify/phase3-moving-load.md`: SCIA
+  leest de XML in N en m; op een plaat van 6 × 4 m op vier kolommen tellen de
+  kolomkrachten op tot precies de 900 kN aan wiellasten, verdeeld zoals de
+  handberekening zegt; een tweede update met dezelfde namen overschrijft.
+  Tooling in `phase0/moving_load/`.
+
 ## v0.3.10 — Air and polish in the panel (2026-11-11)
 
 ### UX

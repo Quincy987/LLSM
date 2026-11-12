@@ -26,6 +26,14 @@ Plan: `docs/09-plan-v0.4-existing-models.md` (order) + `docs/08-plan-v0.4-vibemo
 - [x] Fix test env leak in `test_credentials.py`
 - [ ] Rotate the API key that test once printed (owner)
 
+## Phase 3 — moving load positions (docs/10, verify: docs/verify/phase3-moving-load.md)
+- [x] Spike S1–S8 on the plate fixture and the pile model: write, units, loads land (column forces = loads), beam loads, diff, read-back, same-name overwrite, envelope written
+- [x] Reader for nodes, plates, load groups, load cases, point forces (`read_loads`), checked against SCIA's object log
+- [x] `llsm moving-load` + MCP tools; hand case end to end, 12/12 loads and 3/3 cases confirmed
+- [ ] Find the UCS value that an update sets from 1012 to 0 (same mechanism as the code-manager 100 → 0?)
+- [ ] Decode combinations in the reader, then write the envelope (S8)
+- [ ] Mail Tom and Sophie the five questions (docs/10 §5): model copy, vehicle, deck type, skew, naming
+
 ## People
 - [ ] Reply to the hands-on engineer: real geo table + model copy; confirm GEF; k variant/units
 - [ ] Ask constructeurs how forces go to IDEA / peaks
