@@ -71,7 +71,7 @@ class Fake:
 def test_preview_writes_nothing_and_reports_the_file(tmp_path):
     fake = Fake(tmp_path, None)
     result = preview_moving_load(fake.model_path, REQUEST, reader=fake.reader)
-    assert result["ok"] and result["cases"] == 3 and result["loads"] == 12
+    assert result["ok"] and result["planned_cases"] == 3 and result["planned_loads"] == 12
     assert result["saved_by"] == "+D_344_24.0.3015.64"  # the MCP state block keys on this
     assert [p.name for p in tmp_path.iterdir()] == ["m.esa"]
 

@@ -28,7 +28,7 @@ unrelated table changes on every update (see S5); it is recorded, not explained.
 | # | Criterion | Result | Evidence |
 |---|---|---|---|
 | S1 | Group + 3 cases + free point loads in one update | **PASS** | `spike.py s1`: exit 0 in 22 s. SCIA's object log in the saved file: point forces free 0 → 12, load cases 1 → 4, load groups 1 → 2. All 12 names read back. |
-| S2 | Units and coordinates | **PASS, by calculation** | Literal −100000 at (1.7, 1.0) is stored as −100000.0 at x 1.7, y 1.0 (reader). That SCIA reads these as N and m follows from S3: in kN the reactions would be 1000× smaller, in mm the loads would miss the plate. The GUI check is the screenshot below. |
+| S2 | Units and coordinates | **PASS, by calculation** | Literal −100000 at (1.7, 1.0) is stored as −100000.0 at x 1.7, y 1.0 (reader). That SCIA reads these as N and m follows from S3: in kN the reactions would be 1000× smaller, in mm the loads would miss the plate. The GUI check was not done (see Screenshot). |
 | S3 | Loads land on the plate | **PASS** | `spike.py s3` and `reactions.py` on the product's own output: the 3 cases in one linear combination, calculated (LIN, 33–41 s). Column forces −232.7 / −217.3 / −217.3 / −232.7 kN, sum **900.0 kN = 900.0 kN** of loads read back (ratio 1.0000). Hand: moments of the loads about x = 0 give 2610 kNm, so 435 kN at x = 6 m (217.5 per column) and 465 kN at x = 0 (232.5): matches to 0.2 kN, the rest is the frame action of the fixed columns. |
 | S4 | Point load on a beam by name + relative x | **PASS** | `spike.py s4` and `llsm moving-load apply --deck beam --member B1`: stored member id 1, positions 0.25 / 0.75 (spike) and 0 / 0.5 / 1 (product), values −10000 / −20000 N. |
 | S5 | Nothing else changed | **PASS, one value unexplained** | `diff_aligned.py` against two plain re-saves (phase 0's index diff cannot handle an added block). Ours: the new free-load block, the group and case blocks. Bookkeeping: a counter 12 → 13, the object log text, the revision history. Results flagged out of date: in the three FE result tables one flag per entry 1 → 0. **Unexplained: in the UCS record ("Huidig UCS") one u32 1012 → 0**, like phase 0's code-manager 100 → 0. Members, nodes, plates and every other load object compare equal in the reader. |
@@ -85,7 +85,7 @@ original's SHA-256 unchanged. The calculated reactions of that output are S3's.
 ## Regression
 
 - Bedding on a copy of the demo model: `llsm bedding apply` 96 of 96 confirmed, 43.6 s.
-- `pytest tests/unit`: 352 passed.
+- `pytest tests/unit`: 357 passed.
 - `tests/live/test_moving_load_live.py` (LLSM_LIVE=1, LLSM_LIVE_DECK = the plate fixture): 2 passed in 170 s,
   the hand case and the same request again with and without `replace`. After the review the
   XML writes numbers in plain decimals (no exponent); the hand case was run again on ESA_XML

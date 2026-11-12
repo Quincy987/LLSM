@@ -70,6 +70,8 @@ def make_vehicle(
         if track_mm is not None and track_mm != vehicle.track_mm:
             raise VehicleError(f"LM1 has a fixed track of {LM1_TRACK_MM:g} mm; leave track_mm out for a preset.")
         return vehicle
+    if alpha != 1.0:
+        raise VehicleError("alpha only scales the LM1 preset; put the factor in the axle loads of a custom vehicle.")
     problems = []
     parsed = []
     for number, axle in enumerate(axles or [], start=1):

@@ -234,6 +234,7 @@ def test_lm1_alpha_scales_the_axles():
         {"axles": [{"load_kn": float("nan"), "offset_mm": 0}]},
         {"axles": [{"load_kn": 10, "offset_mm": 0}], "track_mm": float("nan")},
         {"preset": "LM1-TS1", "alpha": float("nan")},
+        {"axles": [{"load_kn": 10, "offset_mm": 0}], "alpha": 0.8},
     ],
 )
 def test_bad_vehicles_are_refused(kwargs):

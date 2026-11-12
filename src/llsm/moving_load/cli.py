@@ -78,7 +78,7 @@ def _report(result: dict) -> int:
     if result["vehicle"]:
         print(f"Vehicle: {result['vehicle']}")
         print(f"Group: {result['group']} (exclusive, variable); deck: {result['deck']}")
-        print(f"Load cases: {result['cases']}; loads: {result['loads']}")
+        print(f"Planned: {result['planned_cases']} load cases, {result['planned_loads']} loads")
     print()
     _print_table(result["preview"])
     for word, key in (("WARNING", "warnings"), ("PROBLEM", "problems")):
@@ -88,7 +88,7 @@ def _report(result: dict) -> int:
         print()
         print(
             f"Written and confirmed: {result['written']} of {result['expected']} loads, "
-            f"{result['cases_confirmed']} of {result['cases']} cases ({result['seconds']} s)"
+            f"{result['cases_confirmed']} of {result['planned_cases']} cases ({result['seconds']} s)"
         )
         for line in result["mismatches"]:
             print(f"MISMATCH: {line}")

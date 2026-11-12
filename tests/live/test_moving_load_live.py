@@ -43,7 +43,7 @@ def digest(path):
 def test_hand_case_lands_exactly_as_planned(deck):
     before = digest(deck)
     preview = preview_moving_load(deck, REQUEST)
-    assert preview["ok"] and preview["cases"] == 3 and preview["loads"] == 12
+    assert preview["ok"] and preview["planned_cases"] == 3 and preview["planned_loads"] == 12
     assert sorted(p.name for p in deck.parent.iterdir()) == ["deck.esa"]
 
     result = apply_moving_load(deck, REQUEST)
