@@ -41,7 +41,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Tooling in `phase0/moving_load/`; live-test `tests/live/test_moving_load_live.py`.
 - **Via de app**: via de echte MCP-server en de CLI, ook met een rijlijn onder
   30°; na doorrekenen kloppen de kolomkrachten met de lasten (1800 en 900 kN)
-  en per zijde met de statica binnen 0,4 %.
+  en per zijde met de statica binnen 0,5 %.
 
 ## v0.3.10 — Air and polish in the panel (2026-11-11)
 
