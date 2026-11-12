@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.11 — Moving load on existing SCIA models (2026-11-12)
+
+### Added
+- **Rijdende belasting op een bestaand model ("treintje").** `llsm moving-load
+  preview|apply` en de MCP-tools `moving_load_preview` / `moving_load_apply`
+  zetten een voertuig op elke stap langs een rijlijn op een opgeslagen `.esa`:
+  één belastinggeval per positie van de vooras, alle in één exclusieve,
+  variabele belastinggroep `LLSM-ML <naam>`, zodat een combinatie steeds één
+  positie neemt. Voertuig: eigen aslijst (kN, afstand achter de vooras in mm,
+  spoorbreedte) of de LM1-tandem uit EN 1991-2 (TS1/TS2/TS3, α als factor).
+  De rijlijn is een lijn of polylijn in plan; de wielen staan haaks erop, dus
+  een scheve kruising is gewoon een scheve rijlijn. Op een plaat komt per wiel
+  een vrije puntlast, op een balk één last per as. Weigert een stap die niet
+  past (met stappen die wel passen), wielen naast het dek, wielen boven twee
+  2D-delen tegelijk, een rijlijn naast de balkas, namen die al bestaan (met
+  `replace` alleen LLSM's eigen, en niet als een eerdere, langere run restanten
+  zou achterlaten), en meer dan 200 posities zonder bevestiging. Een dek op
+  afschot telt mee; alleen wanden niet.
+  Schrijft een nieuwe `<model>_llsm-NN.esa`, leest elke last, elk geval en de
+  groep terug en meldt `ok` alleen als alles klopt; het origineel blijft
+  onaangeroerd.
+- **`read_loads`** in `llsm.scia.esa_file` leest knopen, 2D-delen met hun
+  omtrek, belastinggroepen, belastinggevallen en puntlasten uit een opgeslagen
+  model, gecontroleerd tegen de objecttellingen die SCIA in het bestand logt.
+  Bedding gebruikt het niet, dus een onbekende indeling kan een bedding niet
+  blokkeren. **`llsm.scia.load_xml`** bouwt de XML-update voor groepen,
+  gevallen en puntlasten; `esa_xml.run_update` neemt het definitiebestand als
+  parameter.
+
+### Verified
+- **Spike en handberekening** in `docs/verify/phase3-moving-load.md`: SCIA
+  leest de XML in N en m; op een plaat van 6 × 4 m op vier kolommen tellen de
+  kolomkrachten op tot precies de 900 kN aan wiellasten, verdeeld zoals de
+  handberekening zegt; een tweede update met dezelfde namen overschrijft.
+  Tooling in `phase0/moving_load/`; live-test `tests/live/test_moving_load_live.py`.
+- **Via de app**: via de echte MCP-server en de CLI, ook met een rijlijn onder
+  30°; na doorrekenen kloppen de kolomkrachten met de lasten (1800 en 900 kN)
+  en per zijde met de statica binnen 0,5 %.
+
 ## v0.3.10 — Air and polish in the panel (2026-11-11)
 
 ### UX

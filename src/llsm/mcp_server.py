@@ -47,6 +47,7 @@ import uvicorn
 from mcp.server.fastmcp import FastMCP
 
 from . import bedding as bedding_tools
+from . import moving_load as moving_load_tools
 from .answer_rules import ANSWER_RULES
 from .mcp_guard import GuardMiddleware
 from .scia.autoclick import SciaDialogPending
@@ -67,7 +68,7 @@ _TOOL_EXEC = ThreadPoolExecutor(max_workers=1, thread_name_prefix="llsm-tool")
 
 def _state_block(result: dict) -> dict:
     """What the model is working on, attached to every tool result."""
-    if "saved_by" in result:  # a bedding result: the model is a file
+    if "saved_by" in result:  # a bedding or moving-load result: the model is a file
         return {"model": result.get("model"), "saved_by": result.get("saved_by")}
     session = _ctx.session
     if session is None:
@@ -130,6 +131,7 @@ INSTRUCTIONS_BASE = (
     "Units: lengths in mm; line loads in kN/m. Z axis is vertical (up positive); "
     "for gravity-like downward loads use direction='Z' with a NEGATIVE magnitude.\n\n"
     "To put soil beddings on the piles of an existing saved model, use bedding_preview, then bedding_apply.\n\n"
+    "For moving traffic positions on an existing saved model: moving_load_preview, then moving_load_apply.\n\n"
     + ANSWER_RULES
 )
 
@@ -374,8 +376,84 @@ def _register_common_tools(mcp: FastMCP) -> None:
             out_dir=Path(out_dir) if out_dir else None,
         )
 
+    # --- Moving load positions on a saved model ---
+    def moving_load_preview(
+        model_path: str,
+        path_mm: list[list[float]],
+        step_mm: float,
+        vehicle_preset: str | None = None,
+        axles: list[dict] | None = None,
+        track_mm: float | None = None,
+        alpha: float = 1.0,
+        deck: str = "plate",
+        member: str | None = None,
+        name: str = "TS1",
+        lateral_offset_mm: float = 0.0,
+        last_step: str = "exact",
+        replace: bool = False,
+        allow_many: bool = False,
+        deck_outline_mm: list[list[float]] | None = None,
+        deck_z_mm: float = 0.0,
+    ) -> dict:
+        """Work out the load cases a vehicle driving along a road puts on a saved .esa. Changes nothing.
+
+        Always call this first and show the engineer the table. One load case per position of the
+        front axle, in one exclusive variable load group "LLSM-ML <name>". path_mm is the road axis in
+        plan, [[x, y], ...] in mm; the wheels sit square to it, so a skewed deck is just a skewed path.
+        step_mm is how far the front axle moves per case. Vehicle: vehicle_preset LM1-TS1/LM1-TS2/LM1-TS3
+        (EN 1991-2 tandem, 2 axles 1200 mm apart, track 2000 mm; alpha multiplies the axle load), or
+        axles [{load_kn, offset_mm}] with offset behind the front axle (positive kN act downward) and
+        optionally track_mm. deck "plate" puts a free point load per wheel on the 2D members; "beam"
+        puts one load per axle on member. lateral_offset_mm moves the vehicle left (+) of the path.
+        last_step "short" adds a final position at the path end when the step does not fit."""
+        return moving_load_tools.preview_moving_load(
+            Path(model_path),
+            moving_load_tools.MovingLoadRequest(
+                path_mm=path_mm, step_mm=step_mm, vehicle_preset=vehicle_preset, axles=axles, track_mm=track_mm,
+                alpha=alpha, deck=deck, member=member, name=name, lateral_offset_mm=lateral_offset_mm,
+                last_step=last_step, replace=replace, allow_many=allow_many,
+                deck_outline_mm=deck_outline_mm, deck_z_mm=deck_z_mm,
+            ),
+        )
+
+    def moving_load_apply(
+        model_path: str,
+        path_mm: list[list[float]],
+        step_mm: float,
+        vehicle_preset: str | None = None,
+        axles: list[dict] | None = None,
+        track_mm: float | None = None,
+        alpha: float = 1.0,
+        deck: str = "plate",
+        member: str | None = None,
+        name: str = "TS1",
+        lateral_offset_mm: float = 0.0,
+        last_step: str = "exact",
+        replace: bool = False,
+        allow_many: bool = False,
+        deck_outline_mm: list[list[float]] | None = None,
+        deck_z_mm: float = 0.0,
+        out_dir: str | None = None,
+    ) -> dict:
+        """Write the load cases from moving_load_preview to a NEW .esa next to the model and read them back.
+
+        The original is never changed. SCIA must be closed. Same arguments as moving_load_preview.
+        Trust only `ok`, `mismatches` and `other_changes` in the result; report `output` to the engineer.
+        replace overwrites what this tool wrote earlier under the same name, nothing else."""
+        return moving_load_tools.apply_moving_load(
+            Path(model_path),
+            moving_load_tools.MovingLoadRequest(
+                path_mm=path_mm, step_mm=step_mm, vehicle_preset=vehicle_preset, axles=axles, track_mm=track_mm,
+                alpha=alpha, deck=deck, member=member, name=name, lateral_offset_mm=lateral_offset_mm,
+                last_step=last_step, replace=replace, allow_many=allow_many,
+                deck_outline_mm=deck_outline_mm, deck_z_mm=deck_z_mm,
+            ),
+            out_dir=Path(out_dir) if out_dir else None,
+        )
+
     for _fn in (
         bedding_preview, bedding_apply,
+        moving_load_preview, moving_load_apply,
         new_model, add_material, add_rectangular_section, add_node, add_beam,
         add_fixed_support, add_pinned_support, add_roller_support,
         add_load_group, add_load_case, add_line_load,

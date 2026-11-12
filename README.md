@@ -136,6 +136,19 @@ Piles that already carry other line supports are refused unless you pass `--allo
 
 ---
 
+## Moving load on an existing model
+
+Put a vehicle at every step along a road on a saved SCIA model: one load case per position of the front axle, all in one exclusive variable load group `LLSM-ML <name>`. Same rules as beddings: a new `<model>_llsm-NN.esa`, read back and checked; SCIA closed.
+
+```powershell
+.venv\Scripts\llsm moving-load preview bridge.esa --path "500,2000;4900,2000" --step 1600 --preset LM1-TS1
+.venv\Scripts\llsm moving-load apply bridge.esa --path "500,2000;4900,2000" --step 1600 --axles "200@0,100@1200" --track 2000
+```
+
+Coordinates in mm, axle loads in kN (downward), offsets behind the front axle. On a plate deck each wheel gets a free point load; `--deck beam --member L1` puts one load per axle on a beam. A skewed deck needs no angle: draw the path along the road. Details and limits: `docs/10-plan-moving-load.md`, `docs/verify/phase3-moving-load.md`.
+
+---
+
 ## Project layout
 
 ```
@@ -169,7 +182,7 @@ LLSM/
 | 05 | [`docs/05-plan.md`](docs/05-plan.md) | Phased roadmap |
 | 06 | [`docs/06-phase0-results.md`](docs/06-phase0-results.md) | Phase 0 verification |
 
-## Current tool surface (27 tools)
+## Current tool surface (29 tools)
 
 - **Model defs**: `new_model`, `add_material`, `add_rectangular_section`
 - **Geometry**: `add_node`, `add_beam`, `update_node`, `set_member_endpoints`, `set_member_cross_section`, `delete_object`
@@ -179,9 +192,10 @@ LLSM/
 - **Results**: `get_beam_deflection`, `get_beam_inner_forces`
 - **SCIA drive**: `launch_scia`, `push_model`, `run_analysis`, `close_scia`
 - **Beddings on a saved model**: `bedding_preview`, `bedding_apply`
+- **Moving load on a saved model**: `moving_load_preview`, `moving_load_apply`
 
 ## Known limitations (Phase 2)
 
 - Cross-sections are rectangular-only (no IPE/HEA library lookup yet).
-- No point loads, surface loads, slabs, or load combinations yet.
+- Building a model from scratch: no point loads, surface loads, slabs, or load combinations yet (point loads on a saved model: see Moving load).
 - Single SCIA install assumed on the machine.

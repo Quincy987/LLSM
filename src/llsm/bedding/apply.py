@@ -5,7 +5,6 @@ back and comparing every spring; ESA_XML's exit code is not evidence.
 """
 from __future__ import annotations
 
-import re
 import time
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
@@ -14,11 +13,12 @@ from pathlib import Path
 
 from ..scia import esa_xml
 from ..scia.esa_file import EsaFormatError, EsaModel, LineSupport, read_esa, read_xml
+from ..scia.output_files import mark_failed as _mark_failed
+from ..scia.output_files import next_output_path  # noqa: F401  (re-exported: tests and callers use it here)
 from .layers import LayerError, parse_layers
 from .plan import BeddingPlan, PlannedSegment, build_plan
 
 _RELATIVE_TOLERANCE = 1e-9
-_OUTPUT_SUFFIX = re.compile(r"_llsm-\d+$")
 
 
 @dataclass
@@ -125,16 +125,6 @@ def preview_bedding(
     return result
 
 
-def next_output_path(model_path: Path, out_dir: Path | None = None) -> Path:
-    """``<stem>_llsm-NN.esa`` with the first free number, numbering on from an earlier output."""
-    folder = Path(out_dir) if out_dir else model_path.parent
-    stem = _OUTPUT_SUFFIX.sub("", model_path.stem)
-    number = 1
-    while (candidate := folder / f"{stem}_llsm-{number:02d}{model_path.suffix}").exists():
-        number += 1
-    return candidate
-
-
 def _compare(planned: list[PlannedSegment], after: dict[str, LineSupport]) -> list[str]:
     mismatches = []
     for item in planned:
@@ -235,14 +225,3 @@ def apply_bedding(
     else:
         result["output"] = str(_mark_failed(output))
     return result
-
-
-def _mark_failed(output: Path) -> Path:
-    """Keep a bad file for inspection under a name nobody will mistake for a result."""
-    failed = output.with_name(f"{output.stem}_FAILED{output.suffix}")
-    try:
-        failed.unlink(missing_ok=True)
-        output.rename(failed)
-    except OSError:  # still held by something; the result is not ok either way
-        return output
-    return failed

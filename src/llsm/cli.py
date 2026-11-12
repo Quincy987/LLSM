@@ -23,6 +23,9 @@ def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "bedding":
         from llsm.bedding.cli import main as bedding_main
         return bedding_main(sys.argv[2:])
+    if len(sys.argv) > 1 and sys.argv[1] == "moving-load":
+        from llsm.moving_load.cli import main as moving_load_main
+        return moving_load_main(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "diagnose":
         from llsm.diagnose import main as diagnose_main
         return diagnose_main(sys.argv[2:])
