@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<project xmlns="http://www.scia.cz">
+   <def uri="loads.xml.def"/>
+   <container id="{F9D4AA72-49D5-11D4-A3CF-000000000000}" t="DataSetScia.EP_LoadGroup.1">
+      <table id="196E8F76-7A40-441C-81DB-6476DAC8BCFF" t="DataSetScia.EP_LoadGroup.1" name="Load groups">
+         <h>
+            <h0 t="Name"/>
+            <h1 t="Relation"/>
+            <h2 t="Load"/>
+         </h>
+         <obj id="1" nm="LLSM-ML TS1">
+           <p0 v="LLSM-ML TS1"/>
+           <p1 v="1"/>
+           <p2 v="1"/>
+         </obj>
+      </table>
+   </container>
+   <container id="{0908D21F-481F-11D4-AB84-00C06C452330}" t="DataSetScia.EP_LoadCase.1">
+      <table id="CA2AF6CC-B980-4C45-AFE3-85EC125810E8" t="DataSetScia.EP_LoadCase.1" name="Load cases">
+         <h>
+            <h0 t="Name"/>
+            <h1 t="Action type"/>
+            <h2 t="Description"/>
+            <h3 t="Load group"/>
+            <h4 t="Load type"/>
+         </h>
+         <obj id="1" nm="LLSM-ML TS1 01">
+           <p0 v="LLSM-ML TS1 01"/>
+           <p1 v="1"/>
+           <p2 v="front axle at 1700 mm"/>
+           <p3 i="1" n="LLSM-ML TS1"/>
+           <p4 v="0"/>
+         </obj>
+         <obj id="2" nm="LLSM-ML TS1 02">
+           <p0 v="LLSM-ML TS1 02"/>
+           <p1 v="1"/>
+           <p2 v="front axle at 3300 mm"/>
+           <p3 i="1" n="LLSM-ML TS1"/>
+           <p4 v="0"/>
+         </obj>
+         <obj id="3" nm="LLSM-ML TS1 03">
+           <p0 v="LLSM-ML TS1 03"/>
+           <p1 v="1"/>
+           <p2 v="front axle at 4900 mm"/>
+           <p3 i="1" n="LLSM-ML TS1"/>
+           <p4 v="0"/>
+         </obj>
+      </table>
+   </container>
+   <container id="{E03984FC-B420-4C03-8D2F-72EA2FAB147D}" t="DataAddLoad.EP_PointForceFree.1">
+      <table id="9C68624A-8E5C-47BD-A150-2AEC783D8A93" t="DataAddLoad.EP_PointForceFree.1" name="Free point loads">
+         <h>
+            <h0 t="Name"/>
+            <h1 t="Load case"/>
+            <h2 t="Direction"/>
+            <h3 t="Type"/>
+            <h4 t="Validity"/>
+            <h5 t="Select"/>
+            <h6 t="Value - F"/>
+            <h7 t="Coord X"/>
+            <h8 t="Coord Y"/>
+            <h9 t="Coord Z"/>
+            <h10 t="System"/>
+         </h>
+         <obj id="1" nm="LLSM-ML TS1 01 W1">
+           <p0 v="LLSM-ML TS1 01 W1"/>
+           <p1 i="1" n="LLSM-ML TS1 01"/>
+           <p2 v="2"/>
+           <p3 v="0"/>
+           <p4 v="0"/>
+           <p5 v="0"/>
+           <p6 v="-100000.0"/>
+           <p7 v="1.7"/>
+           <p8 v="1.0"/>
+           <p9 v="0.0"/>
+           <p10 v="0"/>
+         </obj>
+         <obj id="2" nm="LLSM-ML TS1 01 W2">
+           <p0 v="LLSM-ML TS1 01 W2"/>
+           <p1 i="1" n="LLSM-ML TS1 01"/>
+           <p2 v="2"/>
+           <p3 v="0"/>
+           <p4 v="0"/>
+           <p5 v="0"/>
+           <p6 v="-100000.0"/>
+           <p7 v="1.7"/>
+           <p8 v="3.0"/>
+           <p9 v="0.0"/>
+           <p10 v="0"/>
+         </obj>
+         <obj id="3" nm="LLSM-ML TS1 01 W3">
+           <p0 v="LLSM-ML TS1 01 W3"/>
+           <p1 i="1" n="LLSM-ML TS1 01"/>
+           <p2 v="2"/>
+           <p3 v="0"/>
+           <p4 v="0"/>
+           <p5 v="0"/>
+           <p6 v="-50000.0"/>
+           <p7 v="0.5"/>
+           <p8 v="1.0"/>
+           <p9 v="0.0"/>
+           <p10 v="0"/>
+         </obj>
+         <obj id="4" nm="LLSM-ML TS1 01 W4">
+           <p0 v="LLSM-ML TS1 01 W4"/>
+           <p1 i="1" n="LLSM-ML TS1 01"/>
+           <p2 v="2"/>
+           <p3 v="0"/>
+           <p4 v="0"/>
+           <p5 v="0"/>
+           <p6 v="-50000.0"/>
+           <p7 v="0.5"/>
+           <p8 v="3.0"/>
+           <p9 v="0.0"/>
+           <p10 v="0"/>
+         </obj>
+         <obj id="5" nm="LLSM-ML TS1 02 W1">
+           <p0 v="LLSM-ML TS1 02 W1"/>
+           <p1 i="2" n="LLSM-ML TS1 02"/>
+           <p2 v="2"/>
+           <p3 v="0"/>
+           <p4 v="0"/>
+           <p5 v="0"/>
+           <p6 v="-100000.0"/>
+           <p7 v="3.3"/>
+           <p8 v="1.0"/>
+           <p9 v="0.0"/>
+           <p10 v="0"/>
+         </obj>
+         <obj id="6" nm="LLSM-ML TS1 02 W2">
+           <p0 v="LLSM-ML TS1 02 W2"/>
+           <p1 i="2" n="LLSM-ML TS1 02"/>
+           <p2 v="2"/>
+           <p3 v="0"/>
+           <p4 v="0"/>
+           <p5 v="0"/>
+           <p6 v="-100000.0"/>
+           <p7 v="3.3"/>
+           <p8 v="3.0"/>
+           <p9 v="0.0"/>
+           <p10 v="0"/>
+         </obj>
+         <obj id="7" nm="LLSM-ML TS1 02 W3">
+           <p0 v="LLSM-ML TS1 02 W3"/>
+           <p1 i="2" n="LLSM-ML TS1 02"/>
+           <p2 v="2"/>
+           <p3 v="0"/>
+           <p4 v="0"/>
+           <p5 v="0"/>
+           <p6 v="-50000.0"/>
+           <p7 v="2.1"/>
+           <p8 v="1.0"/>
+           <p9 v="0.0"/>
+           <p10 v="0"/>
+         </obj>
+         <obj id="8" nm="LLSM-ML TS1 02 W4">
+           <p0 v="LLSM-ML TS1 02 W4"/>
+           <p1 i="2" n="LLSM-ML TS1 02"/>
+           <p2 v="2"/>
+           <p3 v="0"/>
+           <p4 v="0"/>
+           <p5 v="0"/>
+           <p6 v="-50000.0"/>
+           <p7 v="2.1"/>
+           <p8 v="3.0"/>
+           <p9 v="0.0"/>
+           <p10 v="0"/>
+         </obj>
+         <obj id="9" nm="LLSM-ML TS1 03 W1">
+           <p0 v="LLSM-ML TS1 03 W1"/>
+           <p1 i="3" n="LLSM-ML TS1 03"/>
+           <p2 v="2"/>
+           <p3 v="0"/>
+           <p4 v="0"/>
+           <p5 v="0"/>
+           <p6 v="-100000.0"/>
+           <p7 v="4.9"/>
+           <p8 v="1.0"/>
+           <p9 v="0.0"/>
+           <p10 v="0"/>
+         </obj>
+         <obj id="10" nm="LLSM-ML TS1 03 W2">
+           <p0 v="LLSM-ML TS1 03 W2"/>
+           <p1 i="3" n="LLSM-ML TS1 03"/>
+           <p2 v="2"/>
+           <p3 v="0"/>
+           <p4 v="0"/>
+           <p5 v="0"/>
+           <p6 v="-100000.0"/>
+           <p7 v="4.9"/>
+           <p8 v="3.0"/>
+           <p9 v="0.0"/>
+           <p10 v="0"/>
+         </obj>
+         <obj id="11" nm="LLSM-ML TS1 03 W3">
+           <p0 v="LLSM-ML TS1 03 W3"/>
+           <p1 i="3" n="LLSM-ML TS1 03"/>
+           <p2 v="2"/>
+           <p3 v="0"/>
+           <p4 v="0"/>
+           <p5 v="0"/>
+           <p6 v="-50000.0"/>
+           <p7 v="3.7"/>
+           <p8 v="1.0"/>
+           <p9 v="0.0"/>
+           <p10 v="0"/>
+         </obj>
+         <obj id="12" nm="LLSM-ML TS1 03 W4">
+           <p0 v="LLSM-ML TS1 03 W4"/>
+           <p1 i="3" n="LLSM-ML TS1 03"/>
+           <p2 v="2"/>
+           <p3 v="0"/>
+           <p4 v="0"/>
+           <p5 v="0"/>
+           <p6 v="-50000.0"/>
+           <p7 v="3.7"/>
+           <p8 v="3.0"/>
+           <p9 v="0.0"/>
+           <p10 v="0"/>
+         </obj>
+      </table>
+   </container>
+</project>

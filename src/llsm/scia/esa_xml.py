@@ -21,6 +21,7 @@ import win32file
 from . import loader
 
 DEF_FILE = Path(__file__).resolve().parent / "resources" / "line_supports.xml.def"
+LOADS_DEF_FILE = Path(__file__).resolve().parent / "resources" / "loads.xml.def"
 
 EXIT_MEANING = {
     0: "Succeeded",
@@ -203,23 +204,26 @@ def _stop(proc: subprocess.Popen) -> None:
     psutil.wait_procs(family, timeout=10)
 
 
-def run_update(source: Path, output: Path, xml_text: str, timeout: float = 600) -> RunResult:
+def run_update(
+    source: Path, output: Path, xml_text: str, timeout: float = 600, def_file: Path = DEF_FILE
+) -> RunResult:
     """Apply an update to a temporary copy of ``source`` and save the result as ``output``.
 
-    ``source`` is only ever read. On any failure no ``output`` is left behind.
+    ``source`` is only ever read. On any failure no ``output`` is left behind. ``def_file``
+    is the table definition the XML names in its ``<def uri>``.
     """
     source, output = Path(source).resolve(), Path(output).resolve()  # ESA_XML runs from its install folder
     assert_no_scia()
     assert_unlocked(source)
     exe = _esa_xml_exe()
     # A stopped ESA_XML can hold its files for a moment; that must not hide the result.
-    with tempfile.TemporaryDirectory(prefix="llsm-bedding-", ignore_cleanup_errors=True) as temp:
+    with tempfile.TemporaryDirectory(prefix="llsm-update-", ignore_cleanup_errors=True) as temp:
         folder = Path(temp)
         working_copy = folder / "input.esa"
         shutil.copyfile(source, working_copy)  # no attributes: a read-only model must give a writable copy
         update = folder / "update.xml"
         update.write_text(xml_text, encoding="utf-8")
-        shutil.copyfile(DEF_FILE, folder / DEF_FILE.name)
+        shutil.copyfile(def_file, folder / Path(def_file).name)
         log_path = folder / "esa_xml.log"
         argv = [str(exe), "NONE", str(working_copy), str(update), "-tESA", f"-o{output}", f"-l{log_path}"]
 
