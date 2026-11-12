@@ -102,6 +102,28 @@ def test_wheel_above_two_decks_is_refused():
     assert "more than one 2D member" in plan.problems[0] and "D1 and F1" in plan.problems[0]
 
 
+def test_wheel_above_two_decks_is_refused_with_a_given_outline_too():
+    below = Plate("F1", (5, 6, 7, 8), ((0, 0, -3), (6, 0, -3), (6, 4, -3), (0, 4, -3)))
+    plan = build_plan(model(plates=(DECK, below)), HAND_VEHICLE, HAND_PATH, 1600,
+                      deck_outline_mm=[[0, 0], [6000, 0], [6000, 4000], [0, 4000]])
+    assert "more than one 2D member" in plan.problems[0] and "cannot yet tie" in plan.problems[0]
+
+
+def test_beam_deck_without_a_member_is_refused():
+    assert "needs member" in build_plan(model(), HAND_VEHICLE, HAND_PATH, 1600, deck="beam").problems[0]
+
+
+@pytest.mark.parametrize("kwargs", [{"lateral_offset_mm": float("nan")}, {"deck_z_mm": float("inf")}])
+def test_non_finite_offsets_are_refused(kwargs):
+    assert "finite" in build_plan(model(), HAND_VEHICLE, HAND_PATH, 1600, **kwargs).problems[0]
+
+
+@pytest.mark.parametrize("step", [float("nan"), float("inf"), 0, -5])
+def test_bad_steps_are_refused(step):
+    positions, problems = front_positions(4400, 1200, step)
+    assert not positions and "positive number" in problems[0]
+
+
 def test_decks_that_share_an_edge_do_not_overlap():
     left = Plate("A", (1, 2, 3, 4), ((0, 0, 0), (3, 0, 0), (3, 4, 0), (0, 4, 0)))
     right = Plate("B", (2, 5, 6, 3), ((3, 0, 0), (6, 0, 0), (6, 4, 0), (3, 4, 0)))
@@ -209,6 +231,9 @@ def test_lm1_alpha_scales_the_axles():
         {"axles": [{"load_kn": 10, "offset_mm": 500}]},
         {"axles": [{"load_kn": 10, "offset_mm": 0}, {"load_kn": 10, "offset_mm": 0}]},
         {"axles": [{"load": 10}]},
+        {"axles": [{"load_kn": float("nan"), "offset_mm": 0}]},
+        {"axles": [{"load_kn": 10, "offset_mm": 0}], "track_mm": float("nan")},
+        {"preset": "LM1-TS1", "alpha": float("nan")},
     ],
 )
 def test_bad_vehicles_are_refused(kwargs):
@@ -216,7 +241,7 @@ def test_bad_vehicles_are_refused(kwargs):
         make_vehicle(**kwargs)
 
 
-@pytest.mark.parametrize("points", [[[0, 0]], [[0, 0], [0.5, 0]], "abc"])
+@pytest.mark.parametrize("points", [[[0, 0]], [[0, 0], [0.5, 0]], "abc", [[0, 0], [float("nan"), 0]]])
 def test_bad_paths_are_refused(points):
     with pytest.raises(PathError):
         RoadPath.parse(points)

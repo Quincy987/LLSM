@@ -1,6 +1,7 @@
 """The vehicle that moves: its axles, and the EN 1991-2 LM1 tandem as a preset."""
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 
@@ -46,8 +47,8 @@ def lm1_tandem(lane: int, alpha: float = 1.0) -> Vehicle:
     """The LM1 tandem system of one notional lane (its UDL does not move and is not included)."""
     if lane not in LM1_AXLE_KN:
         raise VehicleError(f"LM1 has tandem systems for lanes 1, 2 and 3, not {lane}.")
-    if alpha <= 0:
-        raise VehicleError(f"alpha must be positive, got {alpha:g}.")
+    if not math.isfinite(alpha) or alpha <= 0:
+        raise VehicleError(f"alpha must be a positive number, got {alpha:g}.")
     load = LM1_AXLE_KN[lane] * alpha
     return Vehicle(f"LM1 TS{lane}", (Axle(load, 0.0), Axle(load, LM1_AXLE_SPACING_MM)), LM1_TRACK_MM)
 
@@ -77,6 +78,9 @@ def make_vehicle(
         except (KeyError, TypeError, ValueError):
             problems.append(f"axle {number}: needs load_kn and offset_mm as numbers, got {axle!r}")
             continue
+        if not (math.isfinite(load) and math.isfinite(offset)):
+            problems.append(f"axle {number}: load_kn and offset_mm must be finite numbers, got {axle!r}")
+            continue
         if load <= 0:
             problems.append(f"axle {number}: load_kn must be positive (it acts downward), got {load:g}")
         if offset < 0:
@@ -89,8 +93,8 @@ def make_vehicle(
     offsets = [a.offset_mm for a in parsed]
     if len(set(offsets)) != len(offsets):
         problems.append("two axles at the same offset; add them up into one axle")
-    if track_mm is not None and track_mm <= 0:
-        problems.append(f"track_mm must be positive, got {track_mm:g}")
+    if track_mm is not None and (not math.isfinite(track_mm) or track_mm <= 0):
+        problems.append(f"track_mm must be a positive number, got {track_mm:g}")
     if problems:
         raise VehicleError("; ".join(problems))
     return Vehicle("custom", tuple(sorted(parsed, key=lambda a: a.offset_mm)), track_mm)

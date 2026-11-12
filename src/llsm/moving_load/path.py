@@ -21,6 +21,8 @@ class RoadPath:
             parsed = tuple((float(p[0]), float(p[1])) for p in points)
         except (TypeError, ValueError, IndexError) as exc:
             raise PathError(f"path_mm must be a list of [x, y] points in mm: {exc}") from exc
+        if not all(math.isfinite(v) for point in parsed for v in point):
+            raise PathError(f"path_mm has a point that is not a finite number: {parsed}")
         if len(parsed) < 2:
             raise PathError("path_mm needs at least two points: where the road starts and where it ends.")
         for a, b in zip(parsed, parsed[1:]):

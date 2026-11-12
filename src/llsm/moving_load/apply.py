@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ..scia import esa_xml
 from ..scia.esa_file import EsaFormatError, LoadModel, Node, Plate, PointLoad, read_loads
-from ..scia.load_xml import LoadCaseRow, PointForceRow, build_load_update, metre, newton
+from ..scia.load_xml import RELATION, VARIABLE, LoadCaseRow, PointForceRow, build_load_update, metre, newton
 from ..scia.output_files import mark_failed, next_output_path
 from .path import PathError, RoadPath
 from .plan import MovingLoadPlan, build_plan
@@ -20,8 +20,6 @@ from .vehicle import VehicleError, make_vehicle
 
 _POSITION_TOLERANCE_MM = 0.1
 _RELATIVE_TOLERANCE = 1e-9
-RELATION_EXCLUSIVE = 1
-LOAD_VARIABLE = 1
 
 
 @dataclass
@@ -172,7 +170,7 @@ def compare(plan: MovingLoadPlan, after: LoadModel) -> tuple[list[str], int, int
         if record is None:
             mismatches.append(f"load case {case.name}: not in the saved file")
             continue
-        if record.action != LOAD_VARIABLE:
+        if record.action != VARIABLE:
             problems.append(f"action type {record.action}, expected variable")
         if len(ids) != 1:
             problems.append(f"its loads point at {len(ids)} different load cases")
@@ -198,9 +196,9 @@ def compare(plan: MovingLoadPlan, after: LoadModel) -> tuple[list[str], int, int
         mismatches.append(f"load group {plan.group}: not in the saved file")
     else:
         wrong = []
-        if group.relation != RELATION_EXCLUSIVE:
+        if group.relation != RELATION["exclusive"]:
             wrong.append(f"relation {group.relation}, expected exclusive")
-        if group.load != LOAD_VARIABLE:
+        if group.load != VARIABLE:
             wrong.append(f"load {group.load}, expected variable")
         listed = group.listed_ids(len(plan.cases))
         if listed is None or set(listed) != set(seen_ids):

@@ -72,8 +72,8 @@ class MovingLoadPlan:
 def front_positions(path_length: float, vehicle_length: float, step: float, last_step: str = "exact") -> tuple[list[float], list[str]]:
     """Chainages of the front axle, from 'whole vehicle on the path' to 'front axle at the end'."""
     problems = []
-    if step <= 0:
-        return [], [f"step_mm must be positive, got {step:g}"]
+    if not math.isfinite(step) or step <= 0:
+        return [], [f"step_mm must be a positive number, got {step:g}"]
     if vehicle_length > path_length + _STEP_TOLERANCE:
         return [], [f"the vehicle ({vehicle_length:g} mm) is longer than the path ({path_length:g} mm)"]
     travel = max(path_length - vehicle_length, 0.0)
@@ -150,6 +150,8 @@ def _deck_outlines(model: LoadModel, deck_outline_mm, deck_z_mm: float) -> tuple
             return [], [f"deck_outline_mm must be a list of [x, y] points in mm: {exc}"]
         if len(outline) < 3:
             return [], ["deck_outline_mm needs at least three corners"]
+        if not all(math.isfinite(v) for point in outline for v in point):
+            return [], ["deck_outline_mm has a corner that is not a finite number"]
         return [("given outline", outline, deck_z_mm)], []
     decks, problems = [], []
     for plate in model.plates:
@@ -209,6 +211,12 @@ def build_plan(
     if last_step not in ("exact", "short"):
         plan.problems.append(f"last_step must be 'exact' or 'short', got {last_step!r}")
         return plan
+    if not (math.isfinite(lateral_offset_mm) and math.isfinite(deck_z_mm)):
+        plan.problems.append("lateral_offset_mm and deck_z_mm must be finite numbers")
+        return plan
+    if deck == "beam" and not member:
+        plan.problems.append("deck='beam' needs member: the name of the beam the vehicle drives on")
+        return plan
 
     fronts, problems = front_positions(path.length, vehicle.length_mm, step_mm, last_step)
     plan.problems += problems
@@ -223,6 +231,7 @@ def build_plan(
 
     beam: Member | None = None
     decks: list = []
+    model_decks: list = []
     if deck == "beam":
         found = [m for m in model.members if m.name == member]
         if not found:
@@ -239,6 +248,9 @@ def build_plan(
         plan.problems += problems
         if not decks:
             return plan
+        # Where SCIA puts a free load does not depend on the outline given here: check overlap
+        # against the model's own decks either way.
+        model_decks = decks if deck_outline_mm is None else _deck_outlines(model, None, 0.0)[0]
 
     off_deck: list[str] = []
     beside: list[str] = []
@@ -274,7 +286,7 @@ def build_plan(
                 if on is None:
                     off_deck.append(f"{case_name} W{number} at ({point[0]:.0f}, {point[1]:.0f}) mm")
                     continue
-                under = [d[0] for d in decks if _strictly_inside(point, d[1])]
+                under = [d[0] for d in model_decks if _strictly_inside(point, d[1])]
                 if len(under) > 1:
                     stacked.append(f"{case_name} W{number} above {' and '.join(under)}")
                 plan.loads.append(PlannedLoad(f"{case_name} W{number}", case_name, -load, point[0], point[1], on[2]))
@@ -288,8 +300,8 @@ def build_plan(
         )
     if stacked:
         plan.problems.append(
-            f"{len(stacked)} wheels lie above more than one 2D member; a free load valid on all of them may load "
-            f"each of them, which this tool cannot check: {_listing(stacked)}. Give deck_outline_mm to pick one."
+            f"{len(stacked)} wheels lie above more than one 2D member: {_listing(stacked)}. LLSM writes free loads "
+            "valid on all 2D members, so SCIA may load each of them, and LLSM cannot yet tie a load to one member."
         )
 
     _check_names(plan, model, replace)

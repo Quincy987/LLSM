@@ -77,13 +77,15 @@ original's SHA-256 unchanged. The calculated reactions of that output are S3's.
 | Existing names | Refused, unless `replace`. Every name LLSM writes starts with `LLSM-ML <name>`, so `replace` can only hit those. Run on ESA_XML: the same request again is refused, with `replace` it writes and 12 of 12 confirm. |
 | Leftovers of an earlier, longer run | Refused with `replace` too: cases or wheels the new run does not overwrite would stay in the group or in a reused case, and the update cannot delete them. |
 | Deck with a gradient | Counts as a deck; only 2D members steeper than 60° are walls. |
-| Wheel above two 2D members | Refused: a free load valid on all 2D members may load each of them, which nothing here checks. Decks that only share an edge do not count as overlapping. |
+| Wheel above two 2D members | Refused, also when `deck_outline_mm` is given: LLSM writes free loads valid on all 2D members, so SCIA may load each of them, and nothing here ties a load to one member yet. Decks that only share an edge do not count as overlapping. |
+| NaN or infinity in a step, coordinate, load, track or alpha | Refused with the field named. |
+| Real kademuur model (read only) | LM1-TS1 along deck E1, step 4000 mm, short last step: 7 cases, 28 wheels, wall E2 left out, last position at the path end. |
 | Step typed in m | More than 100 000 positions is refused before the positions are built. |
 
 ## Regression
 
 - Bedding on a copy of the demo model: `llsm bedding apply` 96 of 96 confirmed, 43.6 s.
-- `pytest tests/unit`: 340 passed.
+- `pytest tests/unit`: 352 passed.
 - `tests/live/test_moving_load_live.py` (LLSM_LIVE=1, LLSM_LIVE_DECK = the plate fixture): 2 passed in 170 s,
   the hand case and the same request again with and without `replace`. After the review the
   XML writes numbers in plain decimals (no exponent); the hand case was run again on ESA_XML
