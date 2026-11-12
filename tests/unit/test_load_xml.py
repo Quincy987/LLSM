@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from llsm.scia.load_xml import LoadCaseRow, PointForceRow, build_load_update, metre, newton
+from llsm.scia.load_xml import LoadCaseRow, PointForceRow, build_load_update, metre, newton, number
 
 NS = {"s": "http://www.scia.cz"}
 DATA = Path(__file__).parent / "data"
@@ -42,17 +42,24 @@ def test_references_resolve_inside_the_document():
     assert [group.find(f"s:p{i}", NS).get("v") for i in (1, 2)] == ["1", "1"]  # exclusive, variable
 
 
-def test_beam_force_and_envelope():
+def test_beam_force():
     xml = build_load_update(
-        "G", [LoadCaseRow("G 01"), LoadCaseRow("G 02")],
+        "G", [LoadCaseRow("G 01")],
         [PointForceRow("G 01 A1", "G 01", -1000.0, member_name="L1", member_id=4, position=0.25)],
-        envelope="G envelope",
     )
-    root = ET.fromstring(xml)
-    beam = root.find(".//s:table[@t='DataAddLoad.EP_PointForceLine.1']/s:obj", NS)
+    beam = ET.fromstring(xml).find(".//s:table[@t='DataAddLoad.EP_PointForceLine.1']/s:obj", NS)
     assert beam.find("s:p2/s:row/s:p3", NS).get("v") == "L1" and beam.find("s:p8", NS).get("v") == "0.25"
-    combination = root.find(".//s:table[@t='DataSetSciaTom.EP_LoadCombi.1']/s:obj", NS)
-    assert len(combination.findall("s:p2/s:row", NS)) == 2
+    assert beam.find("s:p5", NS).get("v") == "-1000"
+
+
+@pytest.mark.parametrize("value, text", [(-100000.0, "-100000"), (1.7, "1.7"), (1e-16, "0"), (-1e-16, "0"), (0.1 + 0.2, "0.3")])
+def test_numbers_never_use_exponents(value, text):
+    assert number(value) == text
+
+
+def test_cases_are_variable_and_static():
+    case = ET.fromstring(hand_case_xml()).find(".//s:table[@t='DataSetScia.EP_LoadCase.1']/s:obj", NS)
+    assert case.find("s:p1", NS).get("v") == "1" and case.find("s:p4", NS).get("v") == "0"
 
 
 def test_force_on_an_unwritten_case_is_refused():

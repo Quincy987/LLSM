@@ -236,43 +236,4 @@
 
       </def_table>
    </def_container>
-   <def_container id="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}" clsid="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}" progid="DataSetSciaTom.EP_LoadCombi.1" library="yes">
-      <def_table id="9F5CF12B-1690-400E-8030-62B13CE4E579" name="XML\default" type="vertical" clsid="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}" progid="DataSetSciaTom.EP_LoadCombi.1" size="4">
-         
-         <def_property x="0" name="Name" type="string" id="{4364BC01-AAB7-11D4-B3D9-00104BC3B531}"/>
-         
-         
-         <def_property x="1" name="Type" type="enum" id="{B4E52211-83EE-11D4-B37D-000000000000}">
-         <def_enum size="12">
-         <it_enum v="0" t="Envelope - ultimate"/>
-         <it_enum v="1" t="Envelope - serviceability"/>
-         <it_enum v="2" t="Linear - ultimate"/>
-         <it_enum v="3" t="Linear - serviceability"/>
-         <it_enum v="4" t="EN-ULS (STR/GEO) Set B"/>
-         <it_enum v="5" t="EN-Accidental 1"/>
-         <it_enum v="6" t="EN-Accidental 2"/>
-         <it_enum v="7" t="EN-Seismic"/>
-         <it_enum v="8" t="EN-SLS Characteristic"/>
-         <it_enum v="9" t="EN-SLS Frequent"/>
-         <it_enum v="10" t="EN-SLS Quasi-permanent"/>
-         <it_enum v="11" t="EN-ULS (STR/GEO) Set C"/>
-         </def_enum>
-         </def_property>
-         
-         
-         <def_property x="2" name="Load cases" type="table" id="{1DC504C3-85BE-4323-B1EB-BADB2FA6A82B}">
-         <def_subtable size="3" type="vertical">
-         <def_property x="0" name="Name" type="string" id="{389B00F7-5EE9-428B-BE8A-15727A8E57D1}"/>
-
-         <def_property x="1" name="Coeff." type="param" id="{138BF88D-1C80-4702-BE41-9E068C4F6131}"/>
-
-         <def_property x="2" name="Load case ID" type="ref" id="{138BF88E-1C80-4702-BE41-9E068C4F6131}">
-         <def_ref id="{0908D21F-481F-11D4-AB84-00C06C452330}" progid="DataSetScia.EP_LoadCase.1"/>
-         </def_property>
-         
-         </def_subtable>
-         </def_property>
-         
-      </def_table>
-   </def_container>
 </def_project>

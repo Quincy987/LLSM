@@ -1,4 +1,5 @@
 """The result must follow what is in the saved file, never the writer's exit code."""
+import struct
 from dataclasses import replace
 from pathlib import Path
 
@@ -22,13 +23,10 @@ def model(groups=(), cases=(BASE_CASE,), loads=()):
     return LoadModel([], [], [DECK], list(groups), list(cases), list(loads), "+D_344_24.0.3015.64")
 
 
-class _Tail:
-    """Builds the id list SCIA keeps in front of a case's or group's name."""
-
-    @staticmethod
-    def of(ids):
-        import struct
-        return struct.pack(f"<{len(ids) + 1}I", len(ids), *ids)
+def listing(ids):
+    """The id list SCIA keeps in front of a case's or group's name, and where it ends."""
+    block = struct.pack(f"<{len(ids) + 1}I", len(ids), *ids)
+    return block, len(block)
 
 
 def written_model():
@@ -42,8 +40,8 @@ def written_model():
             load_id += 1
             ids.append(load_id)
             loads.append(PointLoad(planned.name, load_id, case_id, planned.value_kn * 1000, x=planned.x_mm / 1000, y=planned.y_mm / 1000))
-        cases.append(LoadCase(case.name, 1, _Tail.of(ids)))
-    group = LoadGroup("LLSM-ML TS1", 1, 1, _Tail.of([9, 10, 11]))
+        cases.append(LoadCase(case.name, 1, *listing(ids)))
+    group = LoadGroup("LLSM-ML TS1", 1, 1, *listing([9, 10, 11]))
     return model(groups=(group,), cases=(BASE_CASE, *cases), loads=loads)
 
 
@@ -86,7 +84,7 @@ def test_good_write_is_ok(tmp_path):
     assert Path(result["output"]).name == "m_llsm-01.esa"
     assert fake.model_path.read_bytes() == b"original"
     assert fake.def_file.name == "loads.xml.def"
-    assert 'v="-100000.0"' in fake.xml and 'v="1.7"' in fake.xml  # SI in the XML
+    assert 'v="-100000"' in fake.xml and 'v="1.7"' in fake.xml  # SI in the XML
 
 
 def test_wrong_value_is_a_mismatch(tmp_path):
@@ -94,6 +92,7 @@ def test_wrong_value_is_a_mismatch(tmp_path):
     after.loads[0] = replace(after.loads[0], value=-100.0)
     result = Fake(tmp_path, after).apply()
     assert not result["ok"] and "value" in result["mismatches"][0] and result["written"] == 11
+    assert result["cases_confirmed"] == 2  # the case of the wrong load does not count
     assert result["output"].endswith("_FAILED.esa")
 
 
@@ -123,6 +122,23 @@ def test_group_that_is_not_exclusive_is_a_mismatch(tmp_path):
     after.groups[0] = replace(after.groups[0], relation=0)
     result = Fake(tmp_path, after).apply()
     assert not result["ok"] and "relation" in result["mismatches"][-1]
+
+
+def test_renumbered_ids_of_someone_elses_load_are_not_a_change(tmp_path):
+    other = PointLoad("Q1", 40, 2, -5000.0, x=1.0, y=1.0)
+    fake = Fake(tmp_path, written_model())
+    fake.before = model(loads=(other,))
+    fake.after.loads.append(replace(other, load_id=41, case_id=3))
+    assert fake.apply()["ok"]
+
+
+def test_someone_elses_load_moving_is_reported(tmp_path):
+    other = PointLoad("Q1", 40, 2, -5000.0, x=1.0, y=1.0)
+    fake = Fake(tmp_path, written_model())
+    fake.before = model(loads=(other,))
+    fake.after.loads.append(replace(other, x=1.5))
+    result = fake.apply()
+    assert not result["ok"] and result["other_changes"] == ["load Q1 changed"]
 
 
 def test_someone_elses_object_changing_is_reported(tmp_path):

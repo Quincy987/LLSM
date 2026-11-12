@@ -10,10 +10,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..bedding.apply import next_output_path
 from ..scia import esa_xml
-from ..scia.esa_file import EsaFormatError, LoadModel, PointLoad, read_loads
+from ..scia.esa_file import EsaFormatError, LoadModel, Node, Plate, PointLoad, read_loads
 from ..scia.load_xml import LoadCaseRow, PointForceRow, build_load_update, metre, newton
+from ..scia.output_files import mark_failed, next_output_path
 from .path import PathError, RoadPath
 from .plan import MovingLoadPlan, build_plan
 from .vehicle import VehicleError, make_vehicle
@@ -122,7 +122,7 @@ def update_xml(plan: MovingLoadPlan) -> str:
         )
         for load in plan.loads
     ]
-    return build_load_update(plan.group, cases, forces, relation="exclusive", kind="variable")
+    return build_load_update(plan.group, cases, forces, relation="exclusive")
 
 
 def _same(a: float, b: float) -> bool:
@@ -135,7 +135,7 @@ def compare(plan: MovingLoadPlan, after: LoadModel) -> tuple[list[str], int, int
     stored = {load.name: load for load in after.loads}
     members = {m.name: m for m in after.members}
     case_ids: dict[str, set[int]] = {}
-    confirmed = 0
+    good: set[str] = set()
     for planned in plan.loads:
         found: PointLoad | None = stored.get(planned.name)
         if found is None:
@@ -159,7 +159,7 @@ def compare(plan: MovingLoadPlan, after: LoadModel) -> tuple[list[str], int, int
         if wrong:
             mismatches.append(f"{planned.name}: " + ", ".join(wrong))
         else:
-            confirmed += 1
+            good.add(planned.name)
 
     cases = {c.name: c for c in after.cases}
     seen_ids: dict[int, str] = {}
@@ -190,7 +190,7 @@ def compare(plan: MovingLoadPlan, after: LoadModel) -> tuple[list[str], int, int
                 problems.append("the case lists other loads than those written")
         if problems:
             mismatches.append(f"load case {case.name}: " + ", ".join(problems))
-        else:
+        elif all(load.name in good for load in loads):
             cases_confirmed += 1
 
     group = next((g for g in after.groups if g.name == plan.group), None)
@@ -207,7 +207,18 @@ def compare(plan: MovingLoadPlan, after: LoadModel) -> tuple[list[str], int, int
             wrong.append("it does not hold exactly the cases written")
         if wrong:
             mismatches.append(f"load group {plan.group}: " + ", ".join(wrong))
-    return mismatches, confirmed, cases_confirmed
+    return mismatches, len(good), cases_confirmed
+
+
+def _comparable(item) -> object:
+    """What has to stay the same about someone else's object: its values, not SCIA's ids for it."""
+    if isinstance(item, PointLoad):
+        return (item.value, item.x, item.y, item.member_id, item.position)
+    if isinstance(item, Node):
+        return item.point
+    if isinstance(item, Plate):
+        return item.outline
+    return item  # members, groups and cases compare by value already (id lists are not compared)
 
 
 def other_changes(before: LoadModel, after: LoadModel, plan: MovingLoadPlan) -> list[str]:
@@ -224,20 +235,12 @@ def other_changes(before: LoadModel, after: LoadModel, plan: MovingLoadPlan) -> 
     ):
         a = {o.name: o for o in old if o.name not in planned}
         b = {o.name: o for o in new if o.name not in planned}
-        for name in sorted(a.keys() - b.keys()):
-            changes.append(f"{label} {name} is gone")
-        for name in sorted(b.keys() - a.keys()):
-            changes.append(f"{label} {name} appeared")
-        for name in sorted(a.keys() & b.keys()):
-            if label in ("load", "member", "2D member", "node") and a[name] != b[name]:
-                changes.append(f"{label} {name} changed")
-            elif label in ("load group", "load case") and (a[name].name, _flags(a[name])) != (b[name].name, _flags(b[name])):
-                changes.append(f"{label} {name} changed")
+        changes += [f"{label} {name} is gone" for name in sorted(a.keys() - b.keys())]
+        changes += [f"{label} {name} appeared" for name in sorted(b.keys() - a.keys())]
+        changes += [
+            f"{label} {name} changed" for name in sorted(a.keys() & b.keys()) if _comparable(a[name]) != _comparable(b[name])
+        ]
     return changes
-
-
-def _flags(item) -> tuple:
-    return (getattr(item, "relation", None), getattr(item, "load", None), getattr(item, "action", None))
 
 
 def apply_moving_load(
@@ -275,7 +278,7 @@ def apply_moving_load(
         after = reader(output)
     except (EsaFormatError, OSError) as exc:
         result["problems"] = [f"The saved file could not be read back: {exc}"]
-        result["output"] = str(_mark_failed(output))
+        result["output"] = str(mark_failed(output))
         return result
 
     mismatches, confirmed, cases_confirmed = compare(plan, after)
@@ -292,16 +295,5 @@ def apply_moving_load(
             "Make the combinations and recalculate in SCIA: the model changed, so earlier results no longer apply.",
         ]
     else:
-        result["output"] = str(_mark_failed(output))
+        result["output"] = str(mark_failed(output))
     return result
-
-
-def _mark_failed(output: Path) -> Path:
-    """Keep a bad file for inspection under a name nobody will mistake for a result."""
-    failed = output.with_name(f"{output.stem}_FAILED{output.suffix}")
-    try:
-        failed.unlink(missing_ok=True)
-        output.rename(failed)
-    except OSError:  # still held by something; the result is not ok either way
-        return output
-    return failed

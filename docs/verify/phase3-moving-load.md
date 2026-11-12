@@ -74,12 +74,20 @@ original's SHA-256 unchanged. The calculated reactions of that output are S3's.
 | Wall (vertical 2D member) | Not a deck. A model with walls only asks for `deck_outline_mm`. |
 | Outline not readable | Asks for `deck_outline_mm` (and `deck_z_mm`). |
 | More than 200 positions | Refused unless `allow_many`. |
-| Existing names | Refused; with `replace`, only LLSM's own; leftovers of a longer earlier run are named in a warning. |
+| Existing names | Refused, unless `replace`. Every name LLSM writes starts with `LLSM-ML <name>`, so `replace` can only hit those. Run on ESA_XML: the same request again is refused, with `replace` it writes and 12 of 12 confirm. |
+| Leftovers of an earlier, longer run | Refused with `replace` too: cases or wheels the new run does not overwrite would stay in the group or in a reused case, and the update cannot delete them. |
+| Deck with a gradient | Counts as a deck; only 2D members steeper than 60° are walls. |
+| Wheel above two 2D members | Refused: a free load valid on all 2D members may load each of them, which nothing here checks. Decks that only share an edge do not count as overlapping. |
+| Step typed in m | More than 100 000 positions is refused before the positions are built. |
 
 ## Regression
 
 - Bedding on a copy of the demo model: `llsm bedding apply` 96 of 96 confirmed, 43.6 s.
-- `pytest tests/unit`: 325 passed.
+- `pytest tests/unit`: 340 passed.
+- `tests/live/test_moving_load_live.py` (LLSM_LIVE=1, LLSM_LIVE_DECK = the plate fixture): 2 passed in 170 s,
+  the hand case and the same request again with and without `replace`. After the review the
+  XML writes numbers in plain decimals (no exponent); the hand case was run again on ESA_XML
+  with it: 12 of 12, and the reactions again 900.0 kN = 900.0 kN.
 
 ## Screenshot
 
@@ -93,4 +101,6 @@ records the demo, and its `scia` step saves the picture of each case.
 1. The UCS value 1012 → 0 (S5), with phase 0's code-manager 100 → 0: probably one mechanism.
 2. Free loads with z ≠ 0: z is written, but not found in the record; it is not compared.
 3. Combinations in the reader, so an envelope can be written and checked (S8).
-4. Plates with arcs: the outline check joins the corner nodes with straight lines.
+4. Plates with arcs: the outline check joins the corner nodes with straight lines. A plate's
+   internal nodes, if it has any, are read as outline nodes too.
+5. A load case's "Load type" 0 is written for static; checked on the stored byte, not in the GUI.

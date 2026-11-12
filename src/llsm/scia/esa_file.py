@@ -1,4 +1,5 @@
-"""Read 1D members and line supports from a saved SCIA model, without SCIA.
+"""Read a saved SCIA model without SCIA: members and line supports, and for loads also
+nodes, 2D members, load groups, load cases and point forces (:func:`read_loads`).
 
 Two sources:
 
@@ -231,7 +232,6 @@ def read_esa(path: Path) -> EsaModel:
 # record's name.
 
 CASE_GUID = uuid.UUID("0908D21F-481F-11D4-AB84-00C06C452330").bytes_le
-GROUP_GUID = uuid.UUID("F9D4AA72-49D5-11D4-A3CF-000000000000").bytes_le
 
 _NODE_TABLE = "EP_DSG_Elements.EP_StructNode.1"
 _PLATE_TABLE = "EP_DSG_Elements.EP_Plane.1"
@@ -245,7 +245,6 @@ _TABLE_HEADER = re.compile(r"^\^\$[0-9A-F]+ \{[0-9A-F-]{36}\} ([A-Za-z0-9_.]+)$"
 _ANY_OBJECT_LOG = re.compile(rb"- \d+ - (\d+) - ([A-Za-z0-9_.]+) -")
 _TOP_LEVEL = b"\x01\x00\x00\x00"
 _LIST_END = 22  # a case's or group's id list ends this many bytes before its name
-_MAX_LISTED = 100_000
 
 
 @dataclass(frozen=True)
@@ -267,24 +266,26 @@ class Plate:
 @dataclass(frozen=True)
 class LoadGroup:
     name: str
-    relation: int  # 0 standard, 1 exclusive, 2 together (as written; see the verify doc)
+    relation: int  # 0 standard, 1 exclusive, 2 together (measured: see the verify doc)
     load: int  # 0 permanent, 1 variable
-    _tail: bytes = field(default=b"", repr=False, compare=False)
+    _block: bytes = field(default=b"", repr=False, compare=False)  # the block it was read from ...
+    _list_end: int = field(default=0, repr=False, compare=False)  # ... and where its id list ends
 
     def listed_ids(self, count: int) -> tuple[int, ...] | None:
         """The ids of its load cases, if the record lists exactly ``count`` of them."""
-        return _listed(self._tail, count)
+        return _listed(self._block, self._list_end, count)
 
 
 @dataclass(frozen=True)
 class LoadCase:
     name: str
     action: int  # 0 permanent, 1 variable
-    _tail: bytes = field(default=b"", repr=False, compare=False)
+    _block: bytes = field(default=b"", repr=False, compare=False)
+    _list_end: int = field(default=0, repr=False, compare=False)
 
     def listed_ids(self, count: int) -> tuple[int, ...] | None:
         """The ids of its loads, if the record lists exactly ``count`` of them."""
-        return _listed(self._tail, count)
+        return _listed(self._block, self._list_end, count)
 
 
 @dataclass(frozen=True)
@@ -318,11 +319,16 @@ class LoadModel:
         return {o.name for o in (*self.groups, *self.cases, *self.loads)}
 
 
-def _listed(tail: bytes, count: int) -> tuple[int, ...] | None:
-    size = 4 * (count + 1)
-    if count < 0 or len(tail) < size:
+def _listed(block: bytes, end: int, count: int) -> tuple[int, ...] | None:
+    """The ``count`` u32 ids before ``end``, if the u32 in front of them says ``count``.
+
+    The list is read backwards from its end, so its length cannot be read from it: a caller
+    asks for the count it expects, and gets None when the record does not say exactly that.
+    """
+    start = end - 4 * (count + 1)
+    if count < 0 or start < 0:
         return None
-    values = struct.unpack_from(f"<{count + 1}I", tail, len(tail) - size)
+    values = struct.unpack_from(f"<{count + 1}I", block, start)
     return tuple(values[1:]) if values[0] == count else None
 
 
@@ -341,7 +347,7 @@ def _u32(chunk: bytes, offset: int) -> int | None:
         return None
 
 
-def _node(chunk: bytes, start: int, end: int, name: str) -> Node | None:
+def _node(chunk: bytes, end: int, name: str) -> Node | None:
     guid = chunk.find(NODE_GUID, end, end + 80)
     if guid < 0:
         return None
@@ -353,6 +359,7 @@ def _node(chunk: bytes, start: int, end: int, name: str) -> Node | None:
 
 
 def _plate(chunk: bytes, end: int, record_end: int, name: str) -> Plate:
+    """Every node the record refers to, in order. Internal nodes, if any, would be among them."""
     ids: list[int] = []
     at = chunk.find(NODE_GUID, end, record_end)
     while at >= 0:
@@ -364,17 +371,15 @@ def _plate(chunk: bytes, end: int, record_end: int, name: str) -> Plate:
 
 
 def _group(chunk: bytes, start: int, end: int, name: str) -> LoadGroup | None:
-    if end + 4 > len(chunk):
+    if end + 4 > len(chunk) or start < _LIST_END:
         return None
-    tail = chunk[max(0, start - _LIST_END - 4 * 4096):start - _LIST_END]
-    return LoadGroup(name, chunk[end + 1], chunk[end + 3], tail)
+    return LoadGroup(name, chunk[end + 1], chunk[end + 3], chunk, start - _LIST_END)
 
 
 def _case(chunk: bytes, start: int, end: int, name: str) -> LoadCase | None:
-    if end + 4 > len(chunk):
+    if end + 4 > len(chunk) or start < _LIST_END:
         return None
-    tail = chunk[max(0, start - _LIST_END - 4 * 4096):start - _LIST_END]
-    return LoadCase(name, chunk[end + 3], tail)
+    return LoadCase(name, chunk[end + 3], chunk, start - _LIST_END)
 
 
 def _free_force(chunk: bytes, end: int, name: str) -> PointLoad | None:
@@ -412,6 +417,7 @@ def read_loads(path: Path) -> LoadModel:
     Every table is cross-checked against the object count SCIA logs in the file; a
     mismatch raises EsaFormatError. Bedding uses :func:`read_esa`, which does not read
     these tables, so a layout this reader does not know cannot block a bedding.
+    The file is read twice (once by read_esa): a few seconds on a 40 MB model.
     """
     base = read_esa(path)
     found: dict[str, list] = {table: [] for table in LOAD_TABLES}
@@ -425,14 +431,18 @@ def read_loads(path: Path) -> LoadModel:
         for index, (start, name) in enumerate(records):
             end = start + 2 + 2 * len(name)
             record_end = records[index + 1][0] if index + 1 < len(records) else len(chunk)
-            item = {
-                _NODE_TABLE: lambda: _node(chunk, start, end, name),
-                _PLATE_TABLE: lambda: _plate(chunk, end, record_end, name),
-                _GROUP_TABLE: lambda: _group(chunk, start, end, name),
-                _CASE_TABLE: lambda: _case(chunk, start, end, name),
-                _FREE_FORCE_TABLE: lambda: _free_force(chunk, end, name),
-                _BEAM_FORCE_TABLE: lambda: _beam_force(chunk, end, name),
-            }[table]()
+            if table == _NODE_TABLE:
+                item = _node(chunk, end, name)
+            elif table == _PLATE_TABLE:
+                item = _plate(chunk, end, record_end, name)
+            elif table == _GROUP_TABLE:
+                item = _group(chunk, start, end, name)
+            elif table == _CASE_TABLE:
+                item = _case(chunk, start, end, name)
+            elif table == _FREE_FORCE_TABLE:
+                item = _free_force(chunk, end, name)
+            else:
+                item = _beam_force(chunk, end, name)
             if item is not None:
                 found[table].append(item)
 

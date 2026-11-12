@@ -8,7 +8,7 @@ from .apply import MovingLoadRequest, apply_moving_load, preview_moving_load
 
 _COLUMNS = (
     ("case", "Case"),
-    ("front_axle_mm", "Front axle [mm]"),
+    ("front_axle_along_path_mm", "Front axle along path [mm]"),
     ("loads", "Loads"),
     ("total_kN", "Total [kN]"),
     ("first_load_x_mm", "First load x [mm]"),

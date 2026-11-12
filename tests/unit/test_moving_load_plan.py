@@ -87,7 +87,26 @@ def test_wheel_on_the_edge_counts_as_on_the_deck():
 def test_walls_do_not_count_as_deck():
     wall = Plate("W", (5, 6, 7, 8), ((0, 0, 0), (6, 0, 0), (6, 0, 3), (0, 0, 3)))
     plan = build_plan(model(plates=(wall,)), HAND_VEHICLE, HAND_PATH, 1600)
-    assert "no horizontal 2D member" in plan.problems[0]
+    assert "no 2D member to drive on" in plan.problems[0]
+
+
+def test_a_deck_with_a_gradient_still_counts():
+    sloped = Plate("D2", (1, 2, 3, 4), ((0, 0, 0), (6, 0, 0.3), (6, 4, 0.3), (0, 4, 0)))  # 5 %
+    plan = build_plan(model(plates=(sloped,)), HAND_VEHICLE, HAND_PATH, 1600)
+    assert not plan.problems and plan.loads[0].z_mm == pytest.approx(150)
+
+
+def test_wheel_above_two_decks_is_refused():
+    below = Plate("F1", (5, 6, 7, 8), ((0, 0, -3), (6, 0, -3), (6, 4, -3), (0, 4, -3)))
+    plan = build_plan(model(plates=(DECK, below)), HAND_VEHICLE, HAND_PATH, 1600)
+    assert "more than one 2D member" in plan.problems[0] and "D1 and F1" in plan.problems[0]
+
+
+def test_decks_that_share_an_edge_do_not_overlap():
+    left = Plate("A", (1, 2, 3, 4), ((0, 0, 0), (3, 0, 0), (3, 4, 0), (0, 4, 0)))
+    right = Plate("B", (2, 5, 6, 3), ((3, 0, 0), (6, 0, 0), (6, 4, 0), (3, 4, 0)))
+    plan = build_plan(model(plates=(left, right)), HAND_VEHICLE, HAND_PATH, 1600)
+    assert not plan.problems and len(plan.loads) == 12
 
 
 def test_given_outline_replaces_the_models():
@@ -106,15 +125,34 @@ def test_existing_names_are_refused():
     assert "already exist" in plan.problems[0]
 
 
-def test_replace_overwrites_only_our_own_and_warns_about_leftovers():
+def test_replace_overwrites_an_earlier_run_of_the_same_shape():
+    earlier = build_plan(model(), HAND_VEHICLE, HAND_PATH, 1600)
+    taken = model(groups=(LoadGroup(earlier.group, 1, 1),), cases=[LoadCase(c.name, 1) for c in earlier.cases],
+                  loads=[PointLoad(l.name, i, 9, -1.0, x=0.0, y=0.0) for i, l in enumerate(earlier.loads, 1)])
+    assert "already exist" in build_plan(taken, HAND_VEHICLE, HAND_PATH, 1600).problems[0]
+    assert not build_plan(taken, HAND_VEHICLE, HAND_PATH, 1600, replace=True).problems
+
+
+def test_replace_refuses_what_an_earlier_longer_run_left_behind():
+    """Cases 04 and 05 would stay in the exclusive group: the update cannot delete them."""
     earlier = [LoadCase(f"LLSM-ML TS1 0{i}", 1) for i in range(1, 6)]
     plan = build_plan(model(cases=earlier, groups=(LoadGroup("LLSM-ML TS1", 1, 1),)), HAND_VEHICLE, HAND_PATH, 1600, replace=True)
-    assert not plan.problems and "LLSM-ML TS1 04" in plan.warnings[0]
+    assert "LLSM-ML TS1 04" in plan.problems[0] and "Delete them" in plan.problems[0]
 
 
-def test_replace_never_touches_someone_elses_object():
-    plan = build_plan(model(cases=(LoadCase("TS1", 1),)), HAND_VEHICLE, HAND_PATH, 1600, name="", replace=True)
-    assert plan.problems  # an empty name is refused before anything else
+def test_replace_refuses_wheels_of_an_earlier_run_left_in_a_reused_case():
+    left = PointLoad("LLSM-ML TS1 01 W5", 1, 9, -1.0, x=0.0, y=0.0)
+    plan = build_plan(model(loads=(left,)), HAND_VEHICLE, HAND_PATH, 1600, replace=True)
+    assert "LLSM-ML TS1 01 W5" in plan.problems[0]
+
+
+def test_other_names_are_left_alone():
+    plan = build_plan(model(cases=(LoadCase("TS1 01", 1), LoadCase("LLSM-ML TS2 01", 1))), HAND_VEHICLE, HAND_PATH, 1600)
+    assert not plan.problems
+
+
+def test_empty_name_is_refused():
+    assert build_plan(model(), HAND_VEHICLE, HAND_PATH, 1600, name=" ").problems
 
 
 def test_more_than_200_cases_needs_allow_many():
@@ -135,10 +173,15 @@ def test_beam_deck_one_load_per_axle_at_its_relative_position():
     assert "one load per axle" in plan.warnings[0]
 
 
-def test_beam_deck_path_beside_the_axis_is_refused():
+def test_beam_deck_path_beside_the_axis_is_refused_once():
     beam = Member("L1", 3, (0, 0, 0), (10, 0, 0))
     plan = build_plan(model(plates=(), members=(beam,)), HAND_VEHICLE, RoadPath.parse([[0, 50], [10000, 50]]), 4400, deck="beam", member="L1")
-    assert "beside beam L1" in plan.problems[0]
+    assert len(plan.problems) == 1 and "6 axles are beside beam L1" in plan.problems[0]  # 3 positions x 2 axles
+
+
+def test_step_in_metres_is_caught_before_building_positions():
+    positions, problems = front_positions(4400, 1200, 0.0016)
+    assert not positions and "is the step in mm" in problems[0]
 
 
 def test_unknown_beam_names_the_candidates():

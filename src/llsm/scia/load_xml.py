@@ -13,15 +13,16 @@ from xml.sax.saxutils import quoteattr
 from .esa_xml import LOADS_DEF_FILE
 
 RELATION = {"standard": 0, "exclusive": 1, "together": 2}
-LOAD_KIND = {"permanent": 0, "variable": 1}
-ENVELOPE_ULS = 0  # "Envelope - ultimate" in the combination table
+VARIABLE = 1  # load group "Load" and load case "Action type": 0 permanent, 1 variable
+STATIC = 0  # load case "Load type" of a variable case: SCIA's first option (static; not checked in
+# the GUI). For a permanent case 0 is self weight (paaltje.xml's "BG1 Eigen gewicht"): that is
+# why this module only writes variable cases.
 
 _BEAM = ("{ECB5D684-7357-11D4-9F6C-00104BC3B443}", "EP_DSG_Elements.EP_Beam.1")
 _GROUPS = ("{F9D4AA72-49D5-11D4-A3CF-000000000000}", "DataSetScia.EP_LoadGroup.1", "196E8F76-7A40-441C-81DB-6476DAC8BCFF")
 _CASES = ("{0908D21F-481F-11D4-AB84-00C06C452330}", "DataSetScia.EP_LoadCase.1", "CA2AF6CC-B980-4C45-AFE3-85EC125810E8")
 _FREE = ("{E03984FC-B420-4C03-8D2F-72EA2FAB147D}", "DataAddLoad.EP_PointForceFree.1", "9C68624A-8E5C-47BD-A150-2AEC783D8A93")
 _ON_BEAM = ("{BC16B3C2-F464-11D4-94D3-000000000000}", "DataAddLoad.EP_PointForceLine.1", "D7DC5706-2FCC-434E-9E37-8C0D0156F034")
-_COMBINATIONS = ("{C0FBF7E1-4A71-11D4-AB86-00C06C452330}", "DataSetSciaTom.EP_LoadCombi.1", "9F5CF12B-1690-400E-8030-62B13CE4E579")
 
 
 def newton(kilonewton: float) -> float:
@@ -79,8 +80,17 @@ def _object(object_id: int, name: str, cells: list[str]) -> str:
          </obj>"""
 
 
+def number(value: float) -> str:
+    """Plain decimal notation, never exponent: 1e-16 from path arithmetic is written as 0.
+
+    Nine decimals: 1e-6 mm for a coordinate in m, 1e-9 N for a force.
+    """
+    text = f"{float(value):.9f}".rstrip("0").rstrip(".")
+    return "0" if text in ("", "-0") else text
+
+
 def _value(index: int, value: object) -> str:
-    return f"<p{index} v={quoteattr(repr(value) if isinstance(value, float) else str(value))}/>"
+    return f"<p{index} v={quoteattr(number(value) if isinstance(value, float) else str(value))}/>"
 
 
 def _ref(index: int, object_id: int, name: str) -> str:
@@ -109,11 +119,9 @@ def build_load_update(
     cases: list[LoadCaseRow],
     forces: list[PointForceRow],
     relation: str = "exclusive",
-    kind: str = "variable",
-    envelope: str | None = None,
     def_name: str = LOADS_DEF_FILE.name,
 ) -> str:
-    """One load group, its cases and their point forces; optionally an envelope of all cases."""
+    """One variable load group, its (static, variable) cases and their point forces."""
     if not cases:
         raise ValueError("at least one load case")
     case_id = {c.name: i + 1 for i, c in enumerate(cases)}
@@ -122,11 +130,11 @@ def build_load_update(
         raise ValueError(f"forces on cases that are not written: {unknown}")
     parts = [
         _table(_GROUPS, "Load groups", ["Name", "Relation", "Load"], [
-            _object(1, group, [_value(0, group), _value(1, RELATION[relation]), _value(2, LOAD_KIND[kind])])
+            _object(1, group, [_value(0, group), _value(1, RELATION[relation]), _value(2, VARIABLE)])
         ]),
         _table(_CASES, "Load cases", ["Name", "Action type", "Description", "Load group", "Load type"], [
             _object(case_id[c.name], c.name, [
-                _value(0, c.name), _value(1, LOAD_KIND[kind]), _value(2, c.description), _ref(3, 1, group), _value(4, 0),
+                _value(0, c.name), _value(1, VARIABLE), _value(2, c.description), _ref(3, 1, group), _value(4, STATIC),
             ])
             for c in cases
         ]),
@@ -155,22 +163,6 @@ def build_load_update(
                 _value(8, float(f.position)), _value(9, 0),
             ])
             for i, f in enumerate(on_beam)
-        ]))
-    if envelope:
-        rows = "\n".join(
-            f'               <row id="{j}">{_value(0, c.name)}{_value(1, 1)}{_ref(2, case_id[c.name], c.name)}</row>'
-            for j, c in enumerate(cases)
-        )
-        members = f"""<p2 t="">
-             <h>
-               <h0 t="Name"/>
-               <h1 t="Coeff."/>
-               <h2 t="Load case ID"/>
-             </h>
-{rows}
-           </p2>"""
-        parts.append(_table(_COMBINATIONS, "Combinations", ["Name", "Type", "Load cases"], [
-            _object(1, envelope, [_value(0, envelope), _value(1, ENVELOPE_ULS), members])
         ]))
     body = "\n".join(parts)
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

@@ -13,6 +13,8 @@ MAX_CASES = 200
 _STEP_TOLERANCE = 0.01  # mm: a step that leaves less than this over still divides the path
 _DECK_TOLERANCE = 1.0  # mm: a wheel this close to the deck edge still counts as on it
 _AXIS_TOLERANCE = 1.0  # mm: how far the path may run beside a beam deck's axis
+_MIN_PLAN_FRACTION = 0.5  # a 2D member steeper than 60 degrees is a wall, not a deck
+_MAX_POSITIONS = 100_000  # far past MAX_CASES: a step typed in m instead of mm, not a real request
 
 
 @dataclass(frozen=True)
@@ -58,7 +60,7 @@ class MovingLoadPlan:
             first = loads[0] if loads else None
             rows.append({
                 "case": case.name,
-                "front_axle_mm": round(case.front_chainage_mm, 1),
+                "front_axle_along_path_mm": round(case.front_chainage_mm, 1),
                 "loads": len(loads),
                 "total_kN": round(sum(load.value_kn for load in loads), 3),
                 "first_load_x_mm": round(first.x_mm, 1) if first else None,
@@ -76,6 +78,8 @@ def front_positions(path_length: float, vehicle_length: float, step: float, last
         return [], [f"the vehicle ({vehicle_length:g} mm) is longer than the path ({path_length:g} mm)"]
     travel = max(path_length - vehicle_length, 0.0)
     steps = travel / step
+    if steps > _MAX_POSITIONS:
+        return [], [f"a step of {step:g} mm gives {steps:.0f} positions; is the step in mm?"]
     whole = math.floor(steps + 1e-9)
     left_over = travel - whole * step
     if step - left_over <= _STEP_TOLERANCE:  # one step short of a whole number of steps, by rounding
@@ -106,14 +110,28 @@ def dividing_steps(travel: float, step: float) -> list[float]:
     return sorted({round(travel / n, 4) for n in (count + 1, count, max(1, count - 1))})
 
 
-def _inside(point: tuple[float, float], outline: tuple[tuple[float, float], ...]) -> bool:
-    """Point in polygon (plan), or within the deck tolerance of an edge."""
+def _crosses(point: tuple[float, float], outline: tuple[tuple[float, float], ...]) -> bool:
+    """Ray casting: is the point inside the polygon (plan)?"""
     x, y = point
     inside = False
     for (x1, y1), (x2, y2) in zip(outline, outline[1:] + outline[:1]):
         if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
             inside = not inside
-    return inside or any(_edge_distance(point, a, b) <= _DECK_TOLERANCE for a, b in zip(outline, outline[1:] + outline[:1]))
+    return inside
+
+
+def _near_edge(point: tuple[float, float], outline: tuple[tuple[float, float], ...]) -> bool:
+    return any(_edge_distance(point, a, b) <= _DECK_TOLERANCE for a, b in zip(outline, outline[1:] + outline[:1]))
+
+
+def _inside(point: tuple[float, float], outline: tuple[tuple[float, float], ...]) -> bool:
+    """On the deck: inside it, or within the deck tolerance of an edge."""
+    return _crosses(point, outline) or _near_edge(point, outline)
+
+
+def _strictly_inside(point: tuple[float, float], outline: tuple[tuple[float, float], ...]) -> bool:
+    """Inside and clear of every edge: two decks that only share an edge do not overlap."""
+    return _crosses(point, outline) and not _near_edge(point, outline)
 
 
 def _edge_distance(p, a, b) -> float:
@@ -138,19 +156,26 @@ def _deck_outlines(model: LoadModel, deck_outline_mm, deck_z_mm: float) -> tuple
         if not plate.outline:
             problems.append(f"the outline of 2D member {plate.name} could not be read; give deck_outline_mm")
             continue
-        if not _horizontal(plate):
+        if _plan_fraction(plate) < _MIN_PLAN_FRACTION:
             continue  # walls do not carry traffic
         outline = tuple((x * 1000.0, y * 1000.0) for x, y, _ in plate.outline)
         z = sum(p[2] for p in plate.outline) / len(plate.outline) * 1000.0
         decks.append((plate.name, outline, z))
     if not decks and not problems:
-        problems.append("the model has no horizontal 2D member to drive on; give deck_outline_mm, or use deck='beam'")
+        problems.append("the model has no 2D member to drive on (walls do not count); give deck_outline_mm, or use deck='beam'")
     return decks, problems
 
 
-def _horizontal(plate: Plate) -> bool:
-    zs = [p[2] for p in plate.outline]
-    return max(zs) - min(zs) <= 0.001  # m
+def _plan_fraction(plate: Plate) -> float:
+    """Its area seen from above over its true area: 1 for a flat deck, 0 for a wall."""
+    pts = plate.outline
+    normal = [0.0, 0.0, 0.0]
+    for (x1, y1, z1), (x2, y2, z2) in zip(pts, pts[1:] + pts[:1]):  # Newell's method
+        normal[0] += (y1 - y2) * (z1 + z2)
+        normal[1] += (z1 - z2) * (x1 + x2)
+        normal[2] += (x1 - x2) * (y1 + y2)
+    size = math.sqrt(sum(n * n for n in normal))
+    return abs(normal[2]) / size if size else 0.0
 
 
 def _case_names(group: str, count: int) -> list[str]:
@@ -216,6 +241,8 @@ def build_plan(
             return plan
 
     off_deck: list[str] = []
+    beside: list[str] = []
+    stacked: list[str] = []
     for case_name, front in zip(_case_names(group, len(fronts)), fronts):
         plan.cases.append(PlannedCase(case_name, front))
         number = 0
@@ -231,10 +258,7 @@ def build_plan(
                     continue
                 position, distance = loaded
                 if distance > _AXIS_TOLERANCE:
-                    plan.problems.append(
-                        f"{case_name} axle {number} is {distance:.1f} mm beside beam {beam.name}; "
-                        "for a beam deck the path has to run along its axis"
-                    )
+                    beside.append(f"{case_name} axle {number} ({distance:.1f} mm)")
                     continue
                 plan.loads.append(PlannedLoad(
                     f"{case_name} A{number}", case_name, -axle.load_kn, base[0], base[1],
@@ -250,11 +274,23 @@ def build_plan(
                 if on is None:
                     off_deck.append(f"{case_name} W{number} at ({point[0]:.0f}, {point[1]:.0f}) mm")
                     continue
+                under = [d[0] for d in decks if _strictly_inside(point, d[1])]
+                if len(under) > 1:
+                    stacked.append(f"{case_name} W{number} above {' and '.join(under)}")
                 plan.loads.append(PlannedLoad(f"{case_name} W{number}", case_name, -load, point[0], point[1], on[2]))
     if off_deck:
-        shown = "; ".join(off_deck[:8]) + (f"; and {len(off_deck) - 8} more" if len(off_deck) > 8 else "")
         where = f"beam {beam.name}" if beam is not None else "the deck"
-        plan.problems.append(f"{len(off_deck)} loads fall off {where}: {shown}")
+        plan.problems.append(f"{len(off_deck)} loads fall off {where}: {_listing(off_deck)}")
+    if beside:
+        plan.problems.append(
+            f"{len(beside)} axles are beside beam {beam.name}; for a beam deck the path has to run along its axis: "
+            f"{_listing(beside)}"
+        )
+    if stacked:
+        plan.problems.append(
+            f"{len(stacked)} wheels lie above more than one 2D member; a free load valid on all of them may load "
+            f"each of them, which this tool cannot check: {_listing(stacked)}. Give deck_outline_mm to pick one."
+        )
 
     _check_names(plan, model, replace)
     return plan
@@ -281,25 +317,32 @@ def _beam_z(beam: Member, position: float) -> float:
 
 
 def _check_names(plan: MovingLoadPlan, model: LoadModel, replace: bool) -> None:
-    """SCIA overwrites by name. Refuse what would overwrite, unless it is ours and replace is set."""
+    """SCIA overwrites by name. Refuse what would overwrite, unless replace is set.
+
+    Every name LLSM writes starts with "LLSM-ML <name>", so replace can only hit objects of
+    that name; that is the whole guard for someone else's objects. What an earlier, longer
+    run left behind would not be overwritten and would stay in the group or in a reused case,
+    and the update cannot delete it: that is refused too.
+    """
     planned = {plan.group, *(c.name for c in plan.cases), *(load.name for load in plan.loads)}
     taken = sorted(planned & model.names())
     if taken and not replace:
-        shown = ", ".join(taken[:6]) + (f" and {len(taken) - 6} more" if len(taken) > 6 else "")
         plan.problems.append(
-            f"{len(taken)} names already exist in the model ({shown}); SCIA would overwrite them. "
-            "Use another name, or replace to overwrite what LLSM wrote earlier."
+            f"{len(taken)} names already exist in the model ({_shown(taken)}); SCIA would overwrite them. "
+            "Use another name, or replace to overwrite what LLSM wrote earlier under this name."
         )
         return
-    if taken and replace:
-        foreign = [n for n in taken if not n.startswith(PREFIX)]
-        if foreign:
-            plan.problems.append(f"replace only overwrites LLSM's own objects; these are not: {', '.join(foreign[:6])}")
-            return
-        mine = f"{plan.group} "
-        left = sorted(n for n in model.names() if n.startswith(mine) and n not in planned)
-        if left:
-            shown = ", ".join(left[:6]) + (f" and {len(left) - 6} more" if len(left) > 6 else "")
-            plan.warnings.append(
-                f"{len(left)} objects of an earlier run stay in the model, because this run does not overwrite them: {shown}"
-            )
+    left = sorted(n for n in model.names() if n.startswith(f"{plan.group} ") and n not in planned)
+    if replace and left:
+        plan.problems.append(
+            f"an earlier run under this name left {len(left)} objects this run does not overwrite ({_shown(left)}); "
+            "they would stay in the group or in its cases. Delete them in SCIA first, or use another name."
+        )
+
+
+def _shown(names: list[str], limit: int = 6) -> str:
+    return ", ".join(names[:limit]) + (f" and {len(names) - limit} more" if len(names) > limit else "")
+
+
+def _listing(items: list[str], limit: int = 8) -> str:
+    return "; ".join(items[:limit]) + (f"; and {len(items) - limit} more" if len(items) > limit else "")

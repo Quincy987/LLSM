@@ -17,8 +17,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   De rijlijn is een lijn of polylijn in plan; de wielen staan haaks erop, dus
   een scheve kruising is gewoon een scheve rijlijn. Op een plaat komt per wiel
   een vrije puntlast, op een balk één last per as. Weigert een stap die niet
-  past (met stappen die wel passen), wielen naast het dek, een rijlijn naast de
-  balkas, namen die al bestaan, en meer dan 200 posities zonder bevestiging.
+  past (met stappen die wel passen), wielen naast het dek, wielen boven twee
+  2D-delen tegelijk, een rijlijn naast de balkas, namen die al bestaan (met
+  `replace` alleen LLSM's eigen, en niet als een eerdere, langere run restanten
+  zou achterlaten), en meer dan 200 posities zonder bevestiging. Een dek op
+  afschot telt mee; alleen wanden niet.
   Schrijft een nieuwe `<model>_llsm-NN.esa`, leest elke last, elk geval en de
   groep terug en meldt `ok` alleen als alles klopt; het origineel blijft
   onaangeroerd.
@@ -35,7 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   leest de XML in N en m; op een plaat van 6 × 4 m op vier kolommen tellen de
   kolomkrachten op tot precies de 900 kN aan wiellasten, verdeeld zoals de
   handberekening zegt; een tweede update met dezelfde namen overschrijft.
-  Tooling in `phase0/moving_load/`.
+  Tooling in `phase0/moving_load/`; live-test `tests/live/test_moving_load_live.py`.
 
 ## v0.3.10 — Air and polish in the panel (2026-11-11)
 
