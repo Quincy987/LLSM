@@ -83,8 +83,10 @@ original's SHA-256 unchanged. The calculated reactions of that output are S3's.
 
 ## Screenshot
 
-`img/phase3-moving-load-case02.png`: case LLSM-ML TS1 02 in SCIA. See the demo report if it is
-missing: the Qt panels do not render through window capture (phase 0).
+Not taken. The GUI check of S2 and the picture of case 02 were planned for the demo
+recording, and the desktop was in use (a Teams call) when this was built, so SCIA was not
+started on it. S2 and S3 rest on the calculation above. `phase0/moving_load/demo/take6.py`
+records the demo, and its `scia` step saves the picture of each case.
 
 ## Open
 

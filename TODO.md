@@ -32,6 +32,7 @@ Plan: `docs/09-plan-v0.4-existing-models.md` (order) + `docs/08-plan-v0.4-vibemo
 - [x] `llsm moving-load` + MCP tools; hand case end to end, 12/12 loads and 3/3 cases confirmed
 - [ ] Find the UCS value that an update sets from 1012 to 0 (same mechanism as the code-manager 100 → 0?)
 - [ ] Decode combinations in the reader, then write the envelope (S8)
+- [ ] Demo video take 6 + GUI picture of case 02: `phase0/moving_load/demo/take6.py` (needs a free desktop; calibrate the load-case box first)
 - [ ] Mail Tom and Sophie the five questions (docs/10 §5): model copy, vehicle, deck type, skew, naming
 
 ## People
