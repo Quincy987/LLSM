@@ -36,8 +36,7 @@ line). Beware phase0's lesson: an unstable model returns empty tables with exit 
 Choice: **ESA_XML file route** (as bedding). The OpenAPI route (builder.py/tools.py) only works for models LLSM
 builds itself, has no point loads, and `UpdateProject` on an existing file was never reached (hub failed to start).
 
-Discovery is half done: phase0's hand export `viktor.xml.def` (in the gitignored `.worktrees/t-405/phase0/
-xml_route/work/` — copy it into the repo before it is cleaned up) already defines `DataSetScia.EP_LoadGroup.1`
+Discovery is half done: phase0's hand export, now in the repo as `phase0/xml_route/defs/viktor_full.xml.def`, already defines `DataSetScia.EP_LoadGroup.1`
 (with Relation), `DataSetScia.EP_LoadCase.1` (Name, Action type, Load group, Load type, …),
 `DataAddLoad.EP_PointForceFree.1` (Load case, Direction, Type, Validity, Select, Value F, Coord X/Y/Z, System),
 `DataAddLoad.EP_PointForceLine.1` (member reference, Position x, Coord. definition, Origin, eccentricities) and
@@ -122,4 +121,4 @@ step errors, naming, collision refusal, XML text snapshot.
 - The unexplained code-manager value (100 → 0) from phase0 may reappear → diff in the spike, report it.
 - Unit slips (kN vs N, mm vs m) give plausible wrong loads → one conversion function, hand case, GUI check.
 - Large models: an update took 75 s on a 50 MB file; 100 cases is one update, not 100.
-- The source def file sits in a throw-away worktree folder → step 0 is to copy it into the repo.
+- Step 0 done: the source def file is in the repo (`phase0/xml_route/defs/viktor_full.xml.def`).
