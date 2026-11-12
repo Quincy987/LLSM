@@ -91,6 +91,24 @@ original's SHA-256 unchanged. The calculated reactions of that output are S3's.
   XML writes numbers in plain decimals (no exponent); the hand case was run again on ESA_XML
   with it: 12 of 12, and the reactions again 900.0 kN = 900.0 kN.
 
+## Through the app
+
+The MCP server started from this build (`python -m llsm.mcp_server --http`), called with a
+real MCP client and its token, as the panel's chat does; and the CLI. Fresh fixture copies.
+
+| Run | Result |
+|---|---|
+| `moving_load_preview`, LM1-TS1, path (500, 2000) → (4900, 2000), step 1600 | ok, 3 cases, 12 wheels, no file written; the state block names the file |
+| Same with step 1500 | refused, with the steps that fit |
+| `moving_load_apply` | 12 of 12 loads, 3 of 3 cases, no other changes, 21.6 s |
+| `moving_load_apply` again on its output, no `replace` | refused: 16 names already exist |
+| CLI, custom 200/100 kN, track 2000, path at 30° from (1500, 1500), step 1000 | 12 of 12, 3 of 3; first wheel at (3039.2, 1234.0) mm = hand |
+
+Both outputs calculated (LIN): column forces = loads, 1800.0 kN (LM1) and 900.0 kN (skewed).
+Per side against statics: LM1 807.3 / 810.0 kN (x = 6 m) and 900.0 / 900.0 kN (y = 4 m);
+skewed 459.3 / 458.8 kN and 542.3 / 540.0 kN, the rest being the frame action of the fixed
+columns. Server log without errors; server shut down through `/admin/shutdown`.
+
 ## Screenshot
 
 Not taken. The GUI check of S2 and the picture of case 02 were planned for the demo
