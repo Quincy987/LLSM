@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.11 — Moving load on existing SCIA models (2026-11-12)
+
 ### Added
 - **Rijdende belasting op een bestaand model ("treintje").** `llsm moving-load
   preview|apply` en de MCP-tools `moving_load_preview` / `moving_load_apply`
