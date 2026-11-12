@@ -220,6 +220,236 @@ def read_esa(path: Path) -> EsaModel:
     return model
 
 
+# --- Loads, nodes and plates -------------------------------------------------------------
+#
+# Decoded on models written through the XML update (docs/verify/phase3-moving-load.md).
+# Unlike members, these records are found by the table their block belongs to: every table
+# block opens with a header string "^$<n> {<class guid>} <progid>". A top-level record is a name preceded by the
+# u32 1; sub-objects inside a record (e.g. a group's "Belastingtype") are not. Blocks
+# without a header are not read: a table that spills into one fails the count check
+# instead of picking up another table's records. Offsets below are from the end of the
+# record's name.
+
+CASE_GUID = uuid.UUID("0908D21F-481F-11D4-AB84-00C06C452330").bytes_le
+GROUP_GUID = uuid.UUID("F9D4AA72-49D5-11D4-A3CF-000000000000").bytes_le
+
+_NODE_TABLE = "EP_DSG_Elements.EP_StructNode.1"
+_PLATE_TABLE = "EP_DSG_Elements.EP_Plane.1"
+_GROUP_TABLE = "DataSetScia.EP_LoadGroup.1"
+_CASE_TABLE = "DataSetScia.EP_LoadCase.1"
+_FREE_FORCE_TABLE = "DataAddLoad.EP_PointForceFree.1"
+_BEAM_FORCE_TABLE = "DataAddLoad.EP_PointForceLine.1"
+LOAD_TABLES = (_NODE_TABLE, _PLATE_TABLE, _GROUP_TABLE, _CASE_TABLE, _FREE_FORCE_TABLE, _BEAM_FORCE_TABLE)
+
+_TABLE_HEADER = re.compile(r"^\^\$[0-9A-F]+ \{[0-9A-F-]{36}\} ([A-Za-z0-9_.]+)$")
+_ANY_OBJECT_LOG = re.compile(rb"- \d+ - (\d+) - ([A-Za-z0-9_.]+) -")
+_TOP_LEVEL = b"\x01\x00\x00\x00"
+_LIST_END = 22  # a case's or group's id list ends this many bytes before its name
+_MAX_LISTED = 100_000
+
+
+@dataclass(frozen=True)
+class Node:
+    name: str
+    node_id: int
+    point: Point  # m
+
+
+@dataclass(frozen=True)
+class Plate:
+    """A 2D member. Its outline is the nodes of its geometry table, joined by straight lines."""
+
+    name: str
+    node_ids: tuple[int, ...]
+    outline: tuple[Point, ...]  # m; empty when a node could not be resolved
+
+
+@dataclass(frozen=True)
+class LoadGroup:
+    name: str
+    relation: int  # 0 standard, 1 exclusive, 2 together (as written; see the verify doc)
+    load: int  # 0 permanent, 1 variable
+    _tail: bytes = field(default=b"", repr=False, compare=False)
+
+    def listed_ids(self, count: int) -> tuple[int, ...] | None:
+        """The ids of its load cases, if the record lists exactly ``count`` of them."""
+        return _listed(self._tail, count)
+
+
+@dataclass(frozen=True)
+class LoadCase:
+    name: str
+    action: int  # 0 permanent, 1 variable
+    _tail: bytes = field(default=b"", repr=False, compare=False)
+
+    def listed_ids(self, count: int) -> tuple[int, ...] | None:
+        """The ids of its loads, if the record lists exactly ``count`` of them."""
+        return _listed(self._tail, count)
+
+
+@dataclass(frozen=True)
+class PointLoad:
+    """A point force: free (global x, y) or on a beam (member id, relative position)."""
+
+    name: str
+    load_id: int | None  # None for beam loads: not found in their record
+    case_id: int
+    value: float  # N, along the load's direction (Z for everything LLSM writes)
+    x: float | None = None  # m, free loads
+    y: float | None = None
+    member_id: int | None = None  # beam loads
+    position: float | None = None  # relative, beam loads
+
+
+@dataclass
+class LoadModel:
+    """What :func:`read_loads` found: the geometry a load needs, and the loads themselves."""
+
+    members: list[Member]
+    nodes: list[Node]
+    plates: list[Plate]
+    groups: list[LoadGroup]
+    cases: list[LoadCase]
+    loads: list[PointLoad]
+    saved_by: str | None = None
+    warnings: list[str] = field(default_factory=list)
+
+    def names(self) -> set[str]:
+        return {o.name for o in (*self.groups, *self.cases, *self.loads)}
+
+
+def _listed(tail: bytes, count: int) -> tuple[int, ...] | None:
+    size = 4 * (count + 1)
+    if count < 0 or len(tail) < size:
+        return None
+    values = struct.unpack_from(f"<{count + 1}I", tail, len(tail) - size)
+    return tuple(values[1:]) if values[0] == count else None
+
+
+def _f64(chunk: bytes, offset: int) -> float | None:
+    try:
+        value = struct.unpack_from("<d", chunk, offset)[0]
+    except struct.error:
+        return None
+    return value if math.isfinite(value) else None
+
+
+def _u32(chunk: bytes, offset: int) -> int | None:
+    try:
+        return struct.unpack_from("<I", chunk, offset)[0]
+    except struct.error:
+        return None
+
+
+def _node(chunk: bytes, start: int, end: int, name: str) -> Node | None:
+    guid = chunk.find(NODE_GUID, end, end + 80)
+    if guid < 0:
+        return None
+    node_id = _u32(chunk, guid + 16)
+    point = tuple(_f64(chunk, guid + offset) for offset in (40, 48, 56))
+    if not node_id or any(v is None or abs(v) > 1e5 for v in point):
+        return None
+    return Node(name, node_id, point)  # type: ignore[arg-type]
+
+
+def _plate(chunk: bytes, end: int, record_end: int, name: str) -> Plate:
+    ids: list[int] = []
+    at = chunk.find(NODE_GUID, end, record_end)
+    while at >= 0:
+        node_id = _u32(chunk, at + 16)
+        if node_id and node_id not in ids:
+            ids.append(node_id)
+        at = chunk.find(NODE_GUID, at + 16, record_end)
+    return Plate(name, tuple(ids), ())
+
+
+def _group(chunk: bytes, start: int, end: int, name: str) -> LoadGroup | None:
+    if end + 4 > len(chunk):
+        return None
+    tail = chunk[max(0, start - _LIST_END - 4 * 4096):start - _LIST_END]
+    return LoadGroup(name, chunk[end + 1], chunk[end + 3], tail)
+
+
+def _case(chunk: bytes, start: int, end: int, name: str) -> LoadCase | None:
+    if end + 4 > len(chunk):
+        return None
+    tail = chunk[max(0, start - _LIST_END - 4 * 4096):start - _LIST_END]
+    return LoadCase(name, chunk[end + 3], tail)
+
+
+def _free_force(chunk: bytes, end: int, name: str) -> PointLoad | None:
+    if chunk[end + 89:end + 105] != CASE_GUID:
+        return None
+    case_id, load_id = _u32(chunk, end + 109), _u32(chunk, end + 169)
+    value, x, y = _f64(chunk, end + 450), _f64(chunk, end + 47), _f64(chunk, end + 59)
+    if not case_id or not load_id or value is None or x is None or y is None:
+        return None
+    return PointLoad(name, load_id, case_id, value, x=x, y=y)
+
+
+def _beam_force(chunk: bytes, end: int, name: str) -> PointLoad | None:
+    if chunk[end + 19:end + 35] != BEAM_GUID or chunk[end + 293:end + 309] != CASE_GUID:
+        return None
+    member_id, case_id = _u32(chunk, end + 284), _u32(chunk, end + 313)
+    value, position = _f64(chunk, end + 378), _f64(chunk, end + 173)
+    if not member_id or not case_id or value is None or position is None:
+        return None
+    return PointLoad(name, None, case_id, value, member_id=member_id, position=position)
+
+
+def _table_of(chunk: bytes) -> str | None:
+    found = names_in(chunk[:400])
+    if found and found[0][0] == 0:
+        header = _TABLE_HEADER.match(found[0][1])
+        if header:
+            return header.group(1)
+    return None
+
+
+def read_loads(path: Path) -> LoadModel:
+    """Read members, nodes, plates, load groups, load cases and point forces.
+
+    Every table is cross-checked against the object count SCIA logs in the file; a
+    mismatch raises EsaFormatError. Bedding uses :func:`read_esa`, which does not read
+    these tables, so a layout this reader does not know cannot block a bedding.
+    """
+    base = read_esa(path)
+    found: dict[str, list] = {table: [] for table in LOAD_TABLES}
+    declared: dict[str, int] = {}
+    for chunk in iter_blocks(Path(path).read_bytes()):
+        declared.update((m.group(2).decode(), int(m.group(1))) for m in _ANY_OBJECT_LOG.finditer(chunk))
+        table = _table_of(chunk)
+        if table not in LOAD_TABLES:
+            continue
+        records = [(s, n) for s, n in names_in(chunk) if s >= 4 and chunk[s - 4:s] == _TOP_LEVEL]
+        for index, (start, name) in enumerate(records):
+            end = start + 2 + 2 * len(name)
+            record_end = records[index + 1][0] if index + 1 < len(records) else len(chunk)
+            item = {
+                _NODE_TABLE: lambda: _node(chunk, start, end, name),
+                _PLATE_TABLE: lambda: _plate(chunk, end, record_end, name),
+                _GROUP_TABLE: lambda: _group(chunk, start, end, name),
+                _CASE_TABLE: lambda: _case(chunk, start, end, name),
+                _FREE_FORCE_TABLE: lambda: _free_force(chunk, end, name),
+                _BEAM_FORCE_TABLE: lambda: _beam_force(chunk, end, name),
+            }[table]()
+            if item is not None:
+                found[table].append(item)
+
+    wrong = {t: (len(found[t]), declared.get(t, 0)) for t in LOAD_TABLES if len(found[t]) != declared.get(t, 0)}
+    if wrong:
+        raise EsaFormatError(f"{Path(path).name}: reader found / SCIA declares {wrong}")
+    nodes = {n.node_id: n.point for n in found[_NODE_TABLE]}
+    plates = [
+        Plate(p.name, p.node_ids, tuple(nodes[i] for i in p.node_ids) if all(i in nodes for i in p.node_ids) else ())
+        for p in found[_PLATE_TABLE]
+    ]
+    return LoadModel(
+        base.members, found[_NODE_TABLE], plates, found[_GROUP_TABLE], found[_CASE_TABLE],
+        found[_FREE_FORCE_TABLE] + found[_BEAM_FORCE_TABLE], base.saved_by, list(base.warnings),
+    )
+
+
 def saved_by_version(path: Path) -> str | None:
     """The version stamp of the SCIA that last saved the file, or None."""
     stamps: set[str] = set()
