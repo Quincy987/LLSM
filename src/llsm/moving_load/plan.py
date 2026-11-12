@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 
 from ..scia.esa_file import LoadModel, Member, Plate
@@ -250,7 +251,14 @@ def build_plan(
             return plan
         # Where SCIA puts a free load does not depend on the outline given here: check overlap
         # against the model's own decks either way.
-        model_decks = decks if deck_outline_mm is None else _deck_outlines(model, None, 0.0)[0]
+        model_decks = decks
+        if deck_outline_mm is not None:
+            model_decks, unread = _deck_outlines(model, None, 0.0)
+            if any("could not be read" in u for u in unread):
+                plan.warnings.append(
+                    "Some 2D members' outlines could not be read, so whether a wheel also lies above one of them "
+                    "was not checked."
+                )
 
     off_deck: list[str] = []
     beside: list[str] = []
@@ -344,7 +352,10 @@ def _check_names(plan: MovingLoadPlan, model: LoadModel, replace: bool) -> None:
             "Use another name, or replace to overwrite what LLSM wrote earlier under this name."
         )
         return
-    left = sorted(n for n in model.names() if n.startswith(f"{plan.group} ") and n not in planned)
+    # Only names of this run's own shape: "<group> 07" and "<group> 07 W3" / "A2". A run called
+    # "TS1 B" is another run, not a leftover of "TS1".
+    own = re.compile(rf"^{re.escape(plan.group)} \d+( [WA]\d+)?$")
+    left = sorted(n for n in model.names() if own.match(n) and n not in planned)
     if replace and left:
         plan.problems.append(
             f"an earlier run under this name left {len(left)} objects this run does not overwrite ({_shown(left)}); "

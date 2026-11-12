@@ -168,6 +168,18 @@ def test_replace_refuses_wheels_of_an_earlier_run_left_in_a_reused_case():
     assert "LLSM-ML TS1 01 W5" in plan.problems[0]
 
 
+def test_another_run_is_not_a_leftover():
+    other = [LoadCase("LLSM-ML TS1 B 01", 1), PointLoad("LLSM-ML TS1 B 01 W1", 1, 9, -1.0, x=0.0, y=0.0)]
+    plan = build_plan(model(cases=other[:1], loads=other[1:]), HAND_VEHICLE, HAND_PATH, 1600, replace=True)
+    assert not plan.problems
+
+
+def test_unreadable_plate_with_a_given_outline_is_a_warning():
+    plan = build_plan(model(plates=(Plate("X", (1, 2), ()),)), HAND_VEHICLE, HAND_PATH, 1600,
+                      deck_outline_mm=[[0, 0], [6000, 0], [6000, 4000], [0, 4000]])
+    assert not plan.problems and "was not checked" in plan.warnings[0]
+
+
 def test_other_names_are_left_alone():
     plan = build_plan(model(cases=(LoadCase("TS1 01", 1), LoadCase("LLSM-ML TS2 01", 1))), HAND_VEHICLE, HAND_PATH, 1600)
     assert not plan.problems

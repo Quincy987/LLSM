@@ -85,7 +85,7 @@ original's SHA-256 unchanged. The calculated reactions of that output are S3's.
 ## Regression
 
 - Bedding on a copy of the demo model: `llsm bedding apply` 96 of 96 confirmed, 43.6 s.
-- `pytest tests/unit`: 357 passed.
+- `pytest tests/unit`: 359 passed.
 - `tests/live/test_moving_load_live.py` (LLSM_LIVE=1, LLSM_LIVE_DECK = the plate fixture): 2 passed in 170 s,
   the hand case and the same request again with and without `replace`. After the review the
   XML writes numbers in plain decimals (no exponent); the hand case was run again on ESA_XML
@@ -106,3 +106,7 @@ records the demo, and its `scia` step saves the picture of each case.
 4. Plates with arcs: the outline check joins the corner nodes with straight lines. A plate's
    internal nodes, if it has any, are read as outline nodes too.
 5. A load case's "Load type" 0 is written for static; checked on the stored byte, not in the GUI.
+6. Not yet run on a real bridge model. Point loads already in a model are read with the offsets
+   decoded on loads LLSM wrote (validity all, automatic selection, global axes); a load stored in
+   another layout is not recognised, and then the count check refuses the whole model rather
+   than guessing.
