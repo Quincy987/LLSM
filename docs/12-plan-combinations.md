@@ -5,6 +5,17 @@ Date: 2026-11-12. Status: proposal, nothing built. Builds on `09-plan-v0.4-exist
 Prior attempts: none in code (`git log -i --grep=combination` is empty); D4/E5 were planned, never built.
 `builder.add_load_case` exists for live-built models only and always writes `ActionType.Permanent`.
 
+**Compare before building (added 2026-11-13).** The plaatbruggen toetsmodel already has a traffic
+combination generator: `src/integrations/scia_integration/load_combination_generator/`
+(`TrafficLoadCombinationGenerator`, `TrafficLoadRules`; pydantic only, no viktor). It reads the
+case titles (lane `rs n`, configuration `Conf. A–D`, `x = … m`, `Span n`) and allows no mixing of
+configurations, one tandem per lane, and UDL only with tandems of the same configuration. Its factors
+sit in `src/combinations/load_factors.py` (lane factors 3/2/1 and 3.6, ψ / α_trend / α_q per
+NEN 8700/8701 and EN 1991-2, signage) and `resources/data/code_tables/Psi_NEN_8700.csv`. That is a
+bridge set (NEN 8700), not the NEN-EN 1990 buildings set in §2. For traffic on bridge models, compare
+it first and prefer reusing its rules over a new data file; that needs LLSM's traffic cases to
+carry its title pattern (docs/10 §3.4) and the same agreement with Geert (docs/10 §6).
+
 ## 0. Who asked, and the rule that follows
 - Berber (2026-11-12): "Jouw voorbeeld van de belastingcombinaties + beddingen zouden erg handig zijn."
 - Sophie (2026-11-06), against: "Ga niet alle combis maken … kijk eerst wat maatgevend is."

@@ -5,6 +5,16 @@ krachten in platen van SCIA naar IDEA overzetten … vx en vy staan in IDEA en S
 plek. Zowel de omhullende resultaten als de niet-omhullende." Partly answers TODO "Ask constructeurs
 how forces go to IDEA / peaks" (plates only; beams and the peaks question stay open).
 
+**Compare before building (added 2026-11-13).** The plaatbruggen toetsmodel already maps SCIA
+results to IDEA: `src/integrations/scia_integration/results/scia_integration_strips_to_idea.py`
+(pandas only, no viktor; tested in `tests/test_scia_to_idea_mapping.py`). It works on integration
+strips, not on plate forces per mesh node: x strips → "dwars" cross-section, y strips → "langs";
+N → N, Vz → Qz, Mx or My → My; one extreme per zone and "gefilterd voor" value, ULS and SLS freq
+together. Before §2's spike: check whether Berber's IDEA input is per cross-section (then this
+mapping, its sign choices and its test settle part of the column question) or per node (then it is
+a reference, not a replacement). Same reuse terms as docs/10 §3.1 and §6 (pinned copy, EUPL-1.2,
+ownership with Geert's team).
+
 ## 1. v1 scope
 - **In**: a saved, calculated `.esa` (SCIA closed) + 2D member name(s) + load cases and/or
   combinations, each either *per case* or *envelope* (as SCIA defines the combination).
