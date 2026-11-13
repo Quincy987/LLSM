@@ -1,7 +1,7 @@
 # Spike — a results report for a saved SCIA model
 
 Date: 2026-11-13. SCIA Engineer 24.0.3015.64, on copies only, SCIA closed for every run (the
-runner refuses when any SCIA process is open). Scripts: `phase0/report/`; models, logs and
+runner refuses when any SCIA process is open). Scripts: `phase0/report/` (second run: `route_a_recalc.py`, `route_a_classes.py`); models, logs and
 outputs in the gitignored `phase0/xml_route/work/report/`. Plan: `docs/13-plan-report.md`.
 
 Asked by Sebastiaan van Rossum (mail 2026-11-12): "De LLSM vragen een SCIA Engineering report te
@@ -25,6 +25,12 @@ of manual work.
 - **No XML route found to add either document** (the definition declares no documents; its one
   results container is read-only). For models not built from the template, both routes need one
   step in the SCIA GUI first.
+- **Recalculating does not fix the old report** (second run, below): after `LIN` on a copy of the
+  v19.1 model the same 10 results chapters still say "Geen ondersteunde taak". The report items
+  are of the old type; only SCIA's GUI can rebuild them.
+- **Each result class gets its own results**, and an item set to "all result classes" adds a
+  chapter for every class in the model (second run): UGT 1.5× and BGT 1.0× of the same loads print
+  C1 N = −349.03 kN under *Alle UGT* and −232.68 kN under *Alle BGT*.
 - A report keeps its author's **selections**: the template's chapter "Wand" selects *Alle*, so on
   the plate it shows the floor's results under the heading "Wand".
 
@@ -162,7 +168,7 @@ Selectie: Alle*) and units in a header row:
 - 3.3 Palen / Alle UGT / Interne 1D-krachten: C1 −232.68, C2 −217.32, C3 −217.32, C4 −232.68 kN
   (S3: −232.7 / −217.3 / −217.3 / −232.7). Combination key printed: *BGT1_kar/1 = LLSM-ML TS1 01
   + 02 + 03*. The same values in *Alle BGT* and *Alle UGT+BGT*: those result classes of the
-  template also list *BGT1_kar* in their "Lijst" (the update only wrote *Alle UGT*; why the other two picked it up was not checked).
+  template also list *BGT1_kar* in their "Lijst" (the update only wrote *Alle UGT*; the plate had that one combination and all three classes listed it, see the second run, where two combinations print different values per class).
 - 3.4 Vloer / Interne 2D-krachten: D1, element 12 / node 25, m_x = 155.9 kNm/m, location
   "In knooppunten gem. bij macro". The `-x` export has the same row as 155 904.5 Nm/m.
 - **3.5 Wand shows the same D1 rows**: its selection is *Alle*, the floor's is *D1*. The plate has
@@ -191,6 +197,49 @@ the text does. The message points at the item type ("v16 en ouder"), not at the 
 Not tested: whether recalculating changes it (likely not, for that reason), and whether
 rebuilding the items in v24's report editor fixes it (the likely remedy, no source). The
 Houtmankade model (146 MB, `Report_2`, `Report_3`) was not printed.
+
+## Second run (2026-11-13, 12:00–12:20, SCIA closed)
+
+Two questions left open by the first run, each on a fresh copy.
+
+**Does recalculating the v19.1 model make its report print results?** `route_a_recalc.py`:
+`LIN` on a copy, saved with `-tESA` (exit 0, 107 s, 55.7 MB), then `NONE -sd -tXLSX -dReport_2` on
+the saved result (exit 0, 218 s, 71 541 B). **No.** The same 36 sheets; all 10 results items still
+print "Geen ondersteunde taak … 'v16 en ouder'", the log still has "Old result" 398 times. The one
+change: sheet 25 *Berekeningsverslag* (the calculation protocol) went from 0 to 50 rows, so the
+calculation did land in the file. The results items are of the old post-processor type, and a
+calculation does not change their type. The remedy stays the GUI: rebuild the items in v24's
+report editor, or load a v24 report template.
+
+**Does each result class print its own results?** `route_a_classes.py`: on the plate, the 3
+moving-load cases in two combinations, *UGT1* (Lineair - UGT, 1.5× each case) and *BGT1*
+(Lineair - BGT, 1.0×); result classes written by name: *Alle UGT* = UGT1, *Alle BGT* = BGT1,
+*Alle UGT+BGT* = both. `LIN` + save (exit 0, 38 s), then `NONE -sd -tXLSX -dReport_1` (exit 0, 205 s).
+**Yes:**
+
+| Chapter, class | C1 N (kN) | Sn1 R_z (kN) | D1 m_x (kNm/m) | Combination printed |
+|---|---|---|---|---|
+| 3.x.1.1 *Alle UGT* | −349.03 | 349.03 | 233.86 | UGT1/1 |
+| 3.x.1.2 *Alle BGT* | −232.68 | 232.68 | 155.90 | BGT1/1 |
+| 3.x.1.3 *Alle UGT+BGT* | −349.03 | 349.03 | — | UGT1 for the extremes, BGT1 where it governs (C2 at 0 m) |
+
+UGT = 1.5 × BGT to the rounding (1.5 × 232.68 = 349.02). The BGT values equal the first run's and
+S3's hand check. So the first run's three identical classes were the fixture (one combination
+listed in all three), not the report.
+
+Found on the way:
+- **The report grows with the model's result classes.** This update added a fourth class (a
+  second *Alle UGT*: the write matched an existing object by id, not only by name; not chased), and
+  every results chapter got a fourth sub-chapter 3.x.1.4 for it, with no change to the report.
+  The template's items select *all result classes*. That is what makes one standard template fit
+  any model's classes.
+- "Lege tabel" also appears for an empty **input** table (2.4.4, internal edges of 2D members), so
+  the checker may flag it only in results chapters.
+- **The old report type cannot be told from the file without SCIA.** The item-order block's
+  `ContainerType` GUID differs between the template's report (`{4EC1851A…}`) and the v19.1
+  model's (`{86A5CBE5…}`), but Houtmankade's two reports have two other values
+  (`{86A5CBE5…}`, `{2ECF0836…}`), and the plate inherits the template's. It looks like an id per
+  report, not a type. The first write (≈4 min) is what finds old items.
 
 ## Side effects
 

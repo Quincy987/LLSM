@@ -15,7 +15,11 @@ report template** that LLSM provides and the engineer loads once per model. Why,
   (hand −232.7 / −217.3), reactions 900 kN. No column or unit mapping by LLSM: the Word prototype
   of route B got two units wrong before the run caught them.
 - Engineers' existing reports are not enough: the real v19.1 model's `Report_2` printed its input
-  but all 10 results items said "Geen ondersteunde taak" (old post-processor item type), exit 0.
+  but all 10 results items said "Geen ondersteunde taak" (old post-processor item type), exit 0,
+  and still did after recalculating a copy: the items have to be rebuilt in v24.
+- Results are split per result class as asked: UGT 1.5× and BGT 1.0× of the same loads printed
+  C1 N = −349.03 and −232.68 kN under their own classes, and an item set to *all result classes*
+  added a chapter by itself when the model got a fourth class.
 - No XML route was found to add either a report or an XML IO document, so every route needs one
   GUI step on a hand-made model. A standard template makes that one step the same everywhere, and
   gives the same chapters on every model, which is the "geordend" Sebastiaan asks for.
@@ -33,8 +37,9 @@ the report combined with other chapters. Its prototype stays in `phase0/report/r
   solver settings, members, supports) · 2 Reacties · 3 1D-elementen (N, V, M per member) ·
   4 2D-elementen (m, n, v basis grootheden; design moments) · 5 Vervormingen (1D, 2D) — each split
   per result class, then per load case if asked (§6).
-- Selections *Alle* per member type, so it fits any model; result classes by name as the models
-  use them (*Alle UGT*, *Alle BGT*, …), to confirm with the engineers.
+- Selections *Alle* per member type, so it fits any model; result classes as *all result
+  classes* (as the kademuur template's items do), so every class of the model gets its own
+  chapter without naming them. Seen working: a fourth class got its own sub-chapters.
 - Stored as a SCIA report template file and as a template model, with its SCIA version.
 - One-page procedure for the engineer: open model, load *LLSM-standaard*, check result classes,
   save. The same text is LLSM's message when a model has no usable report.
@@ -49,14 +54,18 @@ the report combined with other chapters. Its prototype stays in `phase0/report/r
   (*Extreem: Globaal* or per member), not every mesh node: "all results" means all cases, result
   classes and parts, each with its extremes, unless the engineers ask otherwise (§6).
 - `report_preview(model_path)`: from the `.esa` only, no SCIA (~1 min on 50 MB): reports present,
-  their item tree, and old-type items (refused early, with the procedure of §2); whether results
-  are stored. A first write gives the real chapter list; a preview from SCIA would take 3–5 min.
+  their item tree; whether results are stored. Old-type items cannot be told from the file (the
+  only candidate marker, the item block's container GUID, is per report, not per type), so the
+  preview says "checked on first write" and the first write refuses with the procedure of §2.
+  A first write gives the real chapter list; a preview from SCIA would take 3–5 min.
 - `report_write(preview_id, formats)`: ESA_XML on a fresh copy, timeout scaled to file size
   (template 3–7 min per format; 50 MB model 4–8 min). Then **checks the XLSX** and reports
   `results chapters written / expected / empty / unsupported`, plus each results table's own
   settings lines (*Klasse, Selectie, Extreem*) so a wrong heading is visible. It fails on: exit ≠ 0;
   0-byte output (seen with `-tTXT`, exit 0); "Geen ondersteunde taak" / its English text; "Lege
   tabel" in a results chapter; a results sheet with no data rows. Never "done" with any of these.
+- "Lege tabel" counts only in results chapters: the plate's report also prints it for an empty
+  input table (internal edges of 2D members).
 - Reuses the ESA_XML runner, SCIA-open guard, licence (exit 6) and file-lock guards of the bedding
   work; `esa_docs.py`'s reader moves into `llsm.scia.esa_file`.
 
@@ -65,12 +74,12 @@ the report combined with other chapters. Its prototype stays in `phase0/report/r
 1. Build *LLSM-standaard* in SCIA 24 on the plate fixture; load it into a **second** model (the
    v19.1 kademuur copy) and confirm it picks up that model's members and result classes. Untested
    so far; it is the whole premise of §2.
-2. On that copy: does it need recalculation before the results chapters fill, and is the model's
-   analysis linear (only then may LLSM recalculate a copy)? Then print headlessly and compare three
-   values per results chapter with SCIA's own table in the GUI.
-3. A fixture with two combinations in two result classes with different values, to prove the
-   report shows each class's own results (in the spike all three classes showed the same values,
-   not explained).
+2. On that copy: print headlessly and compare three values per results chapter with SCIA's own
+   table in the GUI. Its stored results are old ("Old result"); recalculating a copy (`LIN`,
+   107 s) worked but did not change the old items, so whether the new items need a recalculation
+   is still open. Only for a linear model may LLSM recalculate a copy.
+3. ~~Two combinations in two result classes~~: **done**, second run of the spike: each class
+   prints its own values (UGT = 1.5 × BGT).
 4. The 146 MB Houtmankade model: run time and output size.
 
 FAIL on 1 ⇒ the template has to be rebuilt per model; then reconsider route B with a standard XML
@@ -115,6 +124,9 @@ block, XLSX checker on the three outputs of this spike (template, plate, real), 
   template plus procedure, one verify doc. Touches no existing tool.
 
 ## Prior attempts
+
+- This plan's first version (same branch, 2026-11-13 02:10) left the result-class split and the
+  recalculation of old reports open; the second spike run answered both (verify doc, "Second run").
 
 - docs/11 §2 listed `-sd -tXLSX -d<doc>` as untested; phase 0 found no XML IO document in a real
   copy (exit 9), confirmed here. This spike printed the engineering report itself: works on the
