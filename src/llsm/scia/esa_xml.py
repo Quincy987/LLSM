@@ -8,6 +8,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -226,6 +227,19 @@ def run_update(
     return result
 
 
+_RUNNING: set[subprocess.Popen] = set()
+_RUNNING_LOCK = threading.Lock()
+
+
+def stop_all() -> int:
+    """Stop every ESA_XML this process started and that still runs (server shutdown). Never anything else."""
+    with _RUNNING_LOCK:
+        running = list(_RUNNING)
+    for proc in running:
+        _stop(proc)
+    return len(running)
+
+
 def run_on_copy(source: Path, folder: Path, calc: str, switches: list[str], timeout: float) -> RunResult:
     """Run ``ESA_XML <calc> <copy of source> <switches...>`` with the copy in ``folder``.
 
@@ -244,6 +258,8 @@ def run_on_copy(source: Path, folder: Path, calc: str, switches: list[str], time
 
     started = time.time()
     proc = subprocess.Popen(argv, cwd=exe.parent, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace")
+    with _RUNNING_LOCK:
+        _RUNNING.add(proc)
     try:
         _, stderr = proc.communicate(timeout=timeout)
         code: int | None = proc.returncode
@@ -251,6 +267,9 @@ def run_on_copy(source: Path, folder: Path, calc: str, switches: list[str], time
         _stop(proc)
         _, stderr = proc.communicate()
         code = None
+    finally:
+        with _RUNNING_LOCK:
+            _RUNNING.discard(proc)
     log = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
     try:
         working_copy.unlink(missing_ok=True)  # tens of MB; the caller's folder may live a while

@@ -303,3 +303,53 @@ def test_class_without_combinations_is_reported_apart_and_does_not_fail():
 def test_empty_class_becomes_a_warning_in_the_result(tmp_path):
     result = Fake(tmp_path, xlsx=DATA / "empty_class.xlsx").write()
     assert result["ok"] and any("'Alle UGT' has no combinations" in w for w in result["warnings"])
+
+
+# --- jobs (the MCP route: a print outlives one tool call) ----------------------------------------
+
+import threading  # noqa: E402
+
+from llsm.report import jobs  # noqa: E402
+
+
+def _drain():
+    for job in list(jobs._jobs.values()):
+        job.done.wait(5)
+    jobs._jobs.clear()
+
+
+def test_job_runs_in_the_background_and_wait_returns_the_result():
+    _drain()
+    gate = threading.Event()
+
+    def work(progress):
+        progress("printing XLSX")
+        gate.wait(5)
+        return {"ok": True, "outputs": {"pdf": "x.pdf"}}
+
+    job = jobs.start("m.esa", work)
+    first = jobs.wait(job.id, 0.05)
+    assert first["status"] == "running" and first["step"] == "printing XLSX" and first["ok"] is False
+    with pytest.raises(RuntimeError, match="already being printed"):
+        jobs.start("other.esa", work)
+    gate.set()
+    done = jobs.wait(job.id, 5)
+    assert done["status"] == "done" and done["ok"] and done["outputs"] == {"pdf": "x.pdf"}
+    _drain()
+
+
+def test_a_crashing_print_ends_its_job_with_a_problem():
+    _drain()
+
+    def work(progress):
+        raise ValueError("boom")
+
+    job = jobs.start("m.esa", work)
+    result = jobs.wait(job.id, 5)
+    assert result["status"] == "done" and not result["ok"] and "boom" in result["problems"][0]
+    _drain()
+
+
+def test_unknown_job_and_wait_is_capped():
+    assert jobs.wait("report-999", 0)["status"] == "unknown"
+    assert jobs.MAX_WAIT_S < 300  # under the CLI's 300 s per MCP call

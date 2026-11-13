@@ -20,7 +20,6 @@ Anthropic API. Same model (Opus 4.7), same tool surface, no API key needed.
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 import threading
@@ -29,10 +28,10 @@ from pathlib import Path
 
 from ..answer_rules import ANSWER_RULES
 
-# A report print takes minutes per format (report_write: calculate + XLSX + PDF, 10-15 min on a
-# 36 MB model), so a turn may run that long; the CLI's own MCP tool timeout is raised to match.
+# A report print takes 10-15 min on a 36 MB model (calculate + XLSX + PDF), so a turn may run that
+# long. The CLI ends one MCP call after 300 s (seen on 2.1.318, MCP_TOOL_TIMEOUT did not change it),
+# so the print itself is a job the chat polls with report_status; only the turn needs the room.
 TURN_TIMEOUT_S = 2700
-MCP_TOOL_TIMEOUT_MS = str((TURN_TIMEOUT_S - 60) * 1000)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent  # src/llsm/llm/ -> repo
 DEFAULT_MODEL = "opus"  # alias for latest Opus (currently 4.7)
@@ -196,7 +195,6 @@ class ClaudeCodeBackend:
         try:
             proc = subprocess.Popen(
                 cmd,
-                env={**os.environ, "MCP_TOOL_TIMEOUT": os.environ.get("MCP_TOOL_TIMEOUT", MCP_TOOL_TIMEOUT_MS)},
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

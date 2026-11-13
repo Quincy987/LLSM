@@ -51,6 +51,7 @@ from . import moving_load as moving_load_tools
 from . import report as report_tools
 from .answer_rules import ANSWER_RULES
 from .mcp_guard import GuardMiddleware
+from .scia import esa_xml
 from .scia.autoclick import SciaDialogPending
 from .scia.loader import load as load_scia
 from .scia import tools as scia_tools
@@ -175,6 +176,12 @@ def _teardown(reason: str = "exit") -> None:
         _ctx.close()
     except Exception as e:
         print(f"[mcp] teardown error ({reason}): {e}", file=sys.stderr)
+    try:
+        stopped = esa_xml.stop_all()  # a report print must not outlive the server that started it
+        if stopped:
+            print(f"[mcp] teardown ({reason}): stopped {stopped} ESA_XML run(s) of this server", file=sys.stderr)
+    except Exception as e:
+        print(f"[mcp] teardown error stopping ESA_XML ({reason}): {e}", file=sys.stderr)
 
 
 atexit.register(lambda: _teardown("atexit"))
@@ -466,26 +473,42 @@ def _register_common_tools(mcp: FastMCP) -> None:
 
     def report_write(model_path: str, report_name: str | None = None, formats: list[str] | None = None,
                      calculate: bool = False, cases_group: str | None = None, out_dir: str | None = None) -> dict:
-        """Print the engineering report stored in a saved .esa (SCIA's own report) and check it holds results.
+        """Start printing the engineering report stored in a saved .esa (SCIA's own report), checked for results.
 
+        Returns at once with a `job`: the print takes 5-15 minutes. Then call report_status(job) until
+        its status is "done" (each call waits up to 4 minutes); tell the engineer it is printing meanwhile.
         SCIA must be closed. Prints on a copy: the model is never changed. formats: pdf (default), xlsx,
         rtf; the XLSX is always made, because the check reads it. report_name: needed when the model has
         several reports. calculate: a linear calculation (LIN) of a copy first, for a model without
-        (fresh) results. cases_group: a chapter per load case of that group (for LLSM's moving-load
-        groups, "LLSM-ML <name>"); needs calculate; the result classes for it exist on the copy only.
-        Takes minutes. Trust only `ok`, `chapters` (results tables written / expected / empty / old type)
-        and `problems`; report `outputs` to the engineer. A report made before SCIA 17 prints no results:
+        (fresh) results. cases_group: a chapter per load case of that group (LLSM's moving-load groups,
+        "LLSM-ML <name>"); needs calculate; its result classes exist on the copy only. Problems found
+        from the file alone come back at once, without a job."""
+        path = Path(model_path)
+        request = report_tools.ReportRequest(report_name, formats or ["pdf"], calculate, cases_group)
+        preview = report_tools.preview_report(path, request)
+        if not preview["ok"]:
+            return preview
+        try:
+            job = report_tools.jobs.start(str(path), lambda progress: report_tools.write_report(
+                path, request, out_dir=Path(out_dir) if out_dir else None, progress=progress))
+        except RuntimeError as exc:
+            return {**preview, "ok": False, "problems": [str(exc)]}
+        return {**job.status(), "report": preview["report"], "formats": preview["formats"],
+                "minutes_estimated": preview.get("minutes_estimated"), "outputs_planned": preview.get("outputs_planned")}
+
+    def report_status(job: str, wait_s: float = 240) -> dict:
+        """Wait (at most 4 minutes) for a print started by report_write, and return where it is.
+
+        status "running": call again. status "done": the full result. Trust only `ok`, `chapters`
+        (results tables written / expected / empty / old type, and classes without combinations) and
+        `problems`; report `outputs` to the engineer. A report made before SCIA 17 prints no results:
         then `ok` is false and the problems say what to do."""
-        return report_tools.write_report(
-            Path(model_path),
-            report_tools.ReportRequest(report_name, formats or ["pdf"], calculate, cases_group),
-            out_dir=Path(out_dir) if out_dir else None,
-        )
+        return report_tools.jobs.wait(job, wait_s)
 
     for _fn in (
         bedding_preview, bedding_apply,
         moving_load_preview, moving_load_apply,
-        report_preview, report_write,
+        report_preview, report_write, report_status,
         new_model, add_material, add_rectangular_section, add_node, add_beam,
         add_fixed_support, add_pinned_support, add_roller_support,
         add_load_group, add_load_case, add_line_load,

@@ -216,6 +216,7 @@ def write_report(
     runner: Runner = esa_xml.run_on_copy,
     index_reader: Callable[[Path], ReportIndex] = read_report_index,
     load_reader: Callable[[Path], LoadModel] = read_loads,
+    progress: Callable[[str], None] = lambda step: None,
 ) -> dict:
     """Print the report next to the model and report what is really in it."""
     request = request or ReportRequest()
@@ -233,6 +234,8 @@ def write_report(
     with tempfile.TemporaryDirectory(prefix="llsm-report-", ignore_cleanup_errors=True) as temp:
         folder = Path(temp)
         try:
+            if request.calculate:
+                progress("calculating a copy (LIN)")
             source = _calculated_copy(model_path, folder, request, result, runner) if request.calculate else model_path
         except (esa_xml.EsaXmlError, OSError) as exc:
             result["problems"] = [str(exc)]
@@ -245,6 +248,7 @@ def write_report(
         for fmt in result["formats"]:
             out = folder / f"report.{fmt}"
             switches = ["-sd", f"-t{_ESA_FORMAT[fmt]}", f"-o{out}", f"-d{result['report']}"]
+            progress(f"printing {fmt.upper()}" + (" (then the check)" if fmt == "xlsx" else ""))
             try:
                 run = runner(source, folder, "NONE", switches, print_timeout(model_path))
             except (esa_xml.EsaXmlError, OSError) as exc:
