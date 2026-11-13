@@ -215,13 +215,14 @@ def _pdf_pages(pdf: Path) -> list[tuple[str, "object"]]:
     from PIL import Image
     doc = fitz.open(pdf)
     wanted = [
-        ("Invoer: de drie belastinggevallen van de rijdende belasting", ("Belastingsgevallen", "LLSM-ML TS1 02")),
-        ("Reacties per geval: de vier kolommen dragen samen 600 kN", ("Resultante van reacties", "LLSM-ML TS1 02")),
-        ("Interne 2D-krachten in het dek, per geval", ("Interne 2D-krachten", "LLSM-ML TS1 02")),
+        ("Invoer: de drie belastinggevallen van de rijdende belasting", ("Belastingsgevallen", "LLSM-ML TS1 03")),
+        ("Reacties per geval: de vier kolommen dragen samen 600 kN", ("Resultante van reacties", "Klasse: LLSM-ML TS1 02")),
+        ("Interne 2D-krachten in het dek, per geval", ("Interne 2D-krachten", "Klasse: LLSM-ML TS1 02")),
     ]
     pages = []
     for caption, needles in wanted:
-        hit = next((p for p in doc if all(n in p.get_text() for n in needles)), None)
+        # Skip the table of contents: it names every chapter.
+        hit = next((p for p in doc if "Inhoudsopgave" not in p.get_text() and all(n in p.get_text() for n in needles)), None)
         if hit is None:
             continue
         pix = hit.get_pixmap(dpi=110)
@@ -232,7 +233,7 @@ def _pdf_pages(pdf: Path) -> list[tuple[str, "object"]]:
 def montage() -> None:
     import imageio_ffmpeg
     pdf = sorted(DEMO.glob(f"{MODEL.stem}_rapport-*.pdf"))[-1]
-    writer = imageio_ffmpeg.write_frames(str(OUT_MP4), (W, H), fps=FPS, quality=8, macro_block_size=8)
+    writer = imageio_ffmpeg.write_frames(str(OUT_MP4), (W, H), fps=FPS, quality=8, macro_block_size=1)
     writer.send(None)
     title = _card(["LLSM", "Een rapport van een SCIA-model, vanuit één chatbericht"], "brugdek met een rijdende LM1-tandem, drie posities")
     for _ in range(3 * FPS):

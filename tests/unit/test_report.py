@@ -329,7 +329,7 @@ def test_job_runs_in_the_background_and_wait_returns_the_result():
 
     job = jobs.start("m.esa", work)
     first = jobs.wait(job.id, 0.05)
-    assert first["status"] == "running" and first["step"] == "printing XLSX" and first["ok"] is False
+    assert first["status"] == "running" and first["step"] == "printing XLSX" and first["ok"] is None
     with pytest.raises(RuntimeError, match="already being printed"):
         jobs.start("other.esa", work)
     gate.set()

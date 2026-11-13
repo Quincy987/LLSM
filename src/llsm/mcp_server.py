@@ -499,7 +499,7 @@ def _register_common_tools(mcp: FastMCP) -> None:
     def report_status(job: str, wait_s: float = 240) -> dict:
         """Wait (at most 4 minutes) for a print started by report_write, and return where it is.
 
-        status "running": call again. status "done": the full result. Trust only `ok`, `chapters`
+        status "running" (ok is null: not known yet): call again. status "done": the full result. Trust only `ok`, `chapters`
         (results tables written / expected / empty / old type, and classes without combinations) and
         `problems`; report `outputs` to the engineer. A report made before SCIA 17 prints no results:
         then `ok` is false and the problems say what to do."""

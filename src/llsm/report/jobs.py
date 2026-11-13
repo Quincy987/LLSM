@@ -32,7 +32,7 @@ class Job:
         if self.done.is_set():
             return {**(self.result or {}), "job": self.id, "status": "done", "elapsed_s": elapsed}
         return {
-            "ok": False,
+            "ok": None,  # not known yet; False would show the step as failed in the panel
             "job": self.id,
             "status": "running",
             "step": self.step,
