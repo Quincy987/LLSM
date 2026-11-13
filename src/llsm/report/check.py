@@ -70,6 +70,7 @@ class ReportCheck:
     unsupported: list[str] = field(default_factory=list)
     empty_classes: dict[str, list[str]] = field(default_factory=dict)  # class -> its tables, all without data
     messages: list[str] = field(default_factory=list)  # SCIA's errors/warnings printed in tables WITH data
+    class_members: dict[str, list[str]] = field(default_factory=dict)  # result class -> its combinations
     problems: list[str] = field(default_factory=list)
     input_sheets: int = 0
 
@@ -143,22 +144,25 @@ def parse_table(sheet: str, rows: list[list[Cell]]) -> ResultTable | None:
     return ResultTable(sheet, chapter, title, settings, columns, units, data, messages)
 
 
-def _class_listing(rows: list[list[Cell]]) -> tuple[str, bool] | None:
-    """(class, has combinations) from a results chapter's "Resultaatklasses - X" sheet.
+def _class_members(rows: list[list[Cell]]) -> tuple[str, list[str]] | None:
+    """(class, its combinations as SCIA lists them) from a "Resultaatklasses - X" sheet.
 
-    Its header is "Naam | Lijst" with a list, and only "Naam" for a class without one.
+    Header "Naam | Lijst", then the class in the first column and one combination per row in
+    the second ("LLSM-ML TS1 01 - Lineair - BGT"); a class without combinations has only "Naam".
     """
     filled = [r for r in rows if _cells(r)]
     if len(filled) < 2 or str(_cells(filled[0])[0]).lower() not in ("naam", "name"):
         return None
-    return str(_cells(filled[1])[0]), any(len(_cells(r)) > 1 for r in filled[1:]) or len(_cells(filled[0])) > 1
+    name = str(_cells(filled[1])[0])
+    members = [str(r[1]).strip() for r in filled[1:] if len(r) > 1 and r[1] not in (None, "")]
+    return name, members
 
 
 def check_xlsx(path: Path) -> ReportCheck:
     """Classify every sheet; ok only when every results item holds data and none is unsupported."""
     try:
         sheets = read_sheets(Path(path))
-    except (OSError, KeyError, ValueError, Exception) as exc:  # a broken zip raises BadZipFile
+    except Exception as exc:  # anything from a broken zip (BadZipFile) to an odd sheet layout
         return ReportCheck(False, problems=[f"The report's XLSX could not be read: {exc}"])
     sheets = sorted(sheets, key=lambda s: _chapter(s[0])[0])  # SCIA writes them in reverse order
 
@@ -173,33 +177,41 @@ def check_xlsx(path: Path) -> ReportCheck:
         else:
             kinds.append((name, rows, "other", None))
     results_chapters = {_chapter(name)[0][:1] for name, _, kind, _ in kinds if kind in ("table", "unsupported")}
-    classes = {}  # chapter -> (class, has combinations), from the class sheet a table sits under
+    classes = {}  # chapter -> (class, its combinations), from the class sheets in results chapters
     for name, rows, kind, _ in kinds:
         number, title = _chapter(name)
         if kind == "other" and number[:1] in results_chapters and title.lower().startswith(CLASS_LIST_TITLES):
-            listing = _class_listing(rows)
-            if listing:
-                classes[number] = listing
+            members = _class_members(rows)
+            if members:
+                classes[number] = members
+
+    def class_of(number: tuple[int, ...]) -> tuple[str, list[str]] | None:
+        """The class sheet a results item sits under: its nearest parent chapter that is one."""
+        return next((classes[number[:n]] for n in range(len(number) - 1, 0, -1) if number[:n] in classes), None)
 
     check = ReportCheck(False)
+    check.class_members = {name: members for name, members in classes.values()}
     for name, _rows, kind, table in kinds:
-        in_results = _chapter(name)[0][:1] in results_chapters
+        number = _chapter(name)[0]
+        in_results = number[:1] in results_chapters
+        listing = class_of(number) if in_results else None
+        without_combinations = listing is not None and not listing[1]
         if kind == "unsupported":
             check.expected += 1
             check.unsupported.append(name)
         elif kind == "table":
             check.expected += 1
             check.tables.append(table)
-            listing = next((classes[table.chapter[:n]] for n in range(len(table.chapter) - 1, 0, -1)
-                            if table.chapter[:n] in classes), None)
             if table.rows:
                 check.written += 1
                 check.messages += [f"{name}: {m}" for m in table.messages]
-            elif listing is not None and not listing[1] and listing[0] == table.result_class:
+            elif without_combinations and listing[0] == table.result_class:
                 check.expected -= 1  # nothing to print: the class has no combinations
                 check.empty_classes.setdefault(listing[0], []).append(name)
             else:
                 check.empty.append(name)
+        elif kind == "empty" and in_results and without_combinations:
+            check.empty_classes.setdefault(listing[0], []).append(name)
         elif kind == "empty" and in_results:
             check.expected += 1
             check.empty.append(name)

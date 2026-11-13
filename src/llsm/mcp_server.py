@@ -180,6 +180,9 @@ def _teardown(reason: str = "exit") -> None:
         stopped = esa_xml.stop_all()  # a report print must not outlive the server that started it
         if stopped:
             print(f"[mcp] teardown ({reason}): stopped {stopped} ESA_XML run(s) of this server", file=sys.stderr)
+            job = report_tools.jobs.running()
+            if job is not None:  # let it delete its working copy (tens of MB) before the hard exit
+                job.done.wait(10)
     except Exception as e:
         print(f"[mcp] teardown error stopping ESA_XML ({reason}): {e}", file=sys.stderr)
 

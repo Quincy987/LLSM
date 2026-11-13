@@ -228,8 +228,6 @@ def write_report(
     if out_dir is not None and not Path(out_dir).is_dir():
         result["problems"] = [f"Output folder not found: {out_dir}"]
         return result
-    final = next_output_set(model_path, "rapport", result["formats"], Path(out_dir).resolve() if out_dir else None)
-
     started = time.time()
     with tempfile.TemporaryDirectory(prefix="llsm-report-", ignore_cleanup_errors=True) as temp:
         folder = Path(temp)
@@ -272,6 +270,13 @@ def write_report(
                         "SCIA's \"Fout E-C04\" and no results. That is the model's class, not a print error."
                     )
                 result["warnings"] += [f"SCIA printed: {m}" for m in check.messages[:10]]
+                joined = _classes_joined(check, result["cases"])
+                if joined:
+                    result["warnings"].append(
+                        f"SCIA also put the per-case combinations into the model's own result classes {', '.join(joined)} "
+                        "(classes that take every combination of a type): in this report those chapters include the "
+                        "single cases, so their extremes may differ from the model's. The model itself is unchanged."
+                    )
                 if not check.ok:
                     result["problems"] += check.problems
                     if check.unsupported or check.expected == 0:
@@ -279,14 +284,31 @@ def write_report(
                     break  # do not spend minutes on a PDF of a report without results
 
         result["ok"] = check is not None and check.ok and not result["problems"] and set(printed) == set(result["formats"])
+        # Names are chosen now, not before the minutes of printing, so a file made meanwhile is not overwritten.
+        final = next_output_set(model_path, "rapport", result["formats"], Path(out_dir).resolve() if out_dir else None)
+        placed = []
         for fmt, path in printed.items():
-            target = final[fmt]
-            shutil.move(str(path), target)
-            result["outputs"][fmt] = str(target if result["ok"] else mark_failed(target))
+            try:
+                shutil.move(str(path), final[fmt])
+                placed.append(fmt)
+            except OSError as exc:
+                result["ok"] = False
+                result["problems"].append(f"The {fmt.upper()} could not be put next to the model: {exc}")
+        for fmt in placed:  # marked only after every move, so a later failure also marks the earlier files
+            result["outputs"][fmt] = str(final[fmt] if result["ok"] else mark_failed(final[fmt]))
     result["seconds"] = round(time.time() - started, 1)
     if len(check.tables if check else []) > MAX_TABLES_LISTED:
         result["warnings"].append(f"Only the first {MAX_TABLES_LISTED} results tables are listed here; all are in the report.")
     return result
+
+
+def _classes_joined(check: ReportCheck, cases: list[str]) -> list[str]:
+    """The model's own result classes that list one of the per-case combinations written on the copy."""
+    if not cases:
+        return []
+    ours = tuple(f"{case} - " for case in cases)
+    return sorted(name for name, members in check.class_members.items()
+                  if name not in cases and any(m.startswith(ours) for m in members))
 
 
 def _calculated_copy(model_path: Path, folder: Path, request: ReportRequest, result: dict, runner: Runner) -> Path | None:

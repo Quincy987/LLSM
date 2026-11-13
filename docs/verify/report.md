@@ -51,6 +51,11 @@ Values, read from the printed XLSX:
   class (one whose class sheet lists no combinations) apart, as `empty_classes`, with a warning:
   it is the model's class, not a print failure. A table without data in a class that has
   combinations still fails the check.
+- **The per-case combinations also land in the model's own classes.** The template's *Alle BGT*
+  and *Alle UGT+BGT* take every combination of their type, so on the copy they list the three
+  per-case combinations too, and their chapters print those cases' extremes. On a real model that
+  could change what such a chapter shows. The check now reads each class's list of combinations
+  and the result names the model's classes they joined (here *Alle BGT*, *Alle UGT+BGT*).
 - **The stored-results count is result sets, not load cases**: 4 on the plate (4 cases), 32 on the
   real model (8 cases, 22 combinations). It shows whether results are stored; "fewer result sets
   than load cases" is used only as a hint that cases were added after the last calculation.
@@ -91,6 +96,7 @@ The real panel, run from this build (`phase0/report/demo/take7.py`), one typed m
 | Old-type report | CLI, real model | refused; PDF not made |
 | Empty results table | unit test | refused |
 | ESA_XML exit ≠ 0 | unit test | refused, log tail in the problem; nothing written |
+| Server shut down during a print | `phase0/report/verify_shutdown.py`, live | `report_write` started a job, ESA_XML ran; `/admin/shutdown` (the panel's first layer): server exit 0, no ESA_XML left, and (after a fix: the teardown now waits for the job to clean up before the hard exit) no 36 MB working copy left in Temp |
 | SCIA open | `esa_xml.run_on_copy` → `assert_no_scia` | not triggered live: opening SCIA on the desktop for it was not worth the risk; the guard is the one bedding and moving load use (`tests/unit/test_esa_xml.py`) |
 | 0-byte output | — | not reproducible with `-sd` (only `-tTXT` did it in the spike); the check stays in the code |
 

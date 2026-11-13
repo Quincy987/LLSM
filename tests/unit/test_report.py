@@ -353,3 +353,52 @@ def test_a_crashing_print_ends_its_job_with_a_problem():
 def test_unknown_job_and_wait_is_capped():
     assert jobs.wait("report-999", 0)["status"] == "unknown"
     assert jobs.MAX_WAIT_S < 300  # under the CLI's 300 s per MCP call
+
+
+def test_per_case_combinations_joining_the_models_own_classes_are_flagged(tmp_path):
+    """SCIA put the new 'Lineair - BGT' combinations into the template's Alle BGT as well."""
+    check = check_xlsx(DATA / "empty_class.xlsx")
+    assert check.class_members["Alle BGT"] == [f"LLSM-ML TS1 0{i} - Lineair - BGT" for i in (1, 2, 3)]
+    fake = Fake(tmp_path, xlsx=DATA / "empty_class.xlsx", idx=index(results=0))
+    result = fake.write(calculate=True, cases_group="LLSM-ML TS1")
+    assert result["ok"], result["problems"]
+    assert any("own result classes Alle BGT" in w for w in result["warnings"])
+
+
+def test_without_cases_group_no_class_is_flagged(tmp_path):
+    result = Fake(tmp_path, xlsx=DATA / "empty_class.xlsx").write()
+    assert not any("own result classes" in w for w in result["warnings"])
+
+
+# --- ESA_XML runs stop with the server -------------------------------------------------------------
+
+import subprocess  # noqa: E402
+import sys  # noqa: E402
+
+from llsm.scia import esa_xml  # noqa: E402
+
+
+def test_stop_all_stops_only_registered_runs():
+    mine = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        with esa_xml._RUNNING_LOCK:
+            esa_xml._RUNNING.add(mine)
+        assert esa_xml.stop_all() == 1
+        assert mine.wait(10) is not None and other.poll() is None
+    finally:
+        with esa_xml._RUNNING_LOCK:
+            esa_xml._RUNNING.discard(mine)
+        other.kill()
+        other.wait(10)
+
+
+def test_server_teardown_stops_esa_xml(monkeypatch):
+    pytest.importorskip("mcp")  # the server needs the MCP package; the test Python may not have it
+    import llsm.mcp_server as server
+    calls = []
+    monkeypatch.setattr(server.esa_xml, "stop_all", lambda: calls.append(1) or 0)
+    monkeypatch.setattr(server, "_teardown_done", False)
+    monkeypatch.setattr(server._ctx, "close", lambda: None)
+    server._teardown("test")
+    assert calls == [1]

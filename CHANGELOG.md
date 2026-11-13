@@ -19,7 +19,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   rapport niet af. Met `calculate` rekent SCIA eerst een kopie lineair door; met
   `cases_group` krijgt elk belastinggeval van een LLSM-groep (rijdende belasting)
   een eigen hoofdstuk, via een combinatie en resultaatklasse per geval die alleen
-  op de kopie bestaan. Uitvoer als `<model>_rapport-NN.pdf` (+ `.xlsx`) naast het
+  op de kopie bestaan; zet SCIA die combinaties ook in de eigen klassen van het
+  model (zoals "Alle BGT"), dan meldt LLSM dat die hoofdstukken de losse gevallen
+  meetellen. Uitvoer als `<model>_rapport-NN.pdf` (+ `.xlsx`) naast het
   model, nooit overschreven. In de chat loopt het afdrukken (5–15 min) als taak:
   `report_write` start hem meteen en `report_status` wacht telkens tot 4 minuten,
   omdat Claude Code een MCP-aanroep na 5 minuten afbreekt.
