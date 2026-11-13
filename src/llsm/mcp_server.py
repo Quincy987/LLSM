@@ -48,6 +48,7 @@ from mcp.server.fastmcp import FastMCP
 
 from . import bedding as bedding_tools
 from . import moving_load as moving_load_tools
+from . import report as report_tools
 from .answer_rules import ANSWER_RULES
 from .mcp_guard import GuardMiddleware
 from .scia.autoclick import SciaDialogPending
@@ -451,9 +452,40 @@ def _register_common_tools(mcp: FastMCP) -> None:
             out_dir=Path(out_dir) if out_dir else None,
         )
 
+    # --- Results report of a saved model ---
+    def report_preview(model_path: str, report_name: str | None = None, formats: list[str] | None = None,
+                       calculate: bool = False, cases_group: str | None = None) -> dict:
+        """What report_write would print from a saved .esa, from the file alone. Starts no SCIA, changes nothing.
+
+        Always call this first. Lists the engineering reports stored in the model, whether results
+        are stored, the planned output files and the time it takes (several minutes per format).
+        Whether the report's results items really print results is only known after report_write."""
+        return report_tools.preview_report(
+            Path(model_path), report_tools.ReportRequest(report_name, formats or ["pdf"], calculate, cases_group)
+        )
+
+    def report_write(model_path: str, report_name: str | None = None, formats: list[str] | None = None,
+                     calculate: bool = False, cases_group: str | None = None, out_dir: str | None = None) -> dict:
+        """Print the engineering report stored in a saved .esa (SCIA's own report) and check it holds results.
+
+        SCIA must be closed. Prints on a copy: the model is never changed. formats: pdf (default), xlsx,
+        rtf; the XLSX is always made, because the check reads it. report_name: needed when the model has
+        several reports. calculate: a linear calculation (LIN) of a copy first, for a model without
+        (fresh) results. cases_group: a chapter per load case of that group (for LLSM's moving-load
+        groups, "LLSM-ML <name>"); needs calculate; the result classes for it exist on the copy only.
+        Takes minutes. Trust only `ok`, `chapters` (results tables written / expected / empty / old type)
+        and `problems`; report `outputs` to the engineer. A report made before SCIA 17 prints no results:
+        then `ok` is false and the problems say what to do."""
+        return report_tools.write_report(
+            Path(model_path),
+            report_tools.ReportRequest(report_name, formats or ["pdf"], calculate, cases_group),
+            out_dir=Path(out_dir) if out_dir else None,
+        )
+
     for _fn in (
         bedding_preview, bedding_apply,
         moving_load_preview, moving_load_apply,
+        report_preview, report_write,
         new_model, add_material, add_rectangular_section, add_node, add_beam,
         add_fixed_support, add_pinned_support, add_roller_support,
         add_load_group, add_load_case, add_line_load,

@@ -8,3 +8,4 @@ phase0/*.err
 *.session
 phase0/xml_route/work/
 demo_out/
+phase0/report/work/

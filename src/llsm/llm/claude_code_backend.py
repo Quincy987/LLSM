@@ -20,6 +20,7 @@ Anthropic API. Same model (Opus 4.7), same tool surface, no API key needed.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import threading
@@ -27,6 +28,11 @@ import uuid
 from pathlib import Path
 
 from ..answer_rules import ANSWER_RULES
+
+# A report print takes minutes per format (report_write: calculate + XLSX + PDF, 10-15 min on a
+# 36 MB model), so a turn may run that long; the CLI's own MCP tool timeout is raised to match.
+TURN_TIMEOUT_S = 2700
+MCP_TOOL_TIMEOUT_MS = str((TURN_TIMEOUT_S - 60) * 1000)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent  # src/llsm/llm/ -> repo
 DEFAULT_MODEL = "opus"  # alias for latest Opus (currently 4.7)
@@ -136,7 +142,7 @@ class ClaudeCodeBackend:
         session_id: str | None = None,
         verbose: bool = False,
         cwd: Path | None = None,
-        timeout_s: int = 600,
+        timeout_s: int = TURN_TIMEOUT_S,
         mcp_config_json: str | None = None,
         session_started: bool = False,
         on_session_rotated=None,  # callback(new_session_id: str) when we rotate
@@ -190,6 +196,7 @@ class ClaudeCodeBackend:
         try:
             proc = subprocess.Popen(
                 cmd,
+                env={**os.environ, "MCP_TOOL_TIMEOUT": os.environ.get("MCP_TOOL_TIMEOUT", MCP_TOOL_TIMEOUT_MS)},
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

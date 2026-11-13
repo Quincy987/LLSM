@@ -22,6 +22,7 @@ from . import loader
 
 DEF_FILE = Path(__file__).resolve().parent / "resources" / "line_supports.xml.def"
 LOADS_DEF_FILE = Path(__file__).resolve().parent / "resources" / "loads.xml.def"
+RESULT_CLASSES_DEF_FILE = Path(__file__).resolve().parent / "resources" / "result_classes.xml.def"
 
 EXIT_MEANING = {
     0: "Succeeded",
@@ -212,36 +213,48 @@ def run_update(
     ``source`` is only ever read. On any failure no ``output`` is left behind. ``def_file``
     is the table definition the XML names in its ``<def uri>``.
     """
-    source, output = Path(source).resolve(), Path(output).resolve()  # ESA_XML runs from its install folder
-    assert_no_scia()
-    assert_unlocked(source)
-    exe = _esa_xml_exe()
+    output = Path(output).resolve()  # ESA_XML runs from its install folder
     # A stopped ESA_XML can hold its files for a moment; that must not hide the result.
     with tempfile.TemporaryDirectory(prefix="llsm-update-", ignore_cleanup_errors=True) as temp:
         folder = Path(temp)
-        working_copy = folder / "input.esa"
-        shutil.copyfile(source, working_copy)  # no attributes: a read-only model must give a writable copy
         update = folder / "update.xml"
         update.write_text(xml_text, encoding="utf-8")
         shutil.copyfile(def_file, folder / Path(def_file).name)
-        log_path = folder / "esa_xml.log"
-        argv = [str(exe), "NONE", str(working_copy), str(update), "-tESA", f"-o{output}", f"-l{log_path}"]
-
-        started = time.time()
-        proc = subprocess.Popen(
-            argv, cwd=exe.parent, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace"
-        )
-        try:
-            _, stderr = proc.communicate(timeout=timeout)
-            code: int | None = proc.returncode
-        except subprocess.TimeoutExpired:
-            _stop(proc)
-            _, stderr = proc.communicate()
-            code = None
-        log = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
-
-    message = f"Timed out after {timeout:.0f} s" if code is None else EXIT_MEANING.get(code, f"Unknown exit code {code}")
-    result = RunResult(code, message, time.time() - started, stderr, log)
+        result = run_on_copy(source, folder, "NONE", [str(update), "-tESA", f"-o{output}"], timeout)
     if not result.succeeded:
         output.unlink(missing_ok=True)
     return result
+
+
+def run_on_copy(source: Path, folder: Path, calc: str, switches: list[str], timeout: float) -> RunResult:
+    """Run ``ESA_XML <calc> <copy of source> <switches...>`` with the copy in ``folder``.
+
+    ``calc`` is ESA_XML's calculation (NONE, LIN, ...). ``source`` is only ever read: ESA_XML
+    gets a fresh copy, so even a calculation or an update without ``-o`` cannot touch it.
+    Paths in ``switches`` must be absolute: ESA_XML runs from its install folder.
+    """
+    source = Path(source).resolve()
+    assert_no_scia()
+    assert_unlocked(source)
+    exe = _esa_xml_exe()
+    working_copy = Path(folder) / f"input-{time.time_ns()}.esa"
+    shutil.copyfile(source, working_copy)  # no attributes: a read-only model must give a writable copy
+    log_path = working_copy.with_suffix(".log")
+    argv = [str(exe), calc, str(working_copy), *switches, f"-l{log_path}"]
+
+    started = time.time()
+    proc = subprocess.Popen(argv, cwd=exe.parent, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace")
+    try:
+        _, stderr = proc.communicate(timeout=timeout)
+        code: int | None = proc.returncode
+    except subprocess.TimeoutExpired:
+        _stop(proc)
+        _, stderr = proc.communicate()
+        code = None
+    log = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
+    try:
+        working_copy.unlink(missing_ok=True)  # tens of MB; the caller's folder may live a while
+    except OSError:
+        pass
+    message = f"Timed out after {timeout:.0f} s" if code is None else EXIT_MEANING.get(code, f"Unknown exit code {code}")
+    return RunResult(code, message, time.time() - started, stderr, log)
