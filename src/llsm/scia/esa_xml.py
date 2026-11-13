@@ -59,6 +59,12 @@ _BEAM_PROGID = "EP_DSG_Elements.EP_Beam.1"
 _FIRST_OBJECT_ID = 9001
 
 
+# ESA_XML runs this process started and that still run: report prints run on a job thread,
+# so another tool or the server's shutdown may need to know about them.
+_RUNNING: set[subprocess.Popen] = set()
+_RUNNING_LOCK = threading.Lock()
+
+
 class EsaXmlError(RuntimeError):
     """The update could not be run, or SCIA refused it."""
 
@@ -108,8 +114,24 @@ def running_scia() -> list[tuple[int, str]]:
 
 def assert_no_scia() -> None:
     found = running_scia()
+    if found and all(pid in _own_pids() for pid, _ in found):
+        raise SciaRunning("LLSM is printing a report with ESA_XML right now; wait until report_status says it is done.")
     if found:
         raise SciaRunning(f"SCIA is running ({', '.join(name for _, name in found)}). Close it and try again.")
+
+
+def _own_pids() -> set[int]:
+    """Our ESA_XML runs and whatever they started."""
+    with _RUNNING_LOCK:
+        procs = list(_RUNNING)
+    pids = set()
+    for proc in procs:
+        pids.add(proc.pid)
+        try:
+            pids |= {child.pid for child in psutil.Process(proc.pid).children(recursive=True)}
+        except psutil.Error:
+            pass
+    return pids
 
 
 def assert_unlocked(path: Path) -> None:
@@ -225,10 +247,6 @@ def run_update(
     if not result.succeeded:
         output.unlink(missing_ok=True)
     return result
-
-
-_RUNNING: set[subprocess.Popen] = set()
-_RUNNING_LOCK = threading.Lock()
 
 
 def stop_all() -> int:

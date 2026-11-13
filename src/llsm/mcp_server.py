@@ -105,8 +105,11 @@ def _run_tool(fn: Callable, args: tuple, kwargs: dict):
     return result
 
 
-def _async_tool(mcp: FastMCP, fn: Callable):
+def _async_tool(mcp: FastMCP, fn: Callable, executor: ThreadPoolExecutor | None = _TOOL_EXEC):
     """Register `fn` as an MCP tool that runs in the worker executor.
+
+    ``executor=None`` runs it on the loop's default pool instead: for a tool that only waits
+    (report_status), so it neither blocks nor queues behind the one worker the other tools share.
 
     Preserves the function's signature (via functools.wraps) so FastMCP can
     derive the JSON schema from the original type hints — verified against
@@ -116,7 +119,7 @@ def _async_tool(mcp: FastMCP, fn: Callable):
     async def _wrapped(*args, **kwargs):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            _TOOL_EXEC, lambda: _run_tool(fn, args, kwargs)
+            executor, lambda: _run_tool(fn, args, kwargs)
         )
     mcp.tool()(_wrapped)
     return _wrapped
@@ -134,6 +137,8 @@ INSTRUCTIONS_BASE = (
     "for gravity-like downward loads use direction='Z' with a NEGATIVE magnitude.\n\n"
     "To put soil beddings on the piles of an existing saved model, use bedding_preview, then bedding_apply.\n\n"
     "For moving traffic positions on an existing saved model: moving_load_preview, then moving_load_apply.\n\n"
+    "For a results report of an existing saved model: report_preview, then report_write, "
+    "then report_status until it is done.\n\n"
     + ANSWER_RULES
 )
 
@@ -488,7 +493,7 @@ def _register_common_tools(mcp: FastMCP) -> None:
         from the file alone come back at once, without a job."""
         path = Path(model_path)
         request = report_tools.ReportRequest(report_name, formats or ["pdf"], calculate, cases_group)
-        preview = report_tools.preview_report(path, request)
+        preview = report_tools.preview_report(path, request, out_dir=Path(out_dir) if out_dir else None)
         if not preview["ok"]:
             return preview
         try:
@@ -496,7 +501,8 @@ def _register_common_tools(mcp: FastMCP) -> None:
                 path, request, out_dir=Path(out_dir) if out_dir else None, progress=progress))
         except RuntimeError as exc:
             return {**preview, "ok": False, "problems": [str(exc)]}
-        return {**job.status(), "report": preview["report"], "formats": preview["formats"],
+        return {**job.status(), "model": preview["model"], "saved_by": preview["saved_by"],
+                "report": preview["report"], "formats": preview["formats"],
                 "minutes_estimated": preview.get("minutes_estimated"), "outputs_planned": preview.get("outputs_planned")}
 
     def report_status(job: str, wait_s: float = 240) -> dict:
@@ -511,7 +517,7 @@ def _register_common_tools(mcp: FastMCP) -> None:
     for _fn in (
         bedding_preview, bedding_apply,
         moving_load_preview, moving_load_apply,
-        report_preview, report_write, report_status,
+        report_preview, report_write,
         new_model, add_material, add_rectangular_section, add_node, add_beam,
         add_fixed_support, add_pinned_support, add_roller_support,
         add_load_group, add_load_case, add_line_load,
@@ -522,6 +528,8 @@ def _register_common_tools(mcp: FastMCP) -> None:
         get_beam_inner_forces, get_beam_deflection,
     ):
         _async_tool(mcp, _fn)
+    # Two status calls at once must not queue behind each other (2 x 240 s > the CLI's 300 s).
+    _async_tool(mcp, report_status, executor=None)
 
 
 def _register_stdio_only_tools(mcp: FastMCP) -> None:

@@ -178,13 +178,16 @@ def preview_report(
     request: ReportRequest | None = None,
     index_reader: Callable[[Path], ReportIndex] = read_report_index,
     load_reader: Callable[[Path], LoadModel] = read_loads,
+    out_dir: Path | None = None,
 ) -> dict:
     """What would be printed, from the file alone. Touches nothing and starts no SCIA."""
     request = request or ReportRequest()
     model_path = Path(model_path).resolve()
     result, _ = _prepare("preview", model_path, request, index_reader, load_reader)
+    if out_dir is not None and not Path(out_dir).is_dir():
+        result["problems"].append(f"Output folder not found: {out_dir}")
     if result["report"] and not result["problems"]:
-        outputs = next_output_set(model_path, "rapport", result["formats"])
+        outputs = next_output_set(model_path, "rapport", result["formats"], Path(out_dir).resolve() if out_dir else None)
         result["outputs_planned"] = {fmt: str(path) for fmt, path in outputs.items()}
         size_mb = model_path.stat().st_size / 1e6
         result["minutes_estimated"] = round(len(result["formats"]) * (2.5 + 0.05 * size_mb) + (1 if request.calculate else 0))

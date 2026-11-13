@@ -402,3 +402,37 @@ def test_server_teardown_stops_esa_xml(monkeypatch):
     monkeypatch.setattr(server._ctx, "close", lambda: None)
     server._teardown("test")
     assert calls == [1]
+
+
+def test_our_own_print_is_named_when_another_update_is_refused(monkeypatch):
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        with esa_xml._RUNNING_LOCK:
+            esa_xml._RUNNING.add(proc)
+        monkeypatch.setattr(esa_xml, "running_scia", lambda: [(proc.pid, "esa_xml.exe")])
+        with pytest.raises(esa_xml.SciaRunning, match="LLSM is printing a report"):
+            esa_xml.assert_no_scia()
+        monkeypatch.setattr(esa_xml, "running_scia", lambda: [(proc.pid + 1_000_000, "sciaengineer.exe")])
+        with pytest.raises(esa_xml.SciaRunning, match="SCIA is running"):
+            esa_xml.assert_no_scia()
+    finally:
+        with esa_xml._RUNNING_LOCK:
+            esa_xml._RUNNING.discard(proc)
+        proc.kill()
+        proc.wait(10)
+
+
+def test_server_instructions_name_the_report_flow():
+    pytest.importorskip("mcp")
+    import llsm.mcp_server as server
+    assert "report_preview, then report_write, then report_status" in server.INSTRUCTIONS_BASE
+
+
+def test_preview_plans_the_outputs_in_out_dir(tmp_path):
+    fake = Fake(tmp_path)
+    elsewhere = tmp_path / "out"
+    elsewhere.mkdir()
+    result = preview_report(fake.model, ReportRequest(), index_reader=lambda p: fake.idx, out_dir=elsewhere)
+    assert Path(result["outputs_planned"]["pdf"]).parent == elsewhere.resolve()
+    missing = preview_report(fake.model, ReportRequest(), index_reader=lambda p: fake.idx, out_dir=tmp_path / "nope")
+    assert not missing["ok"] and "Output folder not found" in missing["problems"][0]
