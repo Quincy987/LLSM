@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - **Rapport van een bestaand model.** `llsm report preview|write` en de MCP-tools
-  `report_preview` / `report_write` drukken het engineering report af dat in een
+  `report_preview` / `report_write` / `report_status` drukken het engineering report af dat in een
   opgeslagen `.esa` staat (SCIA's eigen rapport, met tabellen, eenheden en figuren)
   als PDF, Excel of RTF, zonder SCIA te openen en op een kopie: het model blijft
   ongewijzigd. Het Excel-bestand wordt altijd gemaakt en teruggelezen: `ok` alleen
@@ -20,11 +20,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `cases_group` krijgt elk belastinggeval van een LLSM-groep (rijdende belasting)
   een eigen hoofdstuk, via een combinatie en resultaatklasse per geval die alleen
   op de kopie bestaan. Uitvoer als `<model>_rapport-NN.pdf` (+ `.xlsx`) naast het
-  model, nooit overschreven.
+  model, nooit overschreven. In de chat loopt het afdrukken (5–15 min) als taak:
+  `report_write` start hem meteen en `report_status` wacht telkens tot 4 minuten,
+  omdat Claude Code een MCP-aanroep na 5 minuten afbreekt.
+
+### Fixed
+- **Sluit je het paneel terwijl SCIA nog afdrukt, dan stopt de server die afdruk
+  nu ook** (eerder bleef ESA_XML als wees doorlopen).
 
 ### Changed
 - **Langere chatbeurten in het paneel:** een beurt mag 45 minuten duren in plaats
-  van 10, en een tool-aanroep ook, omdat een rapport minuten per formaat kost.
+  van 10, omdat de chat een rapport tot het eind volgt.
 
 ## v0.3.11 — Moving load on existing SCIA models (2026-11-12)
 

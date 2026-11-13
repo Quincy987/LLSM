@@ -55,10 +55,28 @@ Values, read from the printed XLSX:
   real model (8 cases, 22 combinations). It shows whether results are stored; "fewer result sets
   than load cases" is used only as a hint that cases were added after the last calculation.
 - **Run times**: XLSX 3–5 min and PDF 5–10 min on a 36 MB model; with `calculate` 1.5 min more.
-  A panel turn could only last 10 min, which a report does not fit in: the turn limit is now 45 min,
-  and the CLI's MCP tool timeout (`MCP_TOOL_TIMEOUT`) is set to match.
+  A panel turn could only last 10 min: the limit is now 45 min.
 - **No openpyxl needed**: the XLSX is read with the standard library (`llsm.report.xlsx`); on the
   spike's 54-sheet export it gives the same cells as openpyxl.
+
+## Through the panel (take 7)
+
+The real panel, run from this build (`phase0/report/demo/take7.py`), one typed message:
+"Maak een rapport van …\brugdek_llsm-01.esa, per belastinggeval, met doorrekenen."
+
+- **First take: failed, and found two bugs.** `report_write` was one blocking call. Claude Code
+  2.1.318 ends an MCP call over HTTP after 300 s, also with `MCP_TOOL_TIMEOUT` raised, so the chat
+  answered "after 300 s cut off by the MCP client's time-out" while ESA_XML went on printing; and
+  when the panel closed, that ESA_XML kept running as an orphan (stopped by hand; it was ours).
+  Fix: `report_write` checks the file, starts the print as a job and returns at once;
+  `report_status(job)` waits at most 240 s per call and returns the full result when done; one
+  print at a time. On server shutdown `esa_xml.stop_all()` stops this server's own ESA_XML runs.
+- **Second take: works.** Tools called: report_preview, report_preview (with the options),
+  report_write, report_status, report_status. 7 min 6 s. The answer named both files, "Alle 35
+  verwachte hoofdstukken zijn geschreven", the empty class *Alle UGT* with its E-C04 and why, and
+  that the model itself is unchanged. The panel showed `report_write` with a red cross: a started
+  job returned `ok: false`, which the panel reads as failed. Fixed: a running job is `ok: null`.
+- **Third take**, with that fix: the demo video, `LLSM demo\LLSM-report-demo.mp4`.
 
 ## Fail cases
 
@@ -80,7 +98,8 @@ Values, read from the printed XLSX:
 
 - `pytest tests/unit`: 389 passed (27 new in `test_report.py`, on XLSX fixtures cut from the
   spike's and these exports).
-- Live (LLSM_LIVE=1): see the end of this file.
+- Live (LLSM_LIVE=1): `tests/live/test_bedding_live.py`, `test_moving_load_live.py` and the new
+  `test_report_live.py` (plate, XLSX): 5 passed in 7 min 54 s.
 
 ## Open
 

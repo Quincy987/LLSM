@@ -196,7 +196,7 @@ LLSM/
 | 05 | [`docs/05-plan.md`](docs/05-plan.md) | Phased roadmap |
 | 06 | [`docs/06-phase0-results.md`](docs/06-phase0-results.md) | Phase 0 verification |
 
-## Current tool surface (31 tools)
+## Current tool surface (32 tools)
 
 - **Model defs**: `new_model`, `add_material`, `add_rectangular_section`
 - **Geometry**: `add_node`, `add_beam`, `update_node`, `set_member_endpoints`, `set_member_cross_section`, `delete_object`
@@ -207,7 +207,7 @@ LLSM/
 - **SCIA drive**: `launch_scia`, `push_model`, `run_analysis`, `close_scia`
 - **Beddings on a saved model**: `bedding_preview`, `bedding_apply`
 - **Moving load on a saved model**: `moving_load_preview`, `moving_load_apply`
-- **Results report of a saved model**: `report_preview`, `report_write`
+- **Results report of a saved model**: `report_preview`, `report_write`, `report_status`
 
 ## Known limitations (Phase 2)
 
