@@ -12,9 +12,9 @@ going on there: it starts SCIA full screen and drives the mouse for the SCIA par
 Run after the moving-load build is merged, so the panel's MCP server serves
 moving_load_preview/moving_load_apply (the venv's llsm is an editable install of main).
 
-The SCIA steps (take6_before.json, take6_after.json) need window coordinates of the
-load-case box in SCIA's toolbar. They are not known yet: `prepare` saves a screenshot
-(take6/calibrate.png) to read them from; then edit LOAD_CASE_BOX below.
+The SCIA steps (take6_before.json, take6_after.json) use window coordinates measured from
+`prepare`'s screenshot (take6/calibrate.png) on SCIA 24; see LOAD_CASE_BOX and its neighbours.
+The active-case box opens a list of the cases; the steps click the case's row.
 """
 from __future__ import annotations
 
@@ -36,7 +36,13 @@ PROMPT = (
     f"Zet een LM1-tandem (TS1) over het dek van {MODEL}: rijlijn van (500, 2000) naar (4900, 2000) mm, "
     "stap 1600 mm. Laat de tabel zien en schrijf het daarna meteen weg."
 )
-LOAD_CASE_BOX = None  # (x, y) of SCIA's active-load-case box, window-relative; read from calibrate.png
+# Window-relative positions in SCIA 24.0.3015.64, maximised on the 1929 x 1149 desktop (from calibrate.png,
+# measured on 2026-11-13 with the copy open).
+LOAD_CASE_BOX = (1320, 88)  # active load case, top toolbar; opens a list of the cases
+CASE_ROW_X, CASE_ROWS_Y = 1290, (153, 185, 218)  # list rows of cases 01..03 (row 1 at y 120 is BG1)
+ISO_BUTTON, ZOOM_ALL, MOUSE_PARK = (1238, 1067), (1199, 1067), (1000, 900)
+COMMAND_SEARCH, COMMAND_HIT = (950, 86), (895, 121)  # command search box; its first hit
+GROUP_ROW, GROUPS_CLOSE = (708, 292), (1225, 931)  # "LLSM-ML TS1" in Lastgroepen (2nd row); Sluiten
 CASES = ["LLSM-ML TS1 01", "LLSM-ML TS1 02", "LLSM-ML TS1 03"]
 
 TEXTS = {
@@ -53,6 +59,11 @@ TEXTS = {
         '"brugdek_llsm-01.esa  ·  één exclusieve groep LLSM-ML TS1  ·  daarna doorrekenen in SCIA"',
     '"Grondbedding op 32 palen van een kademuur, vanuit één chatbericht"':
         '"Een rijdende LM1-tandem over een brugdek, vanuit één chatbericht"',
+    '"kademuur_kaal.esa in SCIA Engineer: 32 palen, nog zonder bedding."':
+        '"brugdek.esa in SCIA Engineer: een plaat op vier kolommen, nog zonder verkeer."',
+    '"kademuur_kaal_llsm-01.esa geopend in SCIA Engineer."': '"brugdek_llsm-01.esa geopend in SCIA Engineer."',
+    '"Zelfde paal S45: nu drie lijnsteunpunten, één per grondlaag."':
+        '"Eén belastinggeval per positie: de tandem schuift 1600 mm op."',
 }
 
 
@@ -74,7 +85,7 @@ def prepare() -> None:
     subprocess.run([*ctl, "start", str(MODEL)], check=False)
     subprocess.run([*ctl, "shot", str(TAKE / "calibrate.png")], check=False)
     subprocess.run([*ctl, "close"], check=False)
-    print(f"Read the load-case box position from {TAKE / 'calibrate.png'} and set LOAD_CASE_BOX.")
+    print(f"Check the positions in {TAKE / 'calibrate.png'} against LOAD_CASE_BOX and its neighbours.")
 
 
 def chat() -> None:
@@ -83,17 +94,30 @@ def chat() -> None:
         raise SystemExit(f"the chat did not write {COPY}")
 
 
+def _view() -> list:
+    """Tilted 3D view of the deck: isometric, tilt (two ctrl+right drags, net 50 px up), zoom all."""
+    return [["click", *ISO_BUTTON], ["sleep", 1.5], ["drag", 900, 500, 900, 380, "right", "ctrl"], ["sleep", 0.6],
+            ["drag", 900, 380, 900, 450, "right", "ctrl"], ["sleep", 0.6], ["click", *ZOOM_ALL], ["sleep", 1.2],
+            ["move", *MOUSE_PARK]]
+
+
 def _steps(before: bool) -> list:
-    if LOAD_CASE_BOX is None:
-        raise SystemExit("set LOAD_CASE_BOX first (python take6.py prepare)")
     x, y = LOAD_CASE_BOX
     if before:
-        return [["label", "Het brugdek: een plaat van 6 × 4 m op vier kolommen, nog zonder verkeer", 2.5],
+        return [*_view(), ["label", "Het brugdek: een plaat van 6 × 4 m op vier kolommen, nog zonder verkeer", 2.5],
                 ["sleep", 3.0], ["shot", "before"], ["sleep", 1.0]]
-    steps: list = [["label", "De kopie: één belastinggeval per positie van de tandem", 2.0], ["sleep", 2.0]]
-    for case in CASES:
-        steps += [["click", x, y], ["sleep", 1.0], ["type", case], ["key", "enter"], ["sleep", 0.8],
-                  ["label", f"{case}: de tandem schuift 1600 mm op", 2.0], ["sleep", 2.5], ["shot", case[-2:]]]
+    steps: list = [*_view(), ["label", "De kopie: één belastinggeval per positie van de tandem", 2.0], ["sleep", 2.0]]
+    for case, row_y in zip(CASES, CASE_ROWS_Y):
+        # SCIA 24: the box opens a list (first row BG1); a click on the row activates the case.
+        steps += [["click", x, y], ["sleep", 1.2], ["click", CASE_ROW_X, row_y], ["sleep", 0.3], ["move", *MOUSE_PARK],
+                  ["label", f"{case}: 4 wielen van 150 kN; de tandem schuift 1600 mm op", 2.0], ["sleep", 2.5],
+                  ["shot", case[-2:]]]
+    # The group, through SCIA's command search: "Definieer de belastingsgroepen".
+    gx, gy = GROUP_ROW
+    steps += [["click", *COMMAND_SEARCH], ["sleep", 0.8], ["type", "Belastingsgroepen"], ["sleep", 1.5],
+              ["click", *COMMAND_HIT], ["sleep", 2.5], ["click", gx, gy], ["sleep", 0.5],
+              ["label", "Groep LLSM-ML TS1: exclusief, dus in een combinatie steeds één positie", 3.0], ["sleep", 3.5],
+              ["shot", "group"], ["click", *GROUPS_CLOSE], ["sleep", 1.0]]
     return steps
 
 

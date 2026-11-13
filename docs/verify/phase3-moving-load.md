@@ -28,7 +28,7 @@ unrelated table changes on every update (see S5); it is recorded, not explained.
 | # | Criterion | Result | Evidence |
 |---|---|---|---|
 | S1 | Group + 3 cases + free point loads in one update | **PASS** | `spike.py s1`: exit 0 in 22 s. SCIA's object log in the saved file: point forces free 0 → 12, load cases 1 → 4, load groups 1 → 2. All 12 names read back. |
-| S2 | Units and coordinates | **PASS, by calculation** | Literal −100000 at (1.7, 1.0) is stored as −100000.0 at x 1.7, y 1.0 (reader). That SCIA reads these as N and m follows from S3: in kN the reactions would be 1000× smaller, in mm the loads would miss the plate. The GUI check was not done (see Screenshot). |
+| S2 | Units and coordinates | **PASS, by calculation** | Literal −100000 at (1.7, 1.0) is stored as −100000.0 at x 1.7, y 1.0 (reader). That SCIA reads these as N and m follows from S3: in kN the reactions would be 1000× smaller, in mm the loads would miss the plate. In the SCIA GUI each wheel shows as −150.00 kN on the deck (see Screenshot). |
 | S3 | Loads land on the plate | **PASS** | `spike.py s3` and `reactions.py` on the product's own output: the 3 cases in one linear combination, calculated (LIN, 33–41 s). Column forces −232.7 / −217.3 / −217.3 / −232.7 kN, sum **900.0 kN = 900.0 kN** of loads read back (ratio 1.0000). Hand: moments of the loads about x = 0 give 2610 kNm, so 435 kN at x = 6 m (217.5 per column) and 465 kN at x = 0 (232.5): matches to 0.2 kN, the rest is the frame action of the fixed columns. |
 | S4 | Point load on a beam by name + relative x | **PASS** | `spike.py s4` and `llsm moving-load apply --deck beam --member B1`: stored member id 1, positions 0.25 / 0.75 (spike) and 0 / 0.5 / 1 (product), values −10000 / −20000 N. |
 | S5 | Nothing else changed | **PASS, one value unexplained** | `diff_aligned.py` against two plain re-saves (phase 0's index diff cannot handle an added block). Ours: the new free-load block, the group and case blocks. Bookkeeping: a counter 12 → 13, the object log text, the revision history. Results flagged out of date: in the three FE result tables one flag per entry 1 → 0. **Unexplained: in the UCS record ("Huidig UCS") one u32 1012 → 0**, like phase 0's code-manager 100 → 0. Members, nodes, plates and every other load object compare equal in the reader. |
@@ -111,10 +111,20 @@ columns. Server log without errors; server shut down through `/admin/shutdown`.
 
 ## Screenshot
 
-Not taken. The GUI check of S2 and the picture of case 02 were planned for the demo
-recording, and the desktop was in use (a Teams call) when this was built, so SCIA was not
-started on it. S2 and S3 rest on the calculation above. `phase0/moving_load/demo/take6.py`
-records the demo, and its `scia` step saves the picture of each case.
+![Case LLSM-ML TS1 02 in SCIA](img/phase3-moving-load-case02.png)
+
+2026-11-13, SCIA Engineer 24.0.3015.64, the demo recording (`phase0/moving_load/demo/take6.py`).
+The copy `brugdek_llsm-01.esa` that the panel's chat wrote (LM1-TS1, path (500, 2000) →
+(4900, 2000) mm, step 1600 mm: 12 of 12 loads confirmed), opened in the SCIA GUI with case
+LLSM-ML TS1 02 active: four wheels of −150.00 kN on the plate, the front axle a little past
+mid-span (x 3300 of 6000 mm), the axles 1200 mm apart and the wheels 2000 mm apart. Switching
+the active case to 01 and 03 moves the four wheels 1600 mm back and forward; BG1 shows none.
+SCIA's load-groups window shows LLSM-ML TS1 as Relatie *Exclusief*, Last *Variabel*. The
+positions were checked by eye against the table above, not measured in the GUI. SCIA fills
+in the group's Belastingtype itself: *Cat A: Woning*, its default for a variable group in a
+"Gebouw" structure; LLSM does not set it.
+
+Video: `Documents\LLSM demo\LLSM-moving-load-demo.mp4` (80.7 s, chat and SCIA side by side).
 
 ## Open
 
