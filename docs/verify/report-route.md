@@ -9,16 +9,24 @@ maken waar alle resultaten van de verschillende belastingsgevallen en resultaatk
 onderdelen van de constructie geordend worden weergegeven." Berber Renckens: a report is a lot
 of manual work.
 
-## Decision so far
+## Outcome
 
-- **Route A (SCIA's own engineering report) works headlessly on the template**: `ESA_XML NONE
-  copy.esa -sd -t<FMT> -o<out> -d<name>` prints the report stored in the model as XLSX, PDF or RTF.
-  It needs a report that already exists in the model; an XML update cannot add one.
-- **Route B (Word report from the XML IO export) works as a prototype** on an existing SCIA
-  export: 28 tables, 174 rows, every cell read back from the .docx, 0 mismatches.
-- **Not yet shown: either route on a calculated model.** The runs on the plate fixture and on a
-  real kademuur copy are prepared (`route_a_calc.py`) but did not run: someone's SCIA was open on
-  this machine from 00:46 and this spike never runs next to it. Section "Pending" lists them.
+- **Route A (SCIA's own engineering report) works headlessly for the template's report** (whose
+  items are of the current post-processor type):
+  `ESA_XML NONE copy.esa -sd -t<FMT> -o<out> -d<name>` printed `Report_1` of a calculated, saved
+  plate model, without recalculation, with every results chapter filled; column forces
+  −232.68 / −217.32 / −217.32 / −232.68 kN (hand check −232.7 / −217.3), reactions sum 900 kN.
+- **On a real model saved in v19.1 the engineer's report prints, but without results**: all 10
+  results chapters say "Geen ondersteunde taak. Schakel over naar de naverwerkingsomgeving 'v16 en
+  ouder' (beschikbaar in de 32-bitversie)". Exit 0. The input chapters (36 sheets) are fine.
+- **Route B (Word report from the XML IO export) works where the model has an XML IO document**:
+  on the plate, 15 tables, 126 rows, 1 875 cells read back, 0 mismatches, same values as the
+  report. On the real copy there is none: exit 9, "standaard document wordt gemist" (as phase 0).
+- **No XML route found to add either document** (the definition declares no documents; its one
+  results container is read-only). For models not built from the template, both routes need one
+  step in the SCIA GUI first.
+- A report keeps its author's **selections**: the template's chapter "Wand" selects *Alle*, so on
+  the plate it shows the floor's results under the heading "Wand".
 
 ## Route A — SCIA's engineering report through ESA_XML
 
@@ -54,8 +62,9 @@ What is in `Report_1` (PDF table of contents, XLSX sheet names): 1 Inhoudsopgave
 nodes, members, 2D members, supports) · **3 Resultaten**: 3.1 Verplaatsingen per load case (BG1,
 3D displacement picture) · 3.2 Steunpunten · 3.3 Palen · 3.4 Vloer · 3.5 Wand, each split by
 result class *Alle UGT / Alle BGT / Alle UGT+BGT*, with *Interne 1D-krachten; N* for the piles and
-*Interne 2D-krachten; m_xD± / m_yD±* for floor and wall. That is the structure Sebastiaan asks
-for (per part, per result class), made once by hand in the template.
+*Interne 2D-krachten; m_xD± / m_yD±* for floor and wall. That is the ordering Sebastiaan asks
+for (per part, per result class), made once by hand in the template; but each item prints the
+extremes its author chose (*Extreem: Globaal*), not every row.
 
 How the formats differ:
 - **XLSX**: one sheet per *table*, titled with the chapter number cut at Excel's 31 characters
@@ -63,7 +72,7 @@ How the formats differ:
   are written as a single cell "Lege tabel", so an empty chapter is detectable.
 - **PDF / RTF**: the full report with the pictures (one image per result item on the results pages).
 - On the uncalculated template the results chapters hold only the result-class name and empty
-  pictures. Whether they fill on a calculated model is the pending test.
+  pictures; on a calculated model they fill (next section).
 
 ### Can an XML update add a report?
 
@@ -94,7 +103,8 @@ way to reuse it across models. Not tested here: that is a GUI step.
    `{{p table }}` subdoc per table, style *Table Grid*), the pattern of both apps.
 5. **Read back**: reopen the .docx and compare every table cell with what was meant to be written.
 
-Run on `C:\Development\Viktor\output_xml (2).xml` (a real kademuur export, 4 combinations):
+Run on `C:\Development\Viktor\output_xml (2).xml` (a real kademuur export, 4 combinations); the
+read-back compares the .docx with the parsed export, so it checks rendering, not values:
 
 | Order | Tables in export | Tables in .docx | Rows | Cells compared | Mismatches |
 |---|---|---|---|---|---|
@@ -131,19 +141,56 @@ the `.esa` template). Neither uses SCIA's engineering report.
 What `route_b.py` took: the docxtpl pattern, *Table Grid*, decimal comma with 2 decimals, the
 SI factors; it uses per-table subdocs instead of fixed tags, which is what the old reports lacked.
 
-## Pending (not run: SCIA open on this machine)
+## Calculated models (`route_a_calc.py all`, 01:41–02:06, SCIA closed)
 
-`route_a_calc.py`, all on copies:
-1. `plate`: build `plate_base.esa` (`make_plate.py`, from the template so it inherits `Report_1`),
-   add the moving-load spike's 12 wheel loads in combination *BGT1_kar*, put that combination in
-   the template's existing result class *Alle UGT* (name is the key), `LIN`, save.
-2. `reports`: on the saved calculated file, **no recalculation** (NONE): `Report_1` as XLSX and PDF,
-   and `-x`. PASS when the results chapters carry numbers, the column forces in *Palen / Alle UGT*
-   are −232.7 / −217.3 / −217.3 / −232.7 kN (S3's hand-checked values) in both the report and the
-   `-x` export, and `route_b.py` on that export reads back with 0 mismatches.
-3. `real`: the v19.1 kademuur copy, NONE: `-sd -dReport_2` XLSX and PDF, and `-x`. Shows whether
-   stored results survive the open (phase 0: a v24 save loses mesh objects) and whether the
-   engineer's report prints without recalculation.
+| Run | Exit | Time | Output |
+|---|---|---|---|
+| plate: `make_plate.py` (from the template, inherits `Report_1`) | 0 | 97 s | `plate_base.esa` 35.97 MB |
+| plate: S3's 12 wheel loads in combination *BGT1_kar*, put in result class *Alle UGT*, `LIN`, `-tESA` | 0 | 44 s | `plate_calc.esa` 36.76 MB (+0.8 MB: results stored) |
+| plate, saved file, **NONE**: `-sd -tXLSX -dReport_1` | 0 | 186 s | 71 470 B (template: 29 423 B) |
+| plate, NONE: `-sd -tPDF -dReport_1` | 0 | 413 s | 7.3 MB (template: 0.12 MB) |
+| plate, NONE: `-x` | 0 | 14 s | 92 421 B, 15 result tables |
+| real v19.1 copy, NONE: `-sd -tXLSX -dReport_2` | 0 | 223 s | 70 019 B, 36 sheets |
+| real, NONE: `-sd -tPDF -dReport_2` | 0 | 458 s | 9.2 MB, 58 pages |
+| real, NONE: `-x` | **9** | 20 s | none; "standaard document wordt gemist" |
+
+**Plate: the report fills from stored results, no recalculation.** Each results table starts
+with SCIA's own settings lines (*Lineaire berekening · Klasse: Alle UGT · Extreem: Globaal ·
+Selectie: Alle*) and units in a header row:
+- 3.2 Steunpunten / Alle UGT / Reacties: Sn1–Sn4 R_z = 232.68 / 217.32 / 217.32 / 232.68 kN;
+  *Resultante van reacties* R_z = 900 kN at (3, 2, −1) m, = the 900.0 kN of loads read back in S3.
+- 3.3 Palen / Alle UGT / Interne 1D-krachten: C1 −232.68, C2 −217.32, C3 −217.32, C4 −232.68 kN
+  (S3: −232.7 / −217.3 / −217.3 / −232.7). Combination key printed: *BGT1_kar/1 = LLSM-ML TS1 01
+  + 02 + 03*. The same values in *Alle BGT* and *Alle UGT+BGT*: those result classes of the
+  template also list *BGT1_kar* in their "Lijst" (the update only wrote *Alle UGT*; why the other two picked it up was not checked).
+- 3.4 Vloer / Interne 2D-krachten: D1, element 12 / node 25, m_x = 155.9 kNm/m, location
+  "In knooppunten gem. bij macro". The `-x` export has the same row as 155 904.5 Nm/m.
+- **3.5 Wand shows the same D1 rows**: its selection is *Alle*, the floor's is *D1*. The plate has
+  no wall. A report built for one model and reused on another prints what its selections match,
+  under its author's headings.
+- Tables hold the extremes per the report item's setting (*Extreem: Globaal*): 4 rows for 4
+  columns, not every section. That is the author's choice per item, not something LLSM sets.
+
+**Plate, route B on the same model's `-x`:** 15 tables (5 result types × 3 result classes),
+126 rows, 1 875 cells read back from the .docx, 0 mismatches. That read-back proves the rendering
+(the .docx says what the parser read), not the values. The independent checks are C1 N =
+−232,68 kN and D1 m_x = 155,90 kNm/m, the same as SCIA's own report and S3's hand check. The run found
+two unit errors of the prototype's own: 2D moments and shear forces were labelled kNm and kN, not
+kNm/m and kN/m (fixed, by table name). Five 2D design columns (`m_cD±`, `n_xD`, `n_yD`, `n_cD`)
+and `V_r` have no unit in its table and are printed "[SI]", not guessed.
+
+**Real v19.1 copy: input yes, results no.** The 36 sheets hold project data, cross-sections,
+materials, mesh and solver settings, nodes (76 sheet rows), members (34), 2D members, node
+supports, line supports on members (321 rows; phase 0 counted 319 objects), 8 load cases,
+combinations (90 rows), load groups. Row counts include header rows. All 10 results items (17 Palen:
+BGT/UGT paalreacties, schoorpalen, loodpalen; 19–23 UGT/BGT Vloer and Wand) print one line:
+"Geen ondersteunde taak. Schakel over naar de naverwerkingsomgeving 'v16 en ouder' (beschikbaar in
+de 32-bitversie)." The PDF has it on 6 pages. The log repeats "Old result" 398 times. Exit 0 and
+a 9 MB PDF: **nothing in the exit code or file size shows that the results are missing**; only
+the text does. The message points at the item type ("v16 en ouder"), not at the v19.1 save.
+Not tested: whether recalculating changes it (likely not, for that reason), and whether
+rebuilding the items in v24's report editor fixes it (the likely remedy, no source). The
+Houtmankade model (146 MB, `Report_2`, `Report_3`) was not printed.
 
 ## Side effects
 

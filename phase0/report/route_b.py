@@ -119,8 +119,9 @@ def assign_units(t: Table) -> None:
             t.units[col] = ("mrad", 1e3) if rotations else ("kN", 1e-3)
             continue
         found = unit_for(col)
-        if found and found[0] in ("kN", "kNm") and "lineaire" in t.heading.lower():
-            found = (found[0] + "/m", found[1])   # line reactions: N/m, Nm/m in the export
+        per_metre = "lineaire" in t.heading.lower() or "2D-krachten" in t.name   # line reactions, 2D forces
+        if found and found[0] in ("kN", "kNm") and per_metre:
+            found = (found[0] + "/m", found[1])   # N/m, Nm/m in the export
         if found:
             t.units[col] = found
         else:

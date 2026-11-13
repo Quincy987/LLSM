@@ -5,97 +5,119 @@ Asked by Sebastiaan van Rossum (mail 2026-11-12, "een SCIA Engineering report �
 de verschillende belastingsgevallen en resultaatklassen op alle onderdelen van de constructie
 geordend") and Berber Renckens (a report is a lot of manual work).
 
-## 1. Recommendation: v1 prints the model's own SCIA engineering report (route A)
+## 1. Recommendation: SCIA's own report as the print engine, around one standard LLSM template
 
-Why this route, from the spike:
-- It is literally what was asked: SCIA's engineering report, with SCIA's own tables, units, signs
-  and pictures. LLSM maps no columns, so the column/sign risk of docs/11 does not arise.
-- The real models we have already carry one (`Report_2`, `Report_3`); the kademuur template has
-  `Report_1`, built exactly as asked: per part (supports, piles, floor, wall), then per result
-  class. The export document route B needs was **missing** in the real copy (phase 0, exit 9).
-- `ESA_XML NONE copy -sd -t{PDF|XLSX|RTF} -o… -d<name>` printed it headlessly; a wrong name fails
-  (exit 8). Neither SCIA document can be added by an XML update (the results container in the
-  definition is read-only; documents are not declared at all), so in both routes the engineer
-  makes the layout once in SCIA. Route A asks for the step they already do.
+v1 = **route A** (ESA_XML prints the engineering report stored in the model), with **one standard
+report template** that LLSM provides and the engineer loads once per model. Why, from the spike:
 
-**Gate before building:** the pending runs in the verify doc (results filled on a calculated
-plate, values −232.7 / −217.3 kN in the report, and the real v19.1 copy printing from stored
-results). If stored results do not survive, v1 recalculates on the copy, and only when the
-model's own analysis is linear (as docs/11 §2.3); otherwise it refuses and says why.
+- On a calculated, saved model it works without recalculation: PDF/XLSX/RTF, SCIA's own tables,
+  units, signs, combination keys and pictures. Values checked: column forces −232.68 / −217.32 kN
+  (hand −232.7 / −217.3), reactions 900 kN. No column or unit mapping by LLSM: the Word prototype
+  of route B got two units wrong before the run caught them.
+- Engineers' existing reports are not enough: the real v19.1 model's `Report_2` printed its input
+  but all 10 results items said "Geen ondersteunde taak" (old post-processor item type), exit 0.
+- No XML route was found to add either a report or an XML IO document, so every route needs one
+  GUI step on a hand-made model. A standard template makes that one step the same everywhere, and
+  gives the same chapters on every model, which is the "geordend" Sebastiaan asks for.
+- The template's XLSX output (one sheet per table, with SCIA's settings lines) is what LLSM checks,
+  and later the input for a Word report (route B) without a second document in the model.
 
-Route B (LLSM writes a Word report from the export) stays the follow-up for what route A cannot do:
-a house-style Word document, all rows instead of SCIA's selection, ordering across result classes
-per member, combining with the apps' design report. The prototype (`phase0/report/route_b.py`) is
-kept for that; it reads back every cell.
+Route B (LLSM writes Word from the XML IO export) is kept for later, when they want house style or
+the report combined with other chapters. Its prototype stays in `phase0/report/route_b.py`.
 
-## 2. v1 scope
+## 2. The standard template (made once, in SCIA 24.0.3015.64)
 
-- **In**: a saved `.esa` (SCIA closed), optionally a report name (default: the only one; if
-  several, the engineer picks), format PDF (default) and/or XLSX (tables only) or RTF (editable).
-- **Out**: `<model>_rapport-01.pdf` next to the model, never overwriting (`-02`, …); the source
-  model is never written (ESA_XML on a copy).
-- **Ordering**: SCIA's report tree, as the engineer built it (chapter per part, then load case /
-  result class). LLSM does not reorder in v1; ask in §5 whether that is enough.
-- **Out of scope**: composing chapters, adding results to a report, writing to the model, Word.
+- Generic chapters, so selections cannot put one part's results under another's heading (the
+  template's "Wand" item selects *Alle* and showed the floor's results on a model without a wall):
+  1 Invoer (materials, cross-sections, load cases, groups, combinations, result classes, mesh and
+  solver settings, members, supports) · 2 Reacties · 3 1D-elementen (N, V, M per member) ·
+  4 2D-elementen (m, n, v basis grootheden; design moments) · 5 Vervormingen (1D, 2D) — each split
+  per result class, then per load case if asked (§6).
+- Selections *Alle* per member type, so it fits any model; result classes by name as the models
+  use them (*Alle UGT*, *Alle BGT*, …), to confirm with the engineers.
+- Stored as a SCIA report template file and as a template model, with its SCIA version.
+- One-page procedure for the engineer: open model, load *LLSM-standaard*, check result classes,
+  save. The same text is LLSM's message when a model has no usable report.
 
-## 3. Tools (core in `llsm.report`, MCP tools plus CLI `llsm report …`)
+## 3. v1 scope and tools (core `llsm.report`; MCP tools plus CLI `llsm report …`)
 
-- `report_preview(model_path)` → reports in the model (read from the file, no SCIA, ~1 min on
-  50 MB), their chapter tree (from one XLSX dry run on a copy: sheet titles = chapter numbers
-  and table names), which tables are "Lege tabel", whether the model holds results (and whether
-  recalculation would be needed), estimated run time. Nothing written next to the model.
-- `report_write(preview_id, formats=["PDF"])` → runs ESA_XML on a fresh copy, writes the file(s),
-  then checks: file exists and is non-empty (exit 0 with 0 bytes happened, `-tTXT`), PDF page
-  count > 0, XLSX: every results chapter from the preview present and not "Lege tabel". Reports
-  `chapters written / expected / empty`; never "done" with an empty results chapter unflagged.
-- Reuses: the ESA_XML runner, SCIA-open guard, licence diagnosis (exit 6) and file-lock guards from
-  the bedding work; `esa_docs.py`'s block reader moves into `llsm.scia.esa_file`.
+- **In**: a saved `.esa` (SCIA closed), report name (default *LLSM-standaard*, else the only one;
+  if several, the engineer picks), formats (PDF default; the XLSX is always made for the checks).
+- **Out**: `<model>_rapport-01.pdf` (+ `.xlsx`) next to the model, never overwriting; the source
+  model never written (ESA_XML on a copy).
+- **Content**: what the template's items select. Tables hold the **extremes per item**
+  (*Extreem: Globaal* or per member), not every mesh node: "all results" means all cases, result
+  classes and parts, each with its extremes, unless the engineers ask otherwise (§6).
+- `report_preview(model_path)`: from the `.esa` only, no SCIA (~1 min on 50 MB): reports present,
+  their item tree, and old-type items (refused early, with the procedure of §2); whether results
+  are stored. A first write gives the real chapter list; a preview from SCIA would take 3–5 min.
+- `report_write(preview_id, formats)`: ESA_XML on a fresh copy, timeout scaled to file size
+  (template 3–7 min per format; 50 MB model 4–8 min). Then **checks the XLSX** and reports
+  `results chapters written / expected / empty / unsupported`, plus each results table's own
+  settings lines (*Klasse, Selectie, Extreem*) so a wrong heading is visible. It fails on: exit ≠ 0;
+  0-byte output (seen with `-tTXT`, exit 0); "Geen ondersteunde taak" / its English text; "Lege
+  tabel" in a results chapter; a results sheet with no data rows. Never "done" with any of these.
+- Reuses the ESA_XML runner, SCIA-open guard, licence (exit 6) and file-lock guards of the bedding
+  work; `esa_docs.py`'s reader moves into `llsm.scia.esa_file`.
 
-## 4. Verification — `docs/verify/report.md`
+## 4. Gate before building (on copies, SCIA closed)
 
-- Plate fixture (from the template, so it has `Report_1`): the S3 wheel loads in *Alle UGT*;
-  report and `-x` both give column forces −232.7 / −217.3 / −217.3 / −232.7 kN (sum 900.0 kN =
-  loads read back). Proves the report shows the right case and result class.
-- Real v19.1 kademuur copy: `Report_2` printed; three values from its PDF matched with SCIA's GUI
-  table for the same chapter (by the engineer or on the desktop when free).
-- Fail-loud cases: wrong report name (exit 8 → message with the names found), no report in the
-  model (message: make one in SCIA, or load SCIA's report template), uncalculated model, empty
-  results chapter, 0-byte output, SCIA open, licence expired.
-- Unit tests: report-name reader on a golden `.esa` block, XLSX chapter/empty-table checker,
-  output naming.
+1. Build *LLSM-standaard* in SCIA 24 on the plate fixture; load it into a **second** model (the
+   v19.1 kademuur copy) and confirm it picks up that model's members and result classes. Untested
+   so far; it is the whole premise of §2.
+2. On that copy: does it need recalculation before the results chapters fill, and is the model's
+   analysis linear (only then may LLSM recalculate a copy)? Then print headlessly and compare three
+   values per results chapter with SCIA's own table in the GUI.
+3. A fixture with two combinations in two result classes with different values, to prove the
+   report shows each class's own results (in the spike all three classes showed the same values,
+   not explained).
+4. The 146 MB Houtmankade model: run time and output size.
 
-## 5. Questions for Sebastiaan and Berber
+FAIL on 1 ⇒ the template has to be rebuilt per model; then reconsider route B with a standard XML
+IO document as the one GUI step instead.
+
+## 5. Verification — `docs/verify/report.md`
+
+The §4 gate results; the plate's −232.68 / −217.32 kN and 900 kN through the tool; every fail
+case of §3 triggered once (wrong name ⇒ exit 8 with the names found; old-type items; no report;
+uncalculated model; SCIA open; licence expired). Unit tests: `.esa` report reader on a golden
+block, XLSX checker on the three outputs of this spike (template, plate, real), output naming.
+
+## 6. Questions for Sebastiaan and Berber
 
 > Hoi Sebastiaan en Berber,
 > Ik heb uitgezocht hoe LLSM een rapport van de SCIA-resultaten kan maken. SCIA kan het
-> engineering report dat al in een model zit automatisch afdrukken (PDF, Excel of RTF), zonder
-> SCIA te openen. Een nieuw rapport opbouwen kan SCIA alleen in de editor zelf. Daarom vijf vragen:
-> 1. Hebben jullie modellen al een engineering report met de hoofdstukken die je wilt? Zo nee:
->    willen jullie een vaste rapport-template in SCIA (één keer maken, per model inladen)?
-> 2. Welke hoofdstukken en resultaten moeten erin: interne krachten, vervormingen, reacties,
->    spanningen? Per belastingsgeval, per combinatie, per resultaatklasse, of alleen omhullenden?
-> 3. Per onderdeel geordend (paal, vloer, wand) en daarbinnen per resultaatklasse, zoals het
->    kademuur-template nu doet, of andersom?
-> 4. Volledige tabellen of alleen extremen per onderdeel? Met of zonder figuren?
-> 5. Is een PDF genoeg, of moet het in jullie Word-huisstijl en samen met andere hoofdstukken?
->    Dat bepaalt of we daarna ook een eigen Word-rapport maken.
-> Een voorbeeldrapport dat jullie nu met de hand maken helpt het meest.
+> engineering report in een model automatisch afdrukken (PDF, Excel of RTF) zonder SCIA te
+> openen, en dat werkt. Twee dingen vielen op:
+> - In het kademuurmodel dat ik had (opgeslagen in v19) drukt het rapport geen resultaten af: de
+>   resultaatonderdelen zijn van een oud type ("Geen ondersteunde taak … v16 en ouder").
+> - Een rapport kan alleen in SCIA zelf worden opgebouwd, niet van buitenaf.
+> Mijn voorstel: één standaard-rapporttemplate dat je per model één keer inlaadt; daarna maakt
+> LLSM het rapport en controleert het of alle hoofdstukken resultaten bevatten. Vragen:
+> 1. Is één vast template werkbaar, en wie beheert het?
+> 2. Welke hoofdstukken en resultaten: reacties, interne krachten 1D en 2D, vervormingen,
+>    spanningen? Per belastingsgeval, per combinatie, per resultaatklasse?
+> 3. Per onderdeel of per resultaatklasse eerst? En alleen extremen (per staaf of globaal), of
+>    volledige tabellen (dat kunnen voor een vloer duizenden regels zijn)?
+> 4. Met figuren (momentenlijnen, contouren)? PDF genoeg, of Word in huisstijl?
+> 5. Mag ik een rapport dat jullie nu met de hand maken als voorbeeld?
 > Groet, Quincy
 
-## 6. Risks and scope
+## 7. Risks and scope
 
-- **Results not stored or lost on open** (v19.1 → v24) ⇒ recalculation on a copy, linear only.
-- Large models: the template report took 160–320 s per format; a 146 MB model will be longer.
-  The preview states the estimate; one format per run by default.
-- The report shows what its author selected (members, extremes); LLSM prints it as is and says so.
-- Licence seat and file lock: reused guards.
-- Scope: one core module (reader + runner + checker), two MCP tools, one CLI command, one verify
-  doc. Touches no existing tool.
+- Template reuse across models fails (gate 1) ⇒ per-model setup; reconsider route B.
+- Big models: minutes per format; one write at a time, the preview avoids SCIA.
+- SCIA version: the template is pinned to 24.0.3015.64; a SCIA update needs one re-check. A non-
+  Dutch UI changes the texts the checker looks for: both languages, and the check keys on the
+  settings lines' structure as well.
+- Results not stored, or old: recalculation on a copy, linear only, otherwise refuse and say why.
+- Scope: one core module (reader, runner, XLSX checker), two MCP tools, one CLI command, one
+  template plus procedure, one verify doc. Touches no existing tool.
 
 ## Prior attempts
 
-- docs/11 §2 listed `-sd -tXLSX -d<doc>` as a route, untested; phase 0 found no XML IO document in
-  a real copy (exit 9). This spike tested the engineering report itself: a different object,
-  present in all three models looked at.
+- docs/11 §2 listed `-sd -tXLSX -d<doc>` as untested; phase 0 found no XML IO document in a real
+  copy (exit 9), confirmed here. This spike printed the engineering report itself: works on the
+  template's report, gives no results on the old real model's report.
 - The apps' SCIA reports (`report_scia.docx`, `make_scia_results_report`) used one fixed tag per
   cell and were dropped; route B's prototype uses per-table subdocs instead.
