@@ -471,7 +471,8 @@ _REPORT_MARK = b"DOCUMENTVIEWDATASTORAGE"
 _REPORT_INFO = re.compile(r"<DOCUMENTVIEWDATASTORAGE_DOCUMENTINFO\b.*?<Name>([^<]*)</Name>(?:.*?<CountOfPages>(\d+)</CountOfPages>)?", re.S)
 _REPORT_ITEMS = re.compile(r"<DOCUMENTVIEWDATASTORAGE_ITEMS_ORDER\b")
 _ITEM = re.compile(r"<DocumentItem\b")
-# SCIA logs one of these per load case that has results stored (seen: plate 0 -> 4 after LIN).
+# SCIA logs a count of these when results are stored: 4 on the plate with 4 load cases after LIN,
+# 32 on a real model with 8 cases and 22 combinations. A count of result sets, not of cases.
 RESULT_MARKERS = ("EP_Results.IntForcesAddCases.1", "EP_Results.DeforAddCases.1")
 NONLINEAR_MARKERS = ("DataSetSciaTom.EP_NonlinearCombi.1",)
 
@@ -490,7 +491,7 @@ class ReportIndex:
     saved_by: str | None
 
     @property
-    def cases_with_results(self) -> int:
+    def result_sets(self) -> int:
         return max((self.counts.get(m, 0) for m in RESULT_MARKERS), default=0)
 
     @property

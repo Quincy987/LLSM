@@ -149,6 +149,20 @@ Coordinates in mm, axle loads in kN (downward), offsets behind the front axle. O
 
 ---
 
+## Results report of an existing model
+
+Print the engineering report stored in a saved SCIA model (SCIA's own report: tables, units, pictures) as PDF, and check that it really holds results. SCIA prints from a copy; the model is never changed. Close SCIA first; a print takes a few minutes per format.
+
+```powershell
+.venv\Scripts\llsm report preview model.esa
+.venv\Scripts\llsm report write model.esa
+.venv\Scripts\llsm report write bridge_llsm-01.esa --calculate --cases-group "LLSM-ML TS1"
+```
+
+The XLSX is always made too: it is what the check reads. `--calculate` runs a linear calculation of a copy first (for a model without fresh results); `--cases-group` adds a chapter per load case of an LLSM moving-load group, on the copy only. A report made before SCIA 17 prints its input but no results ("Geen ondersteunde taak"): the check refuses it and says what to do. Details: `docs/13-plan-report.md`, `docs/verify/report.md`.
+
+---
+
 ## Project layout
 
 ```
@@ -182,7 +196,7 @@ LLSM/
 | 05 | [`docs/05-plan.md`](docs/05-plan.md) | Phased roadmap |
 | 06 | [`docs/06-phase0-results.md`](docs/06-phase0-results.md) | Phase 0 verification |
 
-## Current tool surface (29 tools)
+## Current tool surface (31 tools)
 
 - **Model defs**: `new_model`, `add_material`, `add_rectangular_section`
 - **Geometry**: `add_node`, `add_beam`, `update_node`, `set_member_endpoints`, `set_member_cross_section`, `delete_object`
@@ -193,6 +207,7 @@ LLSM/
 - **SCIA drive**: `launch_scia`, `push_model`, `run_analysis`, `close_scia`
 - **Beddings on a saved model**: `bedding_preview`, `bedding_apply`
 - **Moving load on a saved model**: `moving_load_preview`, `moving_load_apply`
+- **Results report of a saved model**: `report_preview`, `report_write`
 
 ## Known limitations (Phase 2)
 

@@ -138,7 +138,7 @@ def _esa_with_report(tmp_path, names=("Report_1",), results=4, cases=4, nonlinea
 def test_reports_counts_and_version_are_read_from_the_file(tmp_path):
     index = read_report_index(_esa_with_report(tmp_path, names=("Report_3", "Report_2")))
     assert [(r.name, r.pages, r.items) for r in index.reports] == [("Report_3", 54, 7), ("Report_2", 54, 7)]
-    assert index.cases_with_results == 4 and index.saved_by == "+D_344_24.0.3015.64" and not index.nonlinear
+    assert index.result_sets == 4 and index.saved_by == "+D_344_24.0.3015.64" and not index.nonlinear
 
 
 # --- naming and the combination XML ----------------------------------------------------------------
@@ -267,7 +267,7 @@ def test_refusals(tmp_path, request_args, idx, expected):
 
 def test_stale_results_are_a_warning(tmp_path):
     result = Fake(tmp_path, idx=index(results=1, cases=4)).write()
-    assert result["ok"] and "1 of 4 load cases" in result["warnings"][0]
+    assert result["ok"] and "4 load cases but only 1 stored result sets" in result["warnings"][0]
 
 
 def test_esa_xml_failure_leaves_no_report(tmp_path):

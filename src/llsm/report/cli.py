@@ -33,7 +33,8 @@ def _report(result: dict) -> int:
     print(f"Model: {result['model']} (saved by {result['saved_by'] or 'unknown'})")
     reports = ", ".join(f"{r['name']} ({r['pages']} pages)" for r in result["reports"]) or "none"
     print(f"Engineering reports in the model: {reports}")
-    print(f"Results stored for {result['results_stored_for_cases']} of {result['load_cases']} load cases")
+    stored = result["result_sets_stored"]
+    print(f"Load cases: {result['load_cases']}; results stored: {f'yes ({stored} result sets)' if stored else 'no'}")
     if result["report"]:
         print(f"Report: {result['report']}; formats: {', '.join(result['formats'])}")
     if result["cases"]:

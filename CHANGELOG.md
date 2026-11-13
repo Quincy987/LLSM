@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Rapport van een bestaand model.** `llsm report preview|write` en de MCP-tools
+  `report_preview` / `report_write` drukken het engineering report af dat in een
+  opgeslagen `.esa` staat (SCIA's eigen rapport, met tabellen, eenheden en figuren)
+  als PDF, Excel of RTF, zonder SCIA te openen en op een kopie: het model blijft
+  ongewijzigd. Het Excel-bestand wordt altijd gemaakt en teruggelezen: `ok` alleen
+  als elk resultaathoofdstuk resultaten bevat. Een rapport van het oude type
+  ("Geen ondersteunde taak", gemaakt vóór SCIA 17) of met lege resultaattabellen
+  wordt geweigerd, met de reden en wat het oplost; dan wordt de PDF niet eens
+  gemaakt. Een resultaatklasse zonder combinaties wordt apart gemeld en keurt het
+  rapport niet af. Met `calculate` rekent SCIA eerst een kopie lineair door; met
+  `cases_group` krijgt elk belastinggeval van een LLSM-groep (rijdende belasting)
+  een eigen hoofdstuk, via een combinatie en resultaatklasse per geval die alleen
+  op de kopie bestaan. Uitvoer als `<model>_rapport-NN.pdf` (+ `.xlsx`) naast het
+  model, nooit overschreven.
+
+### Changed
+- **Langere chatbeurten in het paneel:** een beurt mag 45 minuten duren in plaats
+  van 10, en een tool-aanroep ook, omdat een rapport minuten per formaat kost.
+
 ## v0.3.11 — Moving load on existing SCIA models (2026-11-12)
 
 ### Added

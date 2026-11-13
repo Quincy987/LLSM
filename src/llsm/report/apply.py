@@ -63,7 +63,7 @@ def _base_result(action: str, model_path: Path, request: ReportRequest) -> dict:
         "calculate": request.calculate,
         "cases_group": request.cases_group,
         "cases": [],
-        "results_stored_for_cases": 0,
+        "result_sets_stored": 0,
         "load_cases": 0,
         "problems": [],
         "warnings": [],
@@ -118,7 +118,7 @@ def _prepare(
     result.update(
         saved_by=index.saved_by,
         reports=[{"name": r.name, "pages": r.pages, "items": r.items} for r in index.reports],
-        results_stored_for_cases=index.cases_with_results,
+        result_sets_stored=index.result_sets,
         load_cases=index.counts.get("DataSetScia.EP_LoadCase.1", 0),
     )
     problems = result["problems"]
@@ -144,14 +144,17 @@ def _prepare(
             "calculate runs SCIA's linear calculation on a copy; nonlinear supports or elements, if the model has "
             "any, are calculated linearly. The model itself is not calculated or changed."
         )
-    elif index.cases_with_results == 0:
+    elif index.result_sets == 0:
         problems.append(
             "The model has no results stored. Use calculate (linear models), or calculate in SCIA and save first."
         )
-    elif index.cases_with_results < result["load_cases"]:
+    elif index.result_sets < result["load_cases"]:
+        # SCIA stores at least one result set per load case; fewer means cases were added after the
+        # last calculation (e.g. by LLSM's moving load).
         result["warnings"].append(
-            f"Results are stored for {index.cases_with_results} of {result['load_cases']} load cases: the report "
-            "may be out of date. Use calculate to print fresh results."
+            f"The model has {result['load_cases']} load cases but only {index.result_sets} stored result sets: "
+            "some cases were probably added after the last calculation, so the report may be out of date. "
+            "Use calculate to print fresh results."
         )
 
     if request.cases_group and not problems:
