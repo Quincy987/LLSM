@@ -1,6 +1,6 @@
 # Plan v2 — traffic loads on an existing SCIA model, with the toetsmodel's rules
 
-Date: 2026-11-13. Status (2026-11-15): **v2.0 built and verified (unreleased)** (`docs/verify/phase4-traffic-rules.md`:
+Date: 2026-11-13. Status (2026-11-15): **v2.0 built and verified, released as v0.3.13** (`docs/verify/phase4-traffic-rules.md`:
 0 mismatches against the toetsmodel's own generators over 455 cases); **v2.1 open** (§4). LLSM stays inside the
 gemeente, so there is no licence step; Geert is told, not waited for (§6).
 v1 of this plan (2026-11-12) shipped as v0.3.11, verified in `docs/verify/phase3-moving-load.md`;
