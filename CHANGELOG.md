@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.12 — Results report of existing SCIA models (2026-11-14)
+
 ### Added
 - **Rapport van een bestaand model.** `llsm report preview|write` en de MCP-tools
   `report_preview` / `report_write` / `report_status` drukken het engineering report af dat in een
