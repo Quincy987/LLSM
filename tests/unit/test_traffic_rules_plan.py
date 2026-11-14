@@ -148,3 +148,25 @@ def test_wheel_patch_turns_with_the_path():
 
 def test_clip_area():
     assert polygon_area(clip([(0, 0), (10, 0), (10, 10), (0, 10)], [(8, 8), (12, 8), (12, 12), (8, 12)])) == pytest.approx(4.0)
+
+
+def test_narrow_deck_follows_the_toetsmodel():
+    """2.5 m wide: no 3 m lane for BG8000/9000, BG10000 still has its centre tandem (as the toetsmodel)."""
+    rules = plan_lm1_lanes(model(deck(6.0, 2.5)), RoadPath.parse([[0, 1250], [6000, 1250]]), 300)
+    assert rules.problems == [] and [r.suffix for r in rules.runs] == ["L1C"]
+    none = plan_lm1_lanes(model(deck(6.0, 2.5)), RoadPath.parse([[0, 1250], [6000, 1250]]), 300, configurations="AB")
+    assert "no lane" in none.problems[0]
+
+
+def test_even_step_route_refuses_a_patch_whose_wheel_is_off_the_deck():
+    """Refusing (the engineer's own path), a wheel is off the deck by its centre, patch or point."""
+    from llsm.moving_load.plan import build_plan
+    from llsm.moving_load.vehicle import lm1_tandem
+    path = RoadPath.parse([[1000, 900], [5000, 900]])  # right-hand wheels at y = -100 mm, beyond the edge
+    plan = build_plan(model(), lm1_tandem(1), path, 1400, contact="surface")
+    assert any("fall off the deck" in p for p in plan.problems)
+
+
+def test_configurations_as_a_list():
+    rules = plan_lm1_lanes(model(), DEMO_PATH, 300, configurations=["A", "C"])
+    assert [r.suffix for r in rules.runs] == ["L1A", "L1C"]

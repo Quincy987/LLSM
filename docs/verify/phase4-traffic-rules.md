@@ -28,6 +28,8 @@ a block without a table header, which the reader skipped on purpose (phase 3: su
 not be read as plates). On the plate fixture, the demo models and this output every full piece is followed by its
 continuation (219, 319 and 217 full pieces). The reader now joins a full piece with what follows it before reading
 a table; other headerless blocks are still not read. Unit test: a case record cut in two at the piece boundary.
+The member and support reader (bedding) joins them the same way: on five models (the plate, the kademuur demo with
+and without beddings, this output, a real model with 319 line supports) it reads exactly what it read before.
 
 ## The rule, against the toetsmodel's own code (check 4)
 
@@ -80,4 +82,5 @@ What this run settled about the rule:
 2. Supports are not read from the model: the deck's ends per lane, unless `supports_mm` (chainages or support lines).
 3. Two road zones ("real" lanes in two carriageways) are not offered; the toetsmodel's helpers for them are not copied.
 4. v2.1: service vehicle, accidental vehicles (standard and Amsterdam), tram, UDL, dispersal (plan §4).
-5. The preview's `total_kN` of a patch past the deck edge is the whole patch's force; what acts is less (noted).
+5. Free surface loads stored in another layout (another distribution, selected members): known by name only, so
+   after a write they are checked for being there, not for their values.

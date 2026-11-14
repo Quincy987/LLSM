@@ -59,6 +59,7 @@ class PlannedSurface:
     pressure_kn_m2: float  # negative: downward
     corners_mm: tuple[tuple[float, float], ...]
     z_mm: float = 0.0
+    on_deck_m2: float | None = None  # the part of the patch over the deck; None: all of it
 
     @property
     def area_m2(self) -> float:
@@ -66,8 +67,9 @@ class PlannedSurface:
 
     @property
     def value_kn(self) -> float:
-        """The whole patch's force; a part beyond the deck edge does not act."""
-        return self.pressure_kn_m2 * self.area_m2
+        """The force that acts: a part beyond the deck edge does not (phase 4 verify, run 3)."""
+        area = self.area_m2 if self.on_deck_m2 is None else self.on_deck_m2
+        return self.pressure_kn_m2 * area
 
     @property
     def centre_mm(self) -> tuple[float, float]:
@@ -440,19 +442,29 @@ def build_plan(
                 point = (base[0] + side[0] * width, base[1] + side[1] * width)
                 if contact == "surface":
                     corners = wheel_patch(point, direction, wheel_mm)
-                    area, on = max(((polygon_area(clip(d[1], corners)), d) for d in decks), key=lambda o: o[0])
-                    if area <= _MIN_OVERLAP_MM2:
+                    overlaps = [(polygon_area(clip(d[1], corners)), d) for d in decks]
+                    area = sum(o[0] for o in overlaps)  # decks side by side: the patch may lie on two
+                    _, on = max(overlaps, key=lambda o: o[0])
+                    # Refused, the wheel itself must be on the deck, as a point load; left out by the rule,
+                    # only a patch with no part on the deck goes (the toetsmodel writes the rest whole).
+                    off = area <= _MIN_OVERLAP_MM2 if leave_out else not any(_inside(point, d[1]) for d in decks)
+                    if off:
                         missing.append(f"{label} W{number} at ({point[0]:.0f}, {point[1]:.0f}) mm")
                         continue
+                    if not _inside(point, on[1]):
+                        on = next((d for d in decks if _inside(point, d[1])), on)
                     samples = (point, *corners)
                     over_two = [q for q in samples if sum(_strictly_inside(q, d[1]) for d in model_decks) > 1]
                     if over_two:
                         under = sorted({d[0] for d in model_decks for q in over_two if _strictly_inside(q, d[1])})
                         stacked.append(f"{label} W{number} above {' and '.join(under)}")
-                    if area < polygon_area(corners) - _MIN_OVERLAP_MM2:
+                    whole = polygon_area(corners)
+                    on_deck = None
+                    if area < whole - _MIN_OVERLAP_MM2:
                         plan.partly_off += 1
+                        on_deck = area / 1e6
                     pressure = -load / (wheel_mm * wheel_mm / 1e6)
-                    loads.append((f"W{number}", PlannedSurface("", "", pressure, corners, on[2])))
+                    loads.append((f"W{number}", PlannedSurface("", "", pressure, corners, on[2], on_deck)))
                     continue
                 on = next((d for d in decks if _inside(point, d[1])), None)
                 if on is None:

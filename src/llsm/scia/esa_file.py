@@ -209,7 +209,7 @@ def read_esa(path: Path) -> EsaModel:
     supports: dict[str, LineSupport] = {}
     declared: dict[bytes, int] = {}
     stamps: set[str] = set()
-    for chunk in iter_blocks(Path(path).read_bytes()):
+    for chunk in iter_tables(Path(path).read_bytes()):
         declared.update((m.group(2), int(m.group(1))) for m in _OBJECT_LOG.finditer(chunk))
         stamps |= _stamps_in(chunk)
         for start, name in names_in(chunk):
@@ -348,9 +348,12 @@ class LoadModel:
     saved_by: str | None = None
     warnings: list[str] = field(default_factory=list)
     surfaces: list[SurfaceLoad] = field(default_factory=list)
+    # Free surface loads stored in a layout this reader has not measured (another distribution, selected
+    # members, ...): known by name only. Before v0.4.0 none were read, and such a model must still open.
+    unread_surfaces: list[str] = field(default_factory=list)
 
     def names(self) -> set[str]:
-        return {o.name for o in (*self.groups, *self.cases, *self.loads, *self.surfaces)}
+        return {*(o.name for o in (*self.groups, *self.cases, *self.loads, *self.surfaces)), *self.unread_surfaces}
 
 
 def _listed(block: bytes, end: int, count: int) -> tuple[int, ...] | None:
@@ -476,6 +479,7 @@ def read_loads(path: Path) -> LoadModel:
     """
     base = read_esa(path)
     found: dict[str, list] = {table: [] for table in LOAD_TABLES}
+    unread: list[str] = []
     declared: dict[str, int] = {}
     for chunk in iter_tables(Path(path).read_bytes()):
         declared.update((m.group(2).decode(), int(m.group(1))) for m in _ANY_OBJECT_LOG.finditer(chunk))
@@ -498,14 +502,25 @@ def read_loads(path: Path) -> LoadModel:
                 item = _free_force(chunk, end, name)
             elif table == _FREE_SURFACE_TABLE:
                 item = _free_surface(chunk, end, name)
+                if item is None:
+                    unread.append(name)
+                    continue
             else:
                 item = _beam_force(chunk, end, name)
             if item is not None:
                 found[table].append(item)
 
-    wrong = {t: (len(found[t]), declared.get(t, 0)) for t in LOAD_TABLES if len(found[t]) != declared.get(t, 0)}
+    counted = {t: len(found[t]) + (len(unread) if t == _FREE_SURFACE_TABLE else 0) for t in LOAD_TABLES}
+    wrong = {t: (counted[t], declared.get(t, 0)) for t in LOAD_TABLES if counted[t] != declared.get(t, 0)}
     if wrong:
         raise EsaFormatError(f"{Path(path).name}: reader found / SCIA declares {wrong}")
+    warnings = list(base.warnings)
+    if unread:
+        shown = ", ".join(unread[:5]) + (f" and {len(unread) - 5} more" if len(unread) > 5 else "")
+        warnings.append(
+            f"{len(unread)} free surface loads are stored in a layout LLSM has not measured ({shown}): known by name "
+            "only, so whether they stay unchanged is checked by name, not by value."
+        )
     nodes = {n.node_id: n.point for n in found[_NODE_TABLE]}
     plates = [
         Plate(p.name, p.node_ids, tuple(nodes[i] for i in p.node_ids) if all(i in nodes for i in p.node_ids) else ())
@@ -513,8 +528,8 @@ def read_loads(path: Path) -> LoadModel:
     ]
     return LoadModel(
         base.members, found[_NODE_TABLE], plates, found[_GROUP_TABLE], found[_CASE_TABLE],
-        found[_FREE_FORCE_TABLE] + found[_BEAM_FORCE_TABLE], base.saved_by, list(base.warnings),
-        found[_FREE_SURFACE_TABLE],
+        found[_FREE_FORCE_TABLE] + found[_BEAM_FORCE_TABLE], base.saved_by, warnings,
+        found[_FREE_SURFACE_TABLE], unread,
     )
 
 

@@ -4,7 +4,8 @@
 - Commit: `e8e44e73bc6c502dc03e385c8f79605a4abe46b2` (2026-07-01)
 - Made by: `python scripts/vendor_toetsmodel_rules.py <checkout> --commit e8e44e7`. Nobody edits these
   files by hand: a rule change goes upstream, then this script runs again and the tests show what moved.
-- Used under Python 3.11 (upstream requires 3.14; the copied code runs on 3.11, tested).
+- Upstream requires Python 3.14. The copy was imported and run under 3.11.0 (same positions and lanes);
+  LLSM's tests run it on 3.12.
 
 ## Whole files (equal to the original after one import rewrite; line endings as git checks them out)
 

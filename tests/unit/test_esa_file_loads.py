@@ -195,12 +195,20 @@ def test_free_surface_loads_are_read(tmp_path, corners):
     assert "C 01 W1" in model.names()
 
 
-def test_surface_record_in_another_layout_is_refused(tmp_path):
+def test_surface_record_in_another_layout_is_known_by_name_only(tmp_path):
+    """Someone's surface load in a layout not measured must not block the model (none were read before v0.4.0)."""
     broken = bytearray(surface_body(9, 1, -1.0, ((0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0))))
     struct.pack_into("<I", broken, 47, 5)  # says five corners: the case GUID is not where five would put it
     blocks = [table_block("surface", [top_level("X", bytes(broken))])]
+    model = read_loads(loads_file(tmp_path, blocks, {"surface": 1}))
+    assert model.surfaces == [] and model.unread_surfaces == ["X"] and "X" in model.names()
+    assert any("layout LLSM has not measured (X)" in w for w in model.warnings)
+
+
+def test_surface_count_still_checked(tmp_path):
+    blocks = [table_block("surface", [top_level("C 01 W1", surface_body(9, 1, -1.0, ((0, 0, 0), (1, 0, 0), (1, 1, 0))))])]
     with pytest.raises(EsaFormatError, match="SurfaceForceFree"):
-        read_loads(loads_file(tmp_path, blocks, {"surface": 1}))
+        read_loads(loads_file(tmp_path, blocks, {"surface": 2}))
 
 
 def test_a_table_longer_than_one_piece_is_read_whole(tmp_path):

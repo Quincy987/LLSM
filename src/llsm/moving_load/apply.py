@@ -148,9 +148,15 @@ def _prepare_rule(result, model_path, request, path, reader):
     if request.deck != "plate":
         result["problems"] = ["rule='toetsmodel' lays out lanes over a plate deck; deck='beam' is not supported"]
         return result, None, []
-    if request.vehicle_preset is not None or request.axles is not None or request.step_mm is not None:
-        result["problems"] = [("rule='toetsmodel' sets the vehicle (LM1 tandem per lane) and the positions itself: "
-                               "leave out vehicle_preset, axles and step_mm")]
+    unused = [label for label, given in (
+        ("vehicle_preset", request.vehicle_preset is not None), ("axles", request.axles is not None),
+        ("track_mm", request.track_mm is not None), ("step_mm", request.step_mm is not None),
+        ("lateral_offset_mm", request.lateral_offset_mm != 0.0), ("last_step", request.last_step != "exact"),
+        ("member", request.member is not None),
+    ) if given]
+    if unused:
+        result["problems"] = [(f"rule='toetsmodel' sets the vehicle (LM1 tandem per lane), the lanes and the positions "
+                               f"itself: leave out {', '.join(unused)}")]
         return result, None, []
     if not (math.isfinite(request.alpha) and request.alpha > 0):
         result["problems"] = [f"alpha must be a positive number, got {request.alpha:g}"]
@@ -184,6 +190,7 @@ def _prepare_rule(result, model_path, request, path, reader):
             "lanes_laid_out": [
                 {"group": p.group, "configuration": r.configuration, "lane": r.lane, "y_m": round(r.y_m, 3),
                  "offset_from_axis_mm": round(r.lateral_mm, 1), "deck_from_to_mm": [round(r.entry_mm, 1), round(r.exit_mm, 1)],
+                 "supports_mm": [round(r.entry_mm + s, 1) for s in r.supports_mm] or "deck ends",
                  "positions": len(r.x_m)}
                 for r, p in zip(rules.runs, rules.plans)
             ],
@@ -209,8 +216,8 @@ def _summarise(result: dict, plans: list[MovingLoadPlan], full_preview: bool) ->
         result["problems"] += [f"{plan.group}: {m}" if len(plans) > 1 else m for m in plan.problems]
         result["warnings"] += [m for m in plan.warnings if m not in result["warnings"]]
         result["groups"].append({
-            "group": plan.group, "cases": len(plan.cases), "loads": len(plan.loads) + len(plan.surfaces),
-            "left_out": len(plan.left_out), "dropped": len(plan.dropped),
+            "group": plan.group, "planned_cases": len(plan.cases), "planned_loads": len(plan.loads) + len(plan.surfaces),
+            "wheels_left_out": len(plan.left_out), "positions_dropped": len(plan.dropped),
         })
         rows = plan.preview_table()
         if not full_preview and len(rows) > 3:
@@ -226,8 +233,8 @@ def _summarise(result: dict, plans: list[MovingLoadPlan], full_preview: bool) ->
     partly = sum(p.partly_off for p in plans)
     if partly:
         result["notes"].append(
-            f"{partly} wheel patches reach beyond the deck edge: the part beyond does not act, as in the toetsmodel, "
-            "so a case's total_kN includes force SCIA will not apply."
+            f"{partly} wheel patches reach beyond the deck edge and are written whole, as in the toetsmodel: the part "
+            "beyond does not act, and total_kN counts only the part on the deck."
         )
     if not full_preview:
         result["notes"].append("preview shows the first, middle and last position of each group.")
@@ -413,6 +420,9 @@ def other_changes(before: LoadModel, after: LoadModel, plan: MovingLoadPlan | li
         changes += [
             f"{label} {name} changed" for name in sorted(a.keys() & b.keys()) if _comparable(a[name]) != _comparable(b[name])
         ]
+    old, new = set(before.unread_surfaces) - planned, set(after.unread_surfaces) - planned
+    changes += [f"surface load {name} is gone" for name in sorted(old - new - {s.name for s in after.surfaces})]
+    changes += [f"surface load {name} appeared" for name in sorted(new - old - {s.name for s in before.surfaces})]
     return changes
 
 

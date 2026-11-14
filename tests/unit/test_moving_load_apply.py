@@ -239,3 +239,24 @@ def test_someone_elses_surface_load_changing_is_reported(tmp_path):
     fake.before.surfaces = [other]
     result = fake.apply(RULE)
     assert not result["ok"] and result["other_changes"] == ["surface load FF1 changed"]
+
+
+def test_someone_elses_unread_surface_load_disappearing_is_reported(tmp_path):
+    after, _ = rule_written_model()
+    fake = Fake(tmp_path, after)
+    fake.before = model()
+    fake.before.unread_surfaces = ["FF7"]
+    result = fake.apply(RULE)
+    assert not result["ok"] and result["other_changes"] == ["surface load FF7 is gone"]
+
+
+def test_rule_refuses_options_it_sets_itself():
+    request = replace(RULE, lateral_offset_mm=500.0, last_step="short")
+    problems = preview_moving_load("m.esa", request, reader=lambda _: model())["problems"]
+    assert "leave out lateral_offset_mm, last_step" in problems[0]
+
+
+def test_preview_total_counts_only_the_part_on_the_deck():
+    """Case 01 of the demo: two front patches with 0.27 of their 0.4 m on the deck (SCIA: 202.5 kN, run 3)."""
+    result = preview_moving_load("m.esa", RULE, reader=lambda _: model())
+    assert result["preview"][0]["total_kN"] == -202.5

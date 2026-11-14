@@ -152,7 +152,8 @@ def upstream_md(commit: str, date: str) -> str:
 - Commit: `{commit}` ({date})
 - Made by: `python scripts/vendor_toetsmodel_rules.py <checkout> --commit {commit[:7]}`. Nobody edits these
   files by hand: a rule change goes upstream, then this script runs again and the tests show what moved.
-- Used under Python 3.11 (upstream requires 3.14; the copied code runs on 3.11, tested).
+- Upstream requires Python 3.14. The copy was imported and run under 3.11.0 (same positions and lanes);
+  LLSM's tests run it on 3.12.
 
 ## Whole files (equal to the original after one import rewrite; line endings as git checks them out)
 

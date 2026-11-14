@@ -241,7 +241,7 @@ def build_groups_update(
             # Every column up to the geometry, in the def's order: with a gap SCIA read the geometry as
             # another column ("Unknown element 'row'", S9). Z direction, force, uniform, valid on all 2D
             # members, picked automatically, global axes, length. A uniform load's value is q1: a value in q
-            # alone was not stored (S9); q gets the same value, as SCIA shows it.
+            # alone was not stored (S9). q gets the same value; with both, the load was not doubled (S10).
             _object(i + 1, s.name, [
                 _value(0, s.name), _ref(1, case_id[s.case], s.case), _value(2, 2), _value(3, 0), _value(4, 0),
                 _value(5, float(s.value_n_m2)), _value(6, float(s.value_n_m2)), _value(7, 0.0), _value(8, 0.0), _value(9, 0),

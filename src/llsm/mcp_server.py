@@ -440,7 +440,9 @@ def _register_common_tools(mcp: FastMCP) -> None:
         BG10000 lane 1 in the middle). Needs thickness_mm. path_mm is the deck's axis; the deck edges are
         taken from the plate (or deck_edges_mm [right, left] offsets from the path). lanes "real" lays
         the lanes over the carriageway, carriageway_mm [right kerb, left kerb]. supports_mm: chainages
-        along the path, or support lines [[x, y], [x, y]] for a skewed deck; default the deck ends.
+        along the path, or support lines [[x, y], [x, y]] for a skewed deck, every support including the
+        deck ends; default the deck ends only. vehicle_preset, axles, step_mm, lateral_offset_mm and
+        last_step are refused with a rule.
         Wheels off the deck are left out, as in the toetsmodel. Show rule.lanes_laid_out and notes."""
         return moving_load_tools.preview_moving_load(
             Path(model_path),

@@ -130,17 +130,15 @@ def plan_lm1_lanes(
         result.problems.append(str(exc))
         return result
     result.frame = frame
-    wanted = "".join(dict.fromkeys(configurations.upper().replace(",", "").replace(" ", "")))
+    if not (math.isfinite(alpha) and alpha > 0):
+        result.problems.append(f"alpha must be a positive number, got {alpha:g}")
+        return result
+    text = "".join(map(str, configurations)) if isinstance(configurations, (list, tuple)) else str(configurations)
+    wanted = "".join(dict.fromkeys(text.upper().replace(",", "").replace(" ", "")))
     if not wanted or any(c not in CONFIGURATIONS for c in wanted):
         result.problems.append(f"configurations is one or more of A, B, C, got {configurations!r}")
         return result
     width = frame.strip_width_m(lanes)
-    if width < upstream_geometry.DEFAULT_LANE_WIDTH:
-        result.problems.append(
-            f"the {'carriageway' if lanes == 'real' else 'deck'} is {width:g} m wide: the toetsmodel's lanes need at "
-            f"least {upstream_geometry.DEFAULT_LANE_WIDTH:g} m"
-        )
-        return result
     for configuration in wanted:
         for conf, lane, y in _lane_centres(configuration, width):
             lateral = frame.lateral_mm(y, lanes)
@@ -158,10 +156,14 @@ def plan_lm1_lanes(
                 support_x_coords=[metres(s) for s in supports] or None,
             )
             result.runs.append(LaneRun(conf, lane, y, lateral, entry, exit_, supports, tuple(xs)))
+    if not result.runs and not result.problems:
+        # e.g. a strip narrower than one 3 m lane: no lane in A or B (BG10000 always has its centre lane)
+        result.problems.append(f"the toetsmodel lays out no lane on a {width:g} m wide strip in Conf. {', '.join(wanted)}")
     if "C" in wanted and any(r.configuration == "D" for r in result.runs):
         result.notes.append("Conf. D's centre tandem (rs 1) is the same as Conf. C's: written once, in L1C.")
     if not supports_mm:
-        result.notes.append("Supports: the deck's ends per lane (give supports_mm for intermediate supports).")
+        result.notes.append("Supports: the deck's ends per lane (give supports_mm, every support including the ends, "
+                            "for intermediate supports).")
 
     for run in result.runs:
         vehicle: Vehicle = lm1_tandem(run.lane, alpha)

@@ -33,12 +33,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - In een geval staat de echte LM1-last (150 / 100 / 50 kN per wiel in rijstrook 1 / 2 / 3, × α).
   Het toetsmodel zet 100 kN per wiel in elke rijstrook en past zijn factoren in de combinaties toe.
+- **Ook de bestaande route (voertuig met vaste stap) schrijft de LM1-presets op een plaat nu als
+  vlaklasten van 0,4 × 0,4 m.** Een eigen aslijst blijft puntlasten. `contact='point'` geeft het oude gedrag.
 
 ### Fixed
 - **Lange tabellen in een `.esa` worden heel gelezen.** SCIA bewaart zijn gegevens in stukken van
   512 000 bytes; een tabel die langer is (42 belastinggevallen) liep door in het volgende stuk en werd
-  half gelezen, zodat de controle weigerde. Vrije vlaklasten die al in een model staan, worden nu ook
-  gelezen en vergeleken.
+  half gelezen, zodat de controle weigerde. Het rapport met `cases_group` leest via dezelfde weg en is
+  daarmee ook verholpen. De palen voor de bedding worden nu op dezelfde manier gelezen (op vijf modellen
+  precies hetzelfde resultaat als eerder).
+  Vrije vlaklasten die al in een model staan, worden nu ook gelezen en na het schrijven vergeleken; een
+  vlaklast in een opslagvorm die LLSM niet kent, houdt het model niet tegen maar wordt alleen op naam gevolgd.
 
 ### Verified
 - `docs/verify/phase4-traffic-rules.md`: tegen de eigen generatoren van het toetsmodel, 455 gevallen op
