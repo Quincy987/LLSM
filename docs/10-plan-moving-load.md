@@ -1,6 +1,8 @@
 # Plan v2 — traffic loads on an existing SCIA model, with the toetsmodel's rules
 
-Date: 2026-11-13. Status: **plan, nothing built, nothing agreed with Geert yet** (§6 first).
+Date: 2026-11-13. Status (2026-11-15): **v2.0 built and verified as v0.4.0** (`docs/verify/phase4-traffic-rules.md`:
+0 mismatches against the toetsmodel's own generators over 455 cases); **v2.1 open** (§4). LLSM stays inside the
+gemeente, so there is no licence step; Geert is told, not waited for (§6).
 v1 of this plan (2026-11-12) shipped as v0.3.11, verified in `docs/verify/phase3-moving-load.md`;
 its text is in git history (`74d03d0`). Prior attempts: v1 itself (`src/llsm/moving_load/`); no
 earlier traffic-rule work in LLSM (`git log -i --grep=traffic` / `--grep=lane` empty).
@@ -90,11 +92,15 @@ Import check (static, transitive, `TYPE_CHECKING` imports excluded): 13 of 110 `
   `scripts/vendor_toetsmodel_rules.py <commit>`. The same script, run in a test, re-fetches the files
   at the pinned commit, applies the rewrite and requires byte equality. Nobody edits the copy;
   changes go upstream.
-- `UPSTREAM.md` in that folder: repo URL, commit, date, file list, and the EUPL-1.2 licence text.
-  **Licence note:** EUPL-1.2 is copyleft. The copied files keep their licence, and LLSM as
-  distributed with them must be under EUPL-1.2 or a licence on the EUPL's compatibility list. LLSM has
-  no LICENSE file yet: choosing EUPL-1.2 for LLSM is the simplest fit. To confirm with Geert (and, if
-  needed, legal) before the first copy is committed.
+- `UPSTREAM.md` in that folder: repo URL, commit, date, file list. LLSM is used only inside the gemeente,
+  so the copy needs no licence step.
+- **As built:** whole files only where they import nothing else (the three constants files and
+  `tandem_sequencer.py`); `lane_calculations.py` and `theoretical_tandem_generators.py` also import
+  plotly (via `src.common.constants.parametrization`), `src.common.materials` or params, so their pure
+  functions are copied one by one, as exact source lines, into `lanes.py`. The equality test compares
+  both (line endings aside). "Real" lanes for one road zone are the theoretical functions over the road
+  strip, shifted to its edge, which is what `generate_real_lane_positions_*` compute; the two-road-zone
+  helpers are not copied (not offered).
 - Run the toetsmodel's own tests for those files (`tests/test_vehicle_models.py`, the sequencer
   and lane parts of `test_scia_load_cases.py`) inside LLSM under Python 3.11.
 - B rules are **not** re-implemented in LLSM. Note what that means: of the wheel layouts, only the
@@ -197,14 +203,13 @@ Fail → v2 ships with point loads only and says so in every preview.
 4. Read-back of every written load (position ± 0.1 mm, value exact, case and group right), as v1.
 
 ## 6. Agree with Geert first
-- **Reuse at all**: EUPL allows it, but it is his team's component; ask before, not after.
+- **Tell him we use it** (it is his team's component). Nothing waits for the answer.
 - **Ownership**: the toetsmodel team owns the rules; LLSM is a consumer and never changes them;
   fixes go upstream (issue or PR).
 - **Form**: pinned vendored copy now (§3.1); is he open to pure functions for the B rules, and later
   a small shared package? Who maintains that package?
 - **Versioning**: what LLSM pins (commit, `dev-v0.0.x` tag or CHANGELOG version), and how a rule
   change reaches LLSM (CHANGELOG line, mail).
-- **Licence**: LLSM under EUPL-1.2, fine by him?
 - **Three code questions** (may be my misreading, so asked, not claimed):
   1. `vehicle_models.py` defaults differ from `constants/vehicles.py`, which the code uses (service
      axle spacing 2.5 vs 3.0 m and track 1.25 vs 1.75 m; accidental spacing 1.2 vs 3.0 m and track
@@ -224,7 +229,6 @@ Voordat ik iets bouw wil ik dit met je afspreken:
 1. Mag dat, en blijven jullie eigenaar van de regels? LLSM past ze nooit zelf aan; wijzigingen gaan via jullie repo.
 2. Vorm: ik neem een vaste kopie over van de losse bestanden zonder VIKTOR (voertuigen, rijstroken, posities), met de commit erbij. Voor servicevoertuig, bijzonder voertuig, UDL en spreiding zou ik de regel graag als losse functie hebben, los van de params. Mag ik daar een PR voor maken? Later eventueel één klein pakket dat beide apps gebruiken.
 3. Versies: hoe hoor ik het als een regel verandert? Is een regel in de CHANGELOG genoeg?
-4. Licentie: jullie code is EUPL-1.2. Ik zou LLSM dan ook onder EUPL-1.2 zetten. Akkoord?
 
 Drie dingen die ik in de code zag, misschien lees ik het verkeerd:
 - vehicle_models.py wijkt af van constants/vehicles.py, bijv. asafstand servicevoertuig 2,5 vs 3,0 m. Welke geldt?
@@ -236,13 +240,20 @@ Om te controleren leg ik voor één brug de posities uit LLSM één voor één n
 Groet, Quincy
 ```
 
+### Confirmed (2026-11-14)
+- **A vehicle partly off the deck** is the toetsmodel's own choice and stays: its first positions put the
+  rear axle before the deck, and "dat deel telt dan niet mee voor de berekening, dus kon geen kwaad" (user).
+  LLSM leaves wheels wholly off the deck out, and writes a patch that reaches past the edge whole: SCIA
+  loads only the part on the deck (verify doc, run 3: 202.5 kN for two 150 kN patches with 0.27 of 0.4 m on it).
+- **The sequencer's x** is the rear edge of the rear wheel patch; its generators pass the vehicle length
+  1.6 m. The front axle is at x + 1.4 m (measured; the 13 positions first noted here were with 1.2 m: 14).
+
 ## 7. Risks and scope
 - **Rules drift** between the copy and upstream → pinned commit, equality test, CHANGELOG watch (§6).
 - **A rule changed in the adapter by accident** (axes, units, which end is x = 0) → check 2 is the
   release gate; no "same as the toetsmodel" claim without zero mismatches.
 - **Surface loads are a new write and read path** → spike S9–S11 is the gate; point-load fallback.
 - **Case counts** blow up with lanes × configurations → cap per apply, counts shown before writing.
-- **Licence** unresolved → no vendored file is committed until §6 is answered.
 - Scope: one new package `src/llsm/traffic_rules/` (vendored folder, frame adapter, presets, UDL
   planner), changes in `moving_load/plan.py` (surface patches, groups per lane) and `apply.py`
   (surface-load read-back), one def table, `esa_file.py` reader for surface loads, MCP preview/apply

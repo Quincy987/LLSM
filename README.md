@@ -206,11 +206,11 @@ LLSM/
 - **Results**: `get_beam_deflection`, `get_beam_inner_forces`
 - **SCIA drive**: `launch_scia`, `push_model`, `run_analysis`, `close_scia`
 - **Beddings on a saved model**: `bedding_preview`, `bedding_apply`
-- **Moving load on a saved model**: `moving_load_preview`, `moving_load_apply`
+- **Moving load on a saved model**: `moving_load_preview`, `moving_load_apply` (an even step, or `rule='toetsmodel'`: LM1 per notional lane at the plaatbruggen toetsmodel's positions, wheels as 0.4 × 0.4 m surface loads)
 - **Results report of a saved model**: `report_preview`, `report_write`, `report_status`
 
 ## Known limitations (Phase 2)
 
 - Cross-sections are rectangular-only (no IPE/HEA library lookup yet).
-- Building a model from scratch: no point loads, surface loads, slabs, or load combinations yet (point loads on a saved model: see Moving load).
+- Building a model from scratch: no point loads, surface loads, slabs, or load combinations yet (point and surface loads on a saved model: see Moving load).
 - Single SCIA install assumed on the machine.
