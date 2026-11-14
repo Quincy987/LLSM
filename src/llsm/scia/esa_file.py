@@ -106,6 +106,24 @@ def iter_blocks(data: bytes) -> Iterator[bytes]:
             yield chunk
 
 
+# SCIA writes its data in pieces of this size: a piece of exactly this length runs on into the next block
+# (measured on the plate fixture, the demo models and a 42-case moving load: every full piece is followed
+# by a block without a table header). A table longer than one piece is only whole when they are joined.
+PIECE = 512_000
+
+
+def iter_tables(data: bytes) -> Iterator[bytes]:
+    """The decompressed blocks, each full piece joined with what follows it."""
+    pending: list[bytes] = []
+    for chunk in iter_blocks(data):
+        pending.append(chunk)
+        if len(chunk) != PIECE:
+            yield b"".join(pending)
+            pending = []
+    if pending:
+        yield b"".join(pending)
+
+
 def names_in(chunk: bytes) -> list[tuple[int, str]]:
     """Length-prefixed UTF-16 strings in a block, as (offset, text)."""
     found = []
@@ -226,9 +244,10 @@ def read_esa(path: Path) -> EsaModel:
 # Decoded on models written through the XML update (docs/verify/phase3-moving-load.md).
 # Unlike members, these records are found by the table their block belongs to: every table
 # block opens with a header string "^$<n> {<class guid>} <progid>". A top-level record is a name preceded by the
-# u32 1; sub-objects inside a record (e.g. a group's "Belastingtype") are not. Blocks
-# without a header are not read: a table that spills into one fails the count check
-# instead of picking up another table's records. Offsets below are from the end of the
+# u32 1; sub-objects inside a record (e.g. a group's "Belastingtype") are not. A table longer
+# than one piece (PIECE) is read with its continuation; other blocks without a header are not
+# read, so a table that spills elsewhere fails the count check instead of picking up another
+# table's records. Offsets below are from the end of the
 # record's name.
 
 CASE_GUID = uuid.UUID("0908D21F-481F-11D4-AB84-00C06C452330").bytes_le
@@ -239,7 +258,10 @@ _GROUP_TABLE = "DataSetScia.EP_LoadGroup.1"
 _CASE_TABLE = "DataSetScia.EP_LoadCase.1"
 _FREE_FORCE_TABLE = "DataAddLoad.EP_PointForceFree.1"
 _BEAM_FORCE_TABLE = "DataAddLoad.EP_PointForceLine.1"
-LOAD_TABLES = (_NODE_TABLE, _PLATE_TABLE, _GROUP_TABLE, _CASE_TABLE, _FREE_FORCE_TABLE, _BEAM_FORCE_TABLE)
+_FREE_SURFACE_TABLE = "DataAddLoad.EP_SurfaceForceFree.1"
+LOAD_TABLES = (
+    _NODE_TABLE, _PLATE_TABLE, _GROUP_TABLE, _CASE_TABLE, _FREE_FORCE_TABLE, _BEAM_FORCE_TABLE, _FREE_SURFACE_TABLE,
+)
 
 _TABLE_HEADER = re.compile(r"^\^\$[0-9A-F]+ \{[0-9A-F-]{36}\} ([A-Za-z0-9_.]+)$")
 _ANY_OBJECT_LOG = re.compile(rb"- \d+ - (\d+) - ([A-Za-z0-9_.]+) -")
@@ -302,6 +324,17 @@ class PointLoad:
     position: float | None = None  # relative, beam loads
 
 
+@dataclass(frozen=True)
+class SurfaceLoad:
+    """A free surface load: a polygon in plan with one uniform value (docs/verify/phase4-traffic-rules.md, S11)."""
+
+    name: str
+    load_id: int
+    case_id: int
+    value: float  # N/m², along the load's direction (Z for everything LLSM writes)
+    corners: tuple[Point, ...]  # m
+
+
 @dataclass
 class LoadModel:
     """What :func:`read_loads` found: the geometry a load needs, and the loads themselves."""
@@ -314,9 +347,10 @@ class LoadModel:
     loads: list[PointLoad]
     saved_by: str | None = None
     warnings: list[str] = field(default_factory=list)
+    surfaces: list[SurfaceLoad] = field(default_factory=list)
 
     def names(self) -> set[str]:
-        return {o.name for o in (*self.groups, *self.cases, *self.loads)}
+        return {o.name for o in (*self.groups, *self.cases, *self.loads, *self.surfaces)}
 
 
 def _listed(block: bytes, end: int, count: int) -> tuple[int, ...] | None:
@@ -402,6 +436,27 @@ def _beam_force(chunk: bytes, end: int, name: str) -> PointLoad | None:
     return PointLoad(name, None, case_id, value, member_id=member_id, position=position)
 
 
+# Free surface load, measured on 3, 4 and 5 corners (S11): the corner count sits at +47; corner k's
+# x, y, z at first + 69 k (+0, +12, +24), first = 91 + 24 n; the load case GUID 2 bytes after the last
+# corner, the case id 20 and the load id 80 bytes after the GUID, the value (q1) 413 after it.
+_SURFACE_MAX_CORNERS = 64
+
+
+def _free_surface(chunk: bytes, end: int, name: str) -> SurfaceLoad | None:
+    count = _u32(chunk, end + 47)
+    if not count or count < 3 or count > _SURFACE_MAX_CORNERS:
+        return None
+    first = end + 91 + 24 * count
+    guid = first + 69 * count + 2
+    if chunk[guid:guid + 16] != CASE_GUID:
+        return None
+    corners = tuple(tuple(_f64(chunk, first + 69 * k + d) for d in (0, 12, 24)) for k in range(count))
+    case_id, load_id, value = _u32(chunk, guid + 20), _u32(chunk, guid + 80), _f64(chunk, guid + 413)
+    if not case_id or not load_id or value is None or any(v is None for c in corners for v in c):
+        return None
+    return SurfaceLoad(name, load_id, case_id, value, corners)  # type: ignore[arg-type]
+
+
 def _table_of(chunk: bytes) -> str | None:
     found = names_in(chunk[:400])
     if found and found[0][0] == 0:
@@ -412,7 +467,7 @@ def _table_of(chunk: bytes) -> str | None:
 
 
 def read_loads(path: Path) -> LoadModel:
-    """Read members, nodes, plates, load groups, load cases and point forces.
+    """Read members, nodes, plates, load groups, load cases, point forces and free surface loads.
 
     Every table is cross-checked against the object count SCIA logs in the file; a
     mismatch raises EsaFormatError. Bedding uses :func:`read_esa`, which does not read
@@ -422,7 +477,7 @@ def read_loads(path: Path) -> LoadModel:
     base = read_esa(path)
     found: dict[str, list] = {table: [] for table in LOAD_TABLES}
     declared: dict[str, int] = {}
-    for chunk in iter_blocks(Path(path).read_bytes()):
+    for chunk in iter_tables(Path(path).read_bytes()):
         declared.update((m.group(2).decode(), int(m.group(1))) for m in _ANY_OBJECT_LOG.finditer(chunk))
         table = _table_of(chunk)
         if table not in LOAD_TABLES:
@@ -441,6 +496,8 @@ def read_loads(path: Path) -> LoadModel:
                 item = _case(chunk, start, end, name)
             elif table == _FREE_FORCE_TABLE:
                 item = _free_force(chunk, end, name)
+            elif table == _FREE_SURFACE_TABLE:
+                item = _free_surface(chunk, end, name)
             else:
                 item = _beam_force(chunk, end, name)
             if item is not None:
@@ -457,6 +514,7 @@ def read_loads(path: Path) -> LoadModel:
     return LoadModel(
         base.members, found[_NODE_TABLE], plates, found[_GROUP_TABLE], found[_CASE_TABLE],
         found[_FREE_FORCE_TABLE] + found[_BEAM_FORCE_TABLE], base.saved_by, list(base.warnings),
+        found[_FREE_SURFACE_TABLE],
     )
 
 

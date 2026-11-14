@@ -236,4 +236,118 @@
 
       </def_table>
    </def_container>
+   <def_container id="{3E5FFA16-D1A4-4589-AD5A-4A0FC555E8B8}" clsid="{3E5FFA16-D1A4-4589-AD5A-4A0FC555E8B8}" progid="DataAddLoad.EP_SurfaceForceFree.1">
+      <def_table id="3BA95345-687F-4D1A-8BDB-462EAF38C865" name="XML\default" type="vertical" clsid="{3E5FFA16-D1A4-4589-AD5A-4A0FC555E8B8}" progid="DataAddLoad.EP_SurfaceForceFree.1" size="22">
+
+         <def_property x="0" name="Name" type="string" id="{4364BC01-AAB7-11D4-B3D9-00104BC3B531}"/>
+
+
+         <def_property x="1" name="Load case" type="ref" id="{AACF96D6-D986-421C-9FF2-D0B696A6B1F6}">
+         <def_ref id="{0908D21F-481F-11D4-AB84-00C06C452330}" progid="DataSetScia.EP_LoadCase.1"/>
+         </def_property>
+
+
+         <def_property x="2" name="Direction" type="enum" flag="262144" id="{49F8017D-A4E5-11D4-A43A-000000000000}">
+         <def_enum size="3">
+         <it_enum v="0" t="X"/>
+         <it_enum v="1" t="Y"/>
+         <it_enum v="2" t="Z"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="3" name="Type" type="enum" flag="262144" id="{49F8017C-A4E5-11D4-A43A-000000000000}">
+         <def_enum size="1">
+         <it_enum v="0" t="Force"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="4" name="Distribution" type="enum" id="{77B38320-D8EF-444A-B97D-64EE94ACCD39}">
+         <def_enum size="4">
+         <it_enum v="0" t="Uniform"/>
+         <it_enum v="1" t="Dir X"/>
+         <it_enum v="2" t="Dir Y"/>
+         <it_enum v="3" t="3 points"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="5" name="q" type="param" flag="33619968" id="{2B793726-6A90-4FAD-925D-E8F6D8973976}"/>
+
+
+         <def_property x="6" name="q1" type="param" flag="33619968" id="{77B38322-D8EF-444A-B97D-64EE94ACCD39}"/>
+
+
+         <def_property x="7" name="q2" type="param" flag="33619968" id="{77B38323-D8EF-444A-B97D-64EE94ACCD39}"/>
+
+
+         <def_property x="8" name="q3" type="param" flag="33619968" id="{77B38324-D8EF-444A-B97D-64EE94ACCD39}"/>
+
+
+         <def_property x="9" name="Validity" type="enum" flag="262144" id="{0FB44074-7F6B-41A0-9CE3-EB7779861490}">
+         <def_enum size="7">
+         <it_enum v="0" t="All"/>
+         <it_enum v="1" t="-Z"/>
+         <it_enum v="2" t="+Z"/>
+         <it_enum v="3" t="From-to"/>
+         <it_enum v="4" t="Z=0"/>
+         <it_enum v="5" t="-Z (incl. 0)"/>
+         <it_enum v="6" t="+Z (incl. 0)"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="10" name="Select" type="enum" id="{CDAA15F3-0D30-41EE-8010-534623E39891}">
+         <def_enum size="2">
+         <it_enum v="0" t="Auto"/>
+         <it_enum v="1" t="Select"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="11" name="System" type="enum" id="{A98C4369-F195-4992-ACBE-9119E1E6E0A3}">
+         <def_enum size="3">
+         <it_enum v="0" t="GCS"/>
+         <it_enum v="1" t="Member LCS"/>
+         <it_enum v="2" t="Load LCS"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="12" name="Location" type="enum" id="{E2B671A4-2A15-41E5-84BD-5A2A5B827A40}">
+         <def_enum size="2">
+         <it_enum v="0" t="Length"/>
+         <it_enum v="1" t="Projection"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="13" name="Table of geometry" type="table" id="{7F9F0012-4FBC-4731-808E-84A6A78DA584}">
+         <def_subtable size="4" type="vertical">
+         <def_property x="0" name="Coord X" type="param" id="{C1DD759A-4291-481B-B819-92E3AA9E04B7}"/>
+
+         <def_property x="1" name="Coord Y" type="param" id="{A84A15AC-FEC2-4C27-84B4-CFA676615934}"/>
+
+         <def_property x="2" name="Coord Z" type="param" id="{07B9CEDF-76BA-49F1-BEA4-66595982516A}"/>
+
+         <def_property x="3" name="Edge" type="string" id="{ECDF6620-F0FD-4476-B095-3610E641C35C}"/>
+
+         </def_subtable>
+         </def_property>
+
+
+         <def_property x="14" name="Selected objects" type="table" id="{74BFFF75-F689-4C05-8362-A8C74A9C4ECC}">
+         <def_subtable size="3" type="vertical">
+         <def_property x="0" name="Name" type="string" readonly="yes" id="{188960DC-EBA4-4493-9BC9-6FC0B25CB2F0}"/>
+
+         <def_property x="1" name="Type" type="string" id="{14137532-7119-40F3-A0CC-3C7AC13944F3}"/>
+
+         <def_property x="2" name="Id" type="integer" id="{B5ECF390-6CEF-4697-AED6-D5A173D41B59}"/>
+
+         </def_subtable>
+         </def_property>
+
+      </def_table>
+   </def_container>
 </def_project>

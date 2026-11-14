@@ -159,3 +159,57 @@ def test_block_without_a_header_is_not_read_as_the_table_before(tmp_path):
     blocks = [table_block("plate", [top_level("D1", plate_body([1]))]), supports + bytes(64)]
     model = read_loads(loads_file(tmp_path, blocks, {"plate": 1}))
     assert [p.name for p in model.plates] == ["D1"] and model.plates[0].outline == ()
+
+
+TABLES["surface"] = ("3E5FFA16-D1A4-4589-AD5A-4A0FC555E8B8", "DataAddLoad.EP_SurfaceForceFree.1")
+
+
+def surface_body(case_id, load_id, value, corners):
+    """The free surface load record as measured on 3, 4 and 5 corners (S11)."""
+    n = len(corners)
+    first = 91 + 24 * n
+    guid = first + 69 * n + 2
+    body = bytearray(guid + 500)
+    struct.pack_into("<I", body, 47, n)
+    for k, (x, y, z) in enumerate(corners):
+        struct.pack_into("<3d", body, first + 69 * k, x, 0.0, 0.0)
+        struct.pack_into("<d", body, first + 69 * k + 12, y)
+        struct.pack_into("<d", body, first + 69 * k + 24, z)
+    body[guid:guid + 16] = CASE_GUID
+    struct.pack_into("<I", body, guid + 20, case_id)
+    struct.pack_into("<I", body, guid + 80, load_id)
+    struct.pack_into("<d", body, guid + 413, value)
+    return bytes(body)
+
+
+@pytest.mark.parametrize("corners", [
+    ((1.0, 1.0, 0.0), (1.6, 1.0, 0.0), (1.3, 1.5, 0.0)),
+    ((1.0, 1.0, 0.0), (1.4, 1.0, 0.0), (1.4, 1.4, 0.0), (1.0, 1.4, 0.0)),
+    ((2.0, 1.0, 0.0), (2.5, 1.0, 0.0), (2.7, 1.4, 0.0), (2.3, 1.8, 0.0), (1.9, 1.4, 0.0)),
+])
+def test_free_surface_loads_are_read(tmp_path, corners):
+    blocks = [table_block("surface", [top_level("C 01 W1", surface_body(9, 1, -937500.0, corners))])]
+    model = read_loads(loads_file(tmp_path, blocks, {"surface": 1}))
+    (patch,) = model.surfaces
+    assert (patch.name, patch.case_id, patch.load_id, patch.value, patch.corners) == ("C 01 W1", 9, 1, -937500.0, corners)
+    assert "C 01 W1" in model.names()
+
+
+def test_surface_record_in_another_layout_is_refused(tmp_path):
+    broken = bytearray(surface_body(9, 1, -1.0, ((0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0))))
+    struct.pack_into("<I", broken, 47, 5)  # says five corners: the case GUID is not where five would put it
+    blocks = [table_block("surface", [top_level("X", bytes(broken))])]
+    with pytest.raises(EsaFormatError, match="SurfaceForceFree"):
+        read_loads(loads_file(tmp_path, blocks, {"surface": 1}))
+
+
+def test_a_table_longer_than_one_piece_is_read_whole(tmp_path):
+    """SCIA cuts its data into 512 000-byte pieces; a 43-case table ran on into the next block (phase 4)."""
+    from llsm.scia.esa_file import PIECE
+    first = top_level("C 01", flags(1, 1), id_list([1]))
+    second = top_level("C 02", flags(1, 1), id_list([2]))
+    head = table_block("case", [first])[:-64]
+    filler = PIECE - 2 - len(head) - second.find(name_bytes("C 02"))  # the u32 1 in front of the name is cut in two
+    whole = head + bytes(filler) + second + bytes(64)
+    model = read_loads(loads_file(tmp_path, [whole[:PIECE], whole[PIECE:]], {"case": 2}))
+    assert [c.name for c in model.cases] == ["C 01", "C 02"]

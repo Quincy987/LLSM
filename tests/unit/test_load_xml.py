@@ -71,3 +71,36 @@ def test_names_are_escaped():
     xml = build_load_update('G "1"', [LoadCaseRow("G <1>")], [])
     assert 'nm=\'G "1"\'' in xml and "G &lt;1&gt;" in xml
     ET.fromstring(xml)
+
+
+def test_surface_load_writes_every_column_up_to_the_geometry():
+    """With a gap SCIA read the geometry as another column; the value goes in q1 (S9, phase 4 verify)."""
+    from llsm.scia.load_xml import SurfaceForceRow
+    patch = SurfaceForceRow("C W1", "C", -937500.0, ((1.0, 1.0, 0.0), (1.4, 1.0, 0.0), (1.4, 1.4, 0.0), (1.0, 1.4, 0.0)))
+    root = ET.fromstring(build_load_update("G", [LoadCaseRow("C")], [], surfaces=[patch]))
+    table = next(t for t in root.iterfind(".//s:table", NS) if t.get("t") == "DataAddLoad.EP_SurfaceForceFree.1")
+    headers = [h.get("t") for h in table.find("s:h", NS)]
+    assert headers == ["Name", "Load case", "Direction", "Type", "Distribution", "q", "q1", "q2", "q3", "Validity",
+                       "Select", "System", "Location", "Table of geometry"]
+    obj = table.find("s:obj", NS)
+    assert obj.find("s:p6", NS).get("v") == "-937500"
+    rows = obj.find("s:p13", NS).findall("s:row", NS)
+    assert [(r.find("s:p0", NS).get("v"), r.find("s:p1", NS).get("v"), r.find("s:p3", NS).get("v")) for r in rows] == [
+        ("1", "1", "Line"), ("1.4", "1", "Line"), ("1.4", "1.4", "Line"), ("1", "1.4", "Line"),
+    ]
+
+
+def test_several_groups_in_one_update():
+    from llsm.scia.load_xml import build_groups_update
+    xml = build_groups_update([("G1", [LoadCaseRow("A 01"), LoadCaseRow("A 02")]), ("G2", [LoadCaseRow("B 01")])],
+                              [PointForceRow("B 01 W1", "B 01", -1.0, x=0.0, y=0.0)])
+    root = ET.fromstring(xml)
+    tables = {t.get("t"): t for t in root.iterfind(".//s:table", NS)}
+    cases = tables["DataSetScia.EP_LoadCase.1"].findall("s:obj", NS)
+    assert [(c.get("id"), c.find("s:p3", NS).get("n"), c.find("s:p3", NS).get("i")) for c in cases] == [
+        ("1", "G1", "1"), ("2", "G1", "1"), ("3", "G2", "2"),
+    ]
+    force = tables["DataAddLoad.EP_PointForceFree.1"].find("s:obj", NS)
+    assert force.find("s:p1", NS).get("i") == "3"
+    with pytest.raises(ValueError, match="unique"):
+        build_groups_update([("G", [LoadCaseRow("A")]), ("G", [LoadCaseRow("B")])], [])

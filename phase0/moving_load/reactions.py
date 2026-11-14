@@ -1,7 +1,11 @@
 """S3 on a file LLSM wrote: calculate a copy with one linear combination of the given cases
 and compare the sum of the column forces with the sum of the loads read back from the file.
 
-  python reactions.py MODEL.esa "LLSM-ML TS1" 3
+  python reactions.py MODEL.esa "LLSM-ML TS1" 3 [first]
+
+Point loads count with their value; free surface loads with their value times the part of their
+area that lies on the plate (a part beyond the deck edge does not act). ``first`` (default 1) is the
+number of the first case, to combine one case of a group alone.
 """
 from __future__ import annotations
 
@@ -14,15 +18,23 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parents[1] / "src"))
 
 from _common import WORK, run_esa_xml, work_copy  # noqa: E402
+from llsm.moving_load.plan import clip, polygon_area  # noqa: E402
 from llsm.scia.esa_file import read_loads  # noqa: E402
 from spike import internal_forces, result_class, write  # noqa: E402
 from xmlgen import Ref, combinations, project  # noqa: E402
 
 
-def main(model: Path, group: str, count: int) -> int:
+def on_plates(corners, plates) -> float:
+    """m2 of a polygon (m) that lies on the plates."""
+    window = [(x, y) for x, y, _ in corners]
+    return sum(polygon_area(clip([(x, y) for x, y, _ in p.outline], window)) for p in plates)
+
+
+def main(model: Path, group: str, count: int, first: int = 1) -> int:
     loads = read_loads(model)
-    cases = [f"{group} {k:02d}" for k in range(1, count + 1)]
+    cases = [f"{group} {k:02d}" for k in range(first, first + count)]
     total = -sum(l.value for l in loads.loads if any(l.name.startswith(c + " ") for c in cases))
+    total -= sum(s.value * on_plates(s.corners, loads.plates) for s in loads.surfaces if any(s.name.startswith(c + " ") for c in cases))
     refs = [Ref(100 + i, c) for i, c in enumerate(cases)]  # ids that are not in this document: resolved by name?
     xml = project("full.xml.def", combinations([("BGT1_kar", 3, [(r, 1.0) for r in refs])]), result_class("Alle BGT kar", Ref(1, "BGT1_kar")))
     copy = work_copy(model, "reactions_in.esa")
@@ -37,6 +49,8 @@ def main(model: Path, group: str, count: int) -> int:
         if r["Naam"].startswith("C"):
             columns.setdefault(r["Naam"], set()).add(round(float(r["N"].replace(",", ".")), 1))
     print({k: sorted(v) for k, v in columns.items()})
+    for k, v in sorted(columns.items()):
+        print(f"  {k}: {-next(iter(v)) / 1000:.2f} kN")
     if len(columns) != 4 or any(len(v) != 1 for v in columns.values()):
         print("RESULT: no usable column forces")
         return 1
@@ -47,4 +61,4 @@ def main(model: Path, group: str, count: int) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])))
+    raise SystemExit(main(Path(sys.argv[1]), sys.argv[2], int(sys.argv[3]), int(sys.argv[4]) if len(sys.argv) > 4 else 1))
