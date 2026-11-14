@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.12 — Results report of existing SCIA models (2026-11-14)
+
+### Added
+- **Rapport van een bestaand model.** `llsm report preview|write` en de MCP-tools
+  `report_preview` / `report_write` / `report_status` drukken het engineering report af dat in een
+  opgeslagen `.esa` staat (SCIA's eigen rapport, met tabellen, eenheden en figuren)
+  als PDF, Excel of RTF, zonder SCIA te openen en op een kopie: het model blijft
+  ongewijzigd. Het Excel-bestand wordt altijd gemaakt en teruggelezen: `ok` alleen
+  als elk resultaathoofdstuk resultaten bevat. Een rapport van het oude type
+  ("Geen ondersteunde taak", gemaakt vóór SCIA 17) of met lege resultaattabellen
+  wordt geweigerd, met de reden en wat het oplost; dan wordt de PDF niet eens
+  gemaakt. Een resultaatklasse zonder combinaties wordt apart gemeld en keurt het
+  rapport niet af. Met `calculate` rekent SCIA eerst een kopie lineair door; met
+  `cases_group` krijgt elk belastinggeval van een LLSM-groep (rijdende belasting)
+  een eigen hoofdstuk, via een combinatie en resultaatklasse per geval die alleen
+  op de kopie bestaan; zet SCIA die combinaties ook in de eigen klassen van het
+  model (zoals "Alle BGT"), dan meldt LLSM dat die hoofdstukken de losse gevallen
+  meetellen. Uitvoer als `<model>_rapport-NN.pdf` (+ `.xlsx`) naast het
+  model, nooit overschreven. In de chat loopt het afdrukken (5–15 min) als taak:
+  `report_write` start hem meteen en `report_status` wacht telkens tot 4 minuten,
+  omdat Claude Code een MCP-aanroep na 5 minuten afbreekt.
+
+### Fixed
+- **Sluit je het paneel terwijl SCIA nog werkt (een rapport, bedding of rijdende
+  belasting), dan stopt de server die ESA_XML-run nu ook**; eerder liep hij als wees
+  door. Een andere taak die dan start, hoort dat LLSM zelf SCIA gebruikt.
+
+### Verified
+- **Rapport** in `docs/verify/report.md`: via de MCP-server, de CLI en het echte
+  paneel (take 7); plaat 21 van 21 tabellen, kolomkrachten en 900 kN gelijk aan de
+  handberekening, 600 kN per geval van de rijdende belasting, een v19-model terecht
+  geweigerd; afsluiten tijdens een afdruk laat niets achter.
+
+### Changed
+- **Langere chatbeurten in het paneel:** een beurt mag 45 minuten duren in plaats
+  van 10, omdat de chat een rapport tot het eind volgt.
+
 ## v0.3.11 — Moving load on existing SCIA models (2026-11-12)
 
 ### Added

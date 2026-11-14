@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from xml.sax.saxutils import quoteattr
 
-from .esa_xml import LOADS_DEF_FILE
+from .esa_xml import LOADS_DEF_FILE, RESULT_CLASSES_DEF_FILE
 
 RELATION = {"standard": 0, "exclusive": 1, "together": 2}
 VARIABLE = 1  # load group "Load" and load case "Action type": 0 permanent, 1 variable
@@ -23,6 +23,16 @@ _GROUPS = ("{F9D4AA72-49D5-11D4-A3CF-000000000000}", "DataSetScia.EP_LoadGroup.1
 _CASES = ("{0908D21F-481F-11D4-AB84-00C06C452330}", "DataSetScia.EP_LoadCase.1", "CA2AF6CC-B980-4C45-AFE3-85EC125810E8")
 _FREE = ("{E03984FC-B420-4C03-8D2F-72EA2FAB147D}", "DataAddLoad.EP_PointForceFree.1", "9C68624A-8E5C-47BD-A150-2AEC783D8A93")
 _ON_BEAM = ("{BC16B3C2-F464-11D4-94D3-000000000000}", "DataAddLoad.EP_PointForceLine.1", "D7DC5706-2FCC-434E-9E37-8C0D0156F034")
+_COMBINATIONS = ("{C0FBF7E1-4A71-11D4-AB86-00C06C452330}", "DataSetSciaTom.EP_LoadCombi.1", "9F5CF12B-1690-400E-8030-62B13CE4E579")
+_RESULT_CLASSES = ("{8E5A5442-7217-460C-853D-9D35EC18FAB9}", "DataSetSciaTom.EP_SelectedLC.1", "84DFD127-4444-4378-A414-814FB757AE04")
+LINEAR_SLS = 3  # combination type "Lineair - BGT": the cases added up with their coefficients, nothing else
+# Ids for new combinations and result classes. A result class written with the id of an existing
+# one was stored as an extra class (report spike, second run), so new objects get ids far from
+# SCIA's own; objects that already exist are referred to by name with an id not in the document,
+# which SCIA resolves by name (phase0/moving_load/reactions.py: the combination of three existing
+# cases gave the 900 kN of their loads).
+_FIRST_NEW_ID = 9001
+_UNLISTED_ID = 8001
 
 
 def newton(kilonewton: float) -> float:
@@ -165,6 +175,53 @@ def build_load_update(
             for i, f in enumerate(on_beam)
         ]))
     body = "\n".join(parts)
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<project xmlns="http://www.scia.cz">
+   <def uri={quoteattr(def_name)}/>
+{body}
+</project>
+"""
+
+
+def build_case_classes_update(cases: list[str], def_name: str = RESULT_CLASSES_DEF_FILE.name) -> str:
+    """One linear combination (coefficient 1) and one result class per existing load case.
+
+    Both are named after the case, so a report item set to *all result classes* prints a
+    chapter per case. For a copy that is printed and thrown away: it adds objects the engineer
+    did not make.
+    """
+    if not cases:
+        raise ValueError("at least one load case")
+    if len(set(cases)) != len(cases):
+        raise ValueError("load case names must be unique")
+    combinations, classes = [], []
+    for i, case in enumerate(cases):
+        combo_id = _FIRST_NEW_ID + i
+        rows = (
+            f'               <row id="0">{_value(0, case)}{_value(1, 1.0)}{_ref(2, _UNLISTED_ID + i, case)}</row>'
+        )
+        combinations.append(_object(combo_id, case, [_value(0, case), _value(1, LINEAR_SLS), f"""<p2 t="">
+             <h>
+               <h0 t="Name"/>
+               <h1 t="Coeff."/>
+               <h2 t="Load case ID"/>
+             </h>
+{rows}
+           </p2>"""]))
+        classes.append(_object(_FIRST_NEW_ID + i, case, [_value(0, case), f"""<p1 t="">
+             <h>
+               <h0 t="Load combi ID"/>
+               <h1 t="Nonlinear combi ID"/>
+               <h2 t="Case_Type"/>
+               <h3 t="Case_Model"/>
+               <h4 t="Case_tUS"/>
+             </h>
+             <row id="0">{_ref(0, combo_id, case)}{_value(2, 1001)}{_value(3, 1)}{_value(4, 1)}</row>
+           </p1>"""]))
+    body = "\n".join([
+        _table(_COMBINATIONS, "Combinations", ["Name", "Type", "Load cases"], combinations),
+        _table(_RESULT_CLASSES, "Result classes", ["Name", "Case"], classes),
+    ])
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <project xmlns="http://www.scia.cz">
    <def uri={quoteattr(def_name)}/>

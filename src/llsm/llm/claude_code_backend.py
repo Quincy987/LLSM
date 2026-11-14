@@ -28,6 +28,11 @@ from pathlib import Path
 
 from ..answer_rules import ANSWER_RULES
 
+# A report print takes 10-15 min on a 36 MB model (calculate + XLSX + PDF), so a turn may run that
+# long. The CLI ends one MCP call after 300 s (seen on 2.1.318, MCP_TOOL_TIMEOUT did not change it),
+# so the print itself is a job the chat polls with report_status; only the turn needs the room.
+TURN_TIMEOUT_S = 2700
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent  # src/llsm/llm/ -> repo
 DEFAULT_MODEL = "opus"  # alias for latest Opus (currently 4.7)
 
@@ -136,7 +141,7 @@ class ClaudeCodeBackend:
         session_id: str | None = None,
         verbose: bool = False,
         cwd: Path | None = None,
-        timeout_s: int = 600,
+        timeout_s: int = TURN_TIMEOUT_S,
         mcp_config_json: str | None = None,
         session_started: bool = False,
         on_session_rotated=None,  # callback(new_session_id: str) when we rotate

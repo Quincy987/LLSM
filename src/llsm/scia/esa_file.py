@@ -460,6 +460,70 @@ def read_loads(path: Path) -> LoadModel:
     )
 
 
+# --- Engineering reports and stored results (docs/verify/report-route.md) ------------------
+#
+# Each engineering report keeps its header and item tree as small XML blocks
+# (DOCUMENTVIEWDATASTORAGE_*). <Name> is what ESA_XML's -d switch takes. The item tree holds
+# ids only: what an item prints, and whether it is of the old post-processor type, is not in
+# the file; only printing the report shows it.
+
+_REPORT_MARK = b"DOCUMENTVIEWDATASTORAGE"
+_REPORT_INFO = re.compile(r"<DOCUMENTVIEWDATASTORAGE_DOCUMENTINFO\b.*?<Name>([^<]*)</Name>(?:.*?<CountOfPages>(\d+)</CountOfPages>)?", re.S)
+_REPORT_ITEMS = re.compile(r"<DOCUMENTVIEWDATASTORAGE_ITEMS_ORDER\b")
+_ITEM = re.compile(r"<DocumentItem\b")
+# SCIA logs a count of these when results are stored: 4 on the plate with 4 load cases after LIN,
+# 32 on a real model with 8 cases and 22 combinations. A count of result sets, not of cases.
+RESULT_MARKERS = ("EP_Results.IntForcesAddCases.1", "EP_Results.DeforAddCases.1")
+NONLINEAR_MARKERS = ("DataSetSciaTom.EP_NonlinearCombi.1",)
+
+
+@dataclass(frozen=True)
+class StoredReport:
+    name: str
+    pages: int | None  # as SCIA last laid it out
+    items: int | None  # entries in its item tree; None when the tree block was not found
+
+
+@dataclass
+class ReportIndex:
+    reports: list[StoredReport]
+    counts: dict[str, int]  # SCIA's object log: class progid -> count
+    saved_by: str | None
+
+    @property
+    def result_sets(self) -> int:
+        return max((self.counts.get(m, 0) for m in RESULT_MARKERS), default=0)
+
+    @property
+    def nonlinear(self) -> list[str]:
+        return [f"{m} ({self.counts[m]})" for m in NONLINEAR_MARKERS if self.counts.get(m)]
+
+
+def read_report_index(path: Path) -> ReportIndex:
+    """The engineering reports stored in a model, its object counts and version, in one pass."""
+    infos: list[tuple[str, int | None]] = []
+    trees: list[int] = []
+    counts: dict[str, int] = {}
+    stamps: set[str] = set()
+    for chunk in iter_blocks(Path(path).read_bytes()):
+        counts.update((m.group(2).decode(), int(m.group(1))) for m in _ANY_OBJECT_LOG.finditer(chunk))
+        stamps |= _stamps_in(chunk)
+        if _REPORT_MARK not in chunk[:400]:
+            continue
+        text = chunk.decode("utf-8", "replace")
+        info = _REPORT_INFO.search(text)
+        if info:
+            infos.append((info.group(1).strip(), int(info.group(2)) if info.group(2) else None))
+        elif _REPORT_ITEMS.search(text):
+            trees.append(len(_ITEM.findall(text)))
+    # The info block and the tree block of one report are written one after the other.
+    reports = [
+        StoredReport(name, pages, trees[i] if len(trees) == len(infos) else None)
+        for i, (name, pages) in enumerate(infos)
+    ]
+    return ReportIndex(reports, counts, _latest(stamps) if stamps else None)
+
+
 def saved_by_version(path: Path) -> str | None:
     """The version stamp of the SCIA that last saved the file, or None."""
     stamps: set[str] = set()

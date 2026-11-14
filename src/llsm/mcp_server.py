@@ -48,8 +48,10 @@ from mcp.server.fastmcp import FastMCP
 
 from . import bedding as bedding_tools
 from . import moving_load as moving_load_tools
+from . import report as report_tools
 from .answer_rules import ANSWER_RULES
 from .mcp_guard import GuardMiddleware
+from .scia import esa_xml
 from .scia.autoclick import SciaDialogPending
 from .scia.loader import load as load_scia
 from .scia import tools as scia_tools
@@ -103,8 +105,11 @@ def _run_tool(fn: Callable, args: tuple, kwargs: dict):
     return result
 
 
-def _async_tool(mcp: FastMCP, fn: Callable):
+def _async_tool(mcp: FastMCP, fn: Callable, executor: ThreadPoolExecutor | None = _TOOL_EXEC):
     """Register `fn` as an MCP tool that runs in the worker executor.
+
+    ``executor=None`` runs it on the loop's default pool instead: for a tool that only waits
+    (report_status), so it neither blocks nor queues behind the one worker the other tools share.
 
     Preserves the function's signature (via functools.wraps) so FastMCP can
     derive the JSON schema from the original type hints — verified against
@@ -114,7 +119,7 @@ def _async_tool(mcp: FastMCP, fn: Callable):
     async def _wrapped(*args, **kwargs):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            _TOOL_EXEC, lambda: _run_tool(fn, args, kwargs)
+            executor, lambda: _run_tool(fn, args, kwargs)
         )
     mcp.tool()(_wrapped)
     return _wrapped
@@ -132,6 +137,8 @@ INSTRUCTIONS_BASE = (
     "for gravity-like downward loads use direction='Z' with a NEGATIVE magnitude.\n\n"
     "To put soil beddings on the piles of an existing saved model, use bedding_preview, then bedding_apply.\n\n"
     "For moving traffic positions on an existing saved model: moving_load_preview, then moving_load_apply.\n\n"
+    "For a results report of an existing saved model: report_preview, then report_write, "
+    "then report_status until it is done.\n\n"
     + ANSWER_RULES
 )
 
@@ -174,6 +181,15 @@ def _teardown(reason: str = "exit") -> None:
         _ctx.close()
     except Exception as e:
         print(f"[mcp] teardown error ({reason}): {e}", file=sys.stderr)
+    try:
+        stopped = esa_xml.stop_all()  # a report print must not outlive the server that started it
+        if stopped:
+            print(f"[mcp] teardown ({reason}): stopped {stopped} ESA_XML run(s) of this server", file=sys.stderr)
+            job = report_tools.jobs.running()
+            if job is not None:  # let it delete its working copy (tens of MB) before the hard exit
+                job.done.wait(10)
+    except Exception as e:
+        print(f"[mcp] teardown error stopping ESA_XML ({reason}): {e}", file=sys.stderr)
 
 
 atexit.register(lambda: _teardown("atexit"))
@@ -451,9 +467,57 @@ def _register_common_tools(mcp: FastMCP) -> None:
             out_dir=Path(out_dir) if out_dir else None,
         )
 
+    # --- Results report of a saved model ---
+    def report_preview(model_path: str, report_name: str | None = None, formats: list[str] | None = None,
+                       calculate: bool = False, cases_group: str | None = None) -> dict:
+        """What report_write would print from a saved .esa, from the file alone. Starts no SCIA, changes nothing.
+
+        Always call this first. Lists the engineering reports stored in the model, whether results
+        are stored, the planned output files and the time it takes (several minutes per format).
+        Whether the report's results items really print results is only known after report_write."""
+        return report_tools.preview_report(
+            Path(model_path), report_tools.ReportRequest(report_name, formats or ["pdf"], calculate, cases_group)
+        )
+
+    def report_write(model_path: str, report_name: str | None = None, formats: list[str] | None = None,
+                     calculate: bool = False, cases_group: str | None = None, out_dir: str | None = None) -> dict:
+        """Start printing the engineering report stored in a saved .esa (SCIA's own report), checked for results.
+
+        Returns at once with a `job`: the print takes 5-15 minutes. Then call report_status(job) until
+        its status is "done" (each call waits up to 4 minutes); tell the engineer it is printing meanwhile.
+        SCIA must be closed. Prints on a copy: the model is never changed. formats: pdf (default), xlsx,
+        rtf; the XLSX is always made, because the check reads it. report_name: needed when the model has
+        several reports. calculate: a linear calculation (LIN) of a copy first, for a model without
+        (fresh) results. cases_group: a chapter per load case of that group (LLSM's moving-load groups,
+        "LLSM-ML <name>"); needs calculate; its result classes exist on the copy only. Problems found
+        from the file alone come back at once, without a job."""
+        path = Path(model_path)
+        request = report_tools.ReportRequest(report_name, formats or ["pdf"], calculate, cases_group)
+        preview = report_tools.preview_report(path, request, out_dir=Path(out_dir) if out_dir else None)
+        if not preview["ok"]:
+            return preview
+        try:
+            job = report_tools.jobs.start(str(path), lambda progress: report_tools.write_report(
+                path, request, out_dir=Path(out_dir) if out_dir else None, progress=progress))
+        except RuntimeError as exc:
+            return {**preview, "ok": False, "problems": [str(exc)]}
+        return {**job.status(), "model": preview["model"], "saved_by": preview["saved_by"],
+                "report": preview["report"], "formats": preview["formats"],
+                "minutes_estimated": preview.get("minutes_estimated"), "outputs_planned": preview.get("outputs_planned")}
+
+    def report_status(job: str, wait_s: float = 240) -> dict:
+        """Wait (at most 4 minutes) for a print started by report_write, and return where it is.
+
+        status "running" (ok is null: not known yet): call again. status "done": the full result. Trust only `ok`, `chapters`
+        (results tables written / expected / empty / old type, and classes without combinations) and
+        `problems`; report `outputs` to the engineer. A report made before SCIA 17 prints no results:
+        then `ok` is false and the problems say what to do."""
+        return report_tools.jobs.wait(job, wait_s)
+
     for _fn in (
         bedding_preview, bedding_apply,
         moving_load_preview, moving_load_apply,
+        report_preview, report_write,
         new_model, add_material, add_rectangular_section, add_node, add_beam,
         add_fixed_support, add_pinned_support, add_roller_support,
         add_load_group, add_load_case, add_line_load,
@@ -464,6 +528,8 @@ def _register_common_tools(mcp: FastMCP) -> None:
         get_beam_inner_forces, get_beam_deflection,
     ):
         _async_tool(mcp, _fn)
+    # Two status calls at once must not queue behind each other (2 x 240 s > the CLI's 300 s).
+    _async_tool(mcp, report_status, executor=None)
 
 
 def _register_stdio_only_tools(mcp: FastMCP) -> None:

@@ -35,6 +35,12 @@ Plan: `docs/09-plan-v0.4-existing-models.md` (order) + `docs/08-plan-v0.4-vibemo
 - [ ] Demo video take 6 + GUI picture of case 02: `phase0/moving_load/demo/take6.py` (needs a free desktop; calibrate the load-case box first)
 - [ ] Mail Tom and Sophie the five questions (docs/10 §5): model copy, vehicle, deck type, skew, naming
 
+## Report (docs/13, verify: docs/verify/report.md)
+- [x] Spike: SCIA's own engineering report prints headless; old-type items found from the printed XLSX
+- [x] `llsm report` + MCP tools: print on a copy, XLSX check, chapter per moving-load case (copy only)
+- [ ] Standard LLSM report template made in SCIA 24, and gate 4.1: does it pick up another model's members and classes (needs the GUI)
+- [ ] Ask Sebastiaan and Berber the questions of docs/13 section 6 (chapters, per part or per class, extremes or full tables, Word or PDF)
+
 ## People
 - [ ] Reply to the hands-on engineer: real geo table + model copy; confirm GEF; k variant/units
 - [ ] Ask constructeurs how forces go to IDEA / peaks

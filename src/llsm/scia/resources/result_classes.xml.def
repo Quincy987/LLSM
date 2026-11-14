@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+
+<def_project xmlns="http://www.scia.cz">
+   <def_container id="{F9D4AA72-49D5-11D4-A3CF-000000000000}" clsid="{F9D4AA72-49D5-11D4-A3CF-000000000000}" progid="DataSetScia.EP_LoadGroup.1" library="yes">
+      <def_table id="196E8F76-7A40-441C-81DB-6476DAC8BCFF" name="XML\default" type="vertical" clsid="{F9D4AA72-49D5-11D4-A3CF-000000000000}" progid="DataSetScia.EP_LoadGroup.1" size="4">
+         
+         <def_property x="0" name="Name" type="string" id="{4364BC01-AAB7-11D4-B3D9-00104BC3B531}"/>
+         
+         
+         <def_property x="1" name="Relation" type="enum" flag="262144" id="{49F9F891-83EC-11D4-B37D-000000000000}">
+         <def_enum size="0"/>
+         </def_property>
+         
+         
+         <def_property x="2" name="Load" type="enum" flag="262144" id="{49F9F892-83EC-11D4-B37D-000000000000}">
+         <def_enum size="0"/>
+         </def_property>
+		 
+		 
+		 <def_property x="3" name="Type" type="enum" flag="262144" id="{49F9F896-83EC-11D4-B37D-000000000000}">
+         <def_enum size="13">
+         <it_enum v="0" t="Cat A : Domestic"/>
+         <it_enum v="1" t="Cat B : Offices"/>
+         <it_enum v="2" t="Cat C : Congregation"/>
+         <it_enum v="3" t="Cat D : Shopping "/>
+         <it_enum v="4" t="Cat E : Storage"/>
+         <it_enum v="5" t="Cat F : Vehicle &lt;30kN"/>
+         <it_enum v="6" t="Cat G : Vehicle &gt;30kN"/>
+         <it_enum v="7" t="Cat H : Roofs"/>
+         <it_enum v="8" t="Snow"/>
+         <it_enum v="11" t="Wind"/>
+         <it_enum v="12" t="Temperature"/>
+         <it_enum v="20" t="Rain water"/>
+         <it_enum v="21" t="Construction loads"/>
+         </def_enum>
+         </def_property>
+         
+      </def_table>
+   </def_container>
+   <def_container id="{0908D21F-481F-11D4-AB84-00C06C452330}" clsid="{0908D21F-481F-11D4-AB84-00C06C452330}" progid="DataSetScia.EP_LoadCase.1" library="yes">
+      <def_table id="CA2AF6CC-B980-4C45-AFE3-85EC125810E8" name="XML\default" type="vertical" clsid="{0908D21F-481F-11D4-AB84-00C06C452330}" progid="DataSetScia.EP_LoadCase.1" size="78">
+
+         <def_property x="0" name="Name" type="string" id="{4364BC01-AAB7-11D4-B3D9-00104BC3B531}"/>
+
+
+         <def_property x="1" name="Action type" type="enum" flag="262144" id="{11D48DC0-E0F4-11D4-A482-00C06C542707}">
+         <def_enum size="0"/>
+         </def_property>
+
+
+         <def_property x="2" name="Description" type="string" id="{11D48DC8-E0F4-11D4-A482-00C06C542707}"/>
+
+
+         <def_property x="3" name="Load group" type="ref" flag="131072" id="{AA694EDC-83EA-11D4-B37D-000000000000}">
+         <def_ref id="{F9D4AA72-49D5-11D4-A3CF-000000000000}" progid="DataSetScia.EP_LoadGroup.1"/>
+         </def_property>
+
+
+         <def_property x="4" name="Load type" type="enum" flag="262144" id="{11D48DC1-E0F4-11D4-A482-00C06C542707}">
+         <def_enum size="0"/>
+         </def_property>
+
+
+         <def_property x="5" name="Direction" type="enum" flag="262144" id="{11D48DC3-E0F4-11D4-A482-00C06C542707}">
+         <def_enum size="0"/>
+         </def_property>
+
+
+         <def_property x="6" name="Specification" type="enum" flag="262144" id="{11D48DC2-E0F4-11D4-A482-00C06C542707}">
+         <def_enum size="0"/>
+         </def_property>
+
+
+         <def_property x="7" name="Duration" type="enum" flag="262144" id="{AA694ED6-83EA-11D4-B37D-000000000000}">
+         <def_enum size="0"/>
+         </def_property>
+
+
+         <def_property x="8" name="Master load case" type="enum" flag="262144" id="{11D48DC5-E0F4-11D4-A482-00C06C542707}">
+         <def_enum size="0"/>
+         </def_property>
+
+      </def_table>
+   </def_container>
+   <def_container id="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}" clsid="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}" progid="DataSetSciaTom.EP_LoadCombi.1" library="yes">
+      <def_table id="9F5CF12B-1690-400E-8030-62B13CE4E579" name="XML\default" type="vertical" clsid="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}" progid="DataSetSciaTom.EP_LoadCombi.1" size="4">
+         
+         <def_property x="0" name="Name" type="string" id="{4364BC01-AAB7-11D4-B3D9-00104BC3B531}"/>
+         
+         
+         <def_property x="1" name="Type" type="enum" id="{B4E52211-83EE-11D4-B37D-000000000000}">
+         <def_enum size="12">
+         <it_enum v="0" t="Envelope - ultimate"/>
+         <it_enum v="1" t="Envelope - serviceability"/>
+         <it_enum v="2" t="Linear - ultimate"/>
+         <it_enum v="3" t="Linear - serviceability"/>
+         <it_enum v="4" t="EN-ULS (STR/GEO) Set B"/>
+         <it_enum v="5" t="EN-Accidental 1"/>
+         <it_enum v="6" t="EN-Accidental 2"/>
+         <it_enum v="7" t="EN-Seismic"/>
+         <it_enum v="8" t="EN-SLS Characteristic"/>
+         <it_enum v="9" t="EN-SLS Frequent"/>
+         <it_enum v="10" t="EN-SLS Quasi-permanent"/>
+         <it_enum v="11" t="EN-ULS (STR/GEO) Set C"/>
+         </def_enum>
+         </def_property>
+         
+         
+         <def_property x="2" name="Load cases" type="table" id="{1DC504C3-85BE-4323-B1EB-BADB2FA6A82B}">
+         <def_subtable size="3" type="vertical">
+         <def_property x="0" name="Name" type="string" id="{389B00F7-5EE9-428B-BE8A-15727A8E57D1}"/>
+
+         <def_property x="1" name="Coeff." type="param" id="{138BF88D-1C80-4702-BE41-9E068C4F6131}"/>
+
+         <def_property x="2" name="Load case ID" type="ref" id="{138BF88E-1C80-4702-BE41-9E068C4F6131}">
+         <def_ref id="{0908D21F-481F-11D4-AB84-00C06C452330}" progid="DataSetScia.EP_LoadCase.1"/>
+         </def_property>
+         
+         </def_subtable>
+         </def_property>
+         
+      </def_table>
+   </def_container>
+   <def_container id="{1E28F6C2-DD8B-11D5-AA60-0050FC1D5C09}" clsid="{1E28F6C2-DD8B-11D5-AA60-0050FC1D5C09}" progid="DataSetSciaTom.EP_NonlinearCombi.1" library="yes">
+      <def_table id="B3CC854D-5A84-4D42-B86E-87096C1654AF" name="XML\default" type="vertical" clsid="{1E28F6C2-DD8B-11D5-AA60-0050FC1D5C09}" progid="DataSetSciaTom.EP_NonlinearCombi.1" size="4">
+
+         <def_property x="0" name="Type" type="enum" id="{4578F281-83EE-11D4-B37D-000000000000}">
+         <def_enum size="2">
+         <it_enum v="0" t="Ultimate"/>
+         <it_enum v="1" t="Serviceability"/>
+         </def_enum>
+         </def_property>
+
+
+         <def_property x="1" name="Load cases" type="table" id="{1DC504C3-85BE-4323-B1EB-BADB2FA6A82B}">
+         <def_subtable size="3" type="vertical">
+         <def_property x="0" name="Name" type="string" id="{389B00F7-5EE9-428B-BE8A-15727A8E57D1}"/>
+
+         <def_property x="1" name="Coeff." type="param" id="{138BF88D-1C80-4702-BE41-9E068C4F6131}"/>
+
+         <def_property x="2" name="Load case ID" type="ref" id="{138BF88E-1C80-4702-BE41-9E068C4F6131}">
+         <def_ref id="{0908D21F-481F-11D4-AB84-00C06C452330}" progid="DataSetScia.EP_LoadCase.1"/>
+         </def_property>
+
+         </def_subtable>
+         </def_property>
+
+      </def_table>
+   </def_container>
+   <def_container id="{8E5A5442-7217-460C-853D-9D35EC18FAB9}" clsid="{8E5A5442-7217-460C-853D-9D35EC18FAB9}" progid="DataSetSciaTom.EP_SelectedLC.1">
+      <def_table id="84DFD127-4444-4378-A414-814FB757AE04" name="XML\default" type="vertical" clsid="{8E5A5442-7217-460C-853D-9D35EC18FAB9}" progid="DataSetSciaTom.EP_SelectedLC.1" size="13">
+
+         <def_property x="0" name="Name" type="string" id="{4364BC01-AAB7-11D4-B3D9-00104BC3B531}"/>
+
+
+         <def_property x="1" name="Case" type="table" id="{7FFBE0C1-5215-461E-98C4-282DA7B38F1A}">
+         <def_subtable size="5" type="vertical">
+         <def_property x="0" name="Load combi ID" type="ref" id="{DCE3A0FB-C21C-4590-8385-018AA5C52FA8}">
+         <def_ref id="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}" progid="DataSetSciaTom.EP_LoadCombi.1"/>
+         </def_property>
+
+         <def_property x="1" name="Nonlinear combi ID" type="ref" id="{F255996E-B42E-4031-9FDD-D92BD5AA6FDF}">
+         <def_ref id="{1E28F6C2-DD8B-11D5-AA60-0050FC1D5C09}" progid="DataSetSciaTom.EP_NonlinearCombi.1"/>
+         </def_property>
+
+         <def_property x="2" name="Case_Type" type="integer" id="{407B48D5-BB97-4C60-8784-D9BA7BE15B47}"/>
+
+         <def_property x="3" name="Case_Model" type="integer" id="{0C9F774F-7BCB-41DD-BE28-E29CFCFDFEEE}"/>
+
+         <def_property x="4" name="Case_tUS" type="integer" id="{2F490ABC-1D7A-4EF3-8157-B28A6C9A1F1A}"/>
+
+         </def_subtable>
+         </def_property>
+
+
+         <def_property x="2" name="AllType" type="table" id="{A90512F3-5997-4052-A7EC-CDAB209F6D29}">
+         <def_subtable size="5" type="vertical">
+         <def_property x="0" name="All Type Name" type="string" id="{EB6256B0-85C4-4E6F-8BD0-43448ED07DD2}"/>
+
+         <def_property x="1" name="All Type Type" type="integer" id="{1C0B7202-9C8A-4C93-936E-D82F5875303D}"/>
+
+         <def_property x="2" name="All Type tUS" type="integer" id="{52FE45E0-E26A-4B24-B263-32610AD1A5F3}"/>
+
+         <def_property x="3" name="All Type FilterType1" type="integer" id="{831FD8CA-A4B3-4B6E-965F-173C24CAACA3}"/>
+
+         <def_property x="4" name="All Type FilterType2" type="integer" id="{ACB0B00A-081E-4DBF-98D9-C6653FDFA1A6}"/>
+
+         </def_subtable>
+         </def_property>
+         
+      </def_table>
+   </def_container>
+</def_project>
