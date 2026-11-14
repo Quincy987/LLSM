@@ -349,7 +349,7 @@ class LoadModel:
     warnings: list[str] = field(default_factory=list)
     surfaces: list[SurfaceLoad] = field(default_factory=list)
     # Free surface loads stored in a layout this reader has not measured (another distribution, selected
-    # members, ...): known by name only. Before v0.4.0 none were read, and such a model must still open.
+    # members, ...): known by name only. Before the traffic-rule route none were read, and such a model must still open.
     unread_surfaces: list[str] = field(default_factory=list)
 
     def names(self) -> set[str]:

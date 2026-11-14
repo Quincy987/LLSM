@@ -6,8 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## v0.4.0 — Traffic rules of the plaatbruggen toetsmodel (2026-11-15)
-
 ### Added
 - **Verkeer per rijstrook volgens het toetsmodel plaatbruggen.** `moving_load_preview` /
   `moving_load_apply` en `llsm moving-load` met `rule='toetsmodel'` (CLI `--rule toetsmodel

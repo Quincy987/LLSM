@@ -196,7 +196,7 @@ def test_free_surface_loads_are_read(tmp_path, corners):
 
 
 def test_surface_record_in_another_layout_is_known_by_name_only(tmp_path):
-    """Someone's surface load in a layout not measured must not block the model (none were read before v0.4.0)."""
+    """Someone's surface load in a layout not measured must not block the model (none were read before the traffic-rule route)."""
     broken = bytearray(surface_body(9, 1, -1.0, ((0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0))))
     struct.pack_into("<I", broken, 47, 5)  # says five corners: the case GUID is not where five would put it
     blocks = [table_block("surface", [top_level("X", bytes(broken))])]
