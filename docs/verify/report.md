@@ -98,6 +98,7 @@ The real panel, run from this build (`phase0/report/demo/take7.py`), one typed m
 | ESA_XML exit ≠ 0 | unit test | refused, log tail in the problem; nothing written |
 | Server shut down during a print | `phase0/report/verify_shutdown.py`, live | `report_write` started a job, ESA_XML ran; `/admin/shutdown` (the panel's first layer): server exit 0, no ESA_XML left, and (after a fix: the teardown now waits for the job to clean up before the hard exit) no 36 MB working copy left in Temp |
 | Job route after the second review | `phase0/report/verify_job.py`, live | `report_write` returned in 1.2 s (running, `ok` null, version stamp); one `report_status` returned done after 188 s: 21 of 21 tables, XLSX next to the model |
+| Final run after the third review | `verify_job.py` ×2 + CLI, live | plate: `report_write` 2.9 s, done after 183 s, 21 of 21; v19.1 copy: done after 217 s, refused, 10 old-type items, fix text, `_FAILED` XLSX, no PDF; CLI preview plans `_rapport-02` next to an existing `-01`. No ESA_XML, port or temp folder left |
 | Two status calls at once | in-process, MCP server | 3.0 s wall time for two 3-s waits and another tool: the waits no longer queue on the shared worker |
 | SCIA open | `esa_xml.run_on_copy` → `assert_no_scia` | not triggered live: opening SCIA on the desktop for it was not worth the risk; the guard is the one bedding and moving load use (`tests/unit/test_esa_xml.py`) |
 | 0-byte output | — | not reproducible with `-sd` (only `-tTXT` did it in the spike); the check stays in the code |

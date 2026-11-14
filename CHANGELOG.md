@@ -27,8 +27,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   omdat Claude Code een MCP-aanroep na 5 minuten afbreekt.
 
 ### Fixed
-- **Sluit je het paneel terwijl SCIA nog afdrukt, dan stopt de server die afdruk
-  nu ook** (eerder bleef ESA_XML als wees doorlopen).
+- **Sluit je het paneel terwijl SCIA nog werkt (een rapport, bedding of rijdende
+  belasting), dan stopt de server die ESA_XML-run nu ook**; eerder liep hij als wees
+  door. Een andere taak die dan start, hoort dat LLSM zelf SCIA gebruikt.
+
+### Verified
+- **Rapport** in `docs/verify/report.md`: via de MCP-server, de CLI en het echte
+  paneel (take 7); plaat 21 van 21 tabellen, kolomkrachten en 900 kN gelijk aan de
+  handberekening, 600 kN per geval van de rijdende belasting, een v19-model terecht
+  geweigerd; afsluiten tijdens een afdruk laat niets achter.
 
 ### Changed
 - **Langere chatbeurten in het paneel:** een beurt mag 45 minuten duren in plaats
