@@ -1,9 +1,14 @@
-"""Turn a vehicle, a road path and a step into one load case per position, checked against the model."""
+"""Turn a vehicle, a road path and its positions into one load case per position, checked against the model.
+
+The positions come from an even step (``step_mm``) or are given (``fronts_mm``, from a traffic rule). Wheels are
+point loads, or square patches written as free surface loads (``contact='surface'``, plate decks only).
+"""
 from __future__ import annotations
 
 import math
 import re
 from dataclasses import dataclass, field
+from dataclasses import replace as replace_fields
 
 from ..scia.esa_file import LoadModel, Member, Plate
 from .path import RoadPath, left_of
@@ -15,6 +20,7 @@ _STEP_TOLERANCE = 0.01  # mm: a step that leaves less than this over still divid
 _DECK_TOLERANCE = 1.0  # mm: a wheel this close to the deck edge still counts as on it
 _AXIS_TOLERANCE = 1.0  # mm: how far the path may run beside a beam deck's axis
 _MIN_PLAN_FRACTION = 0.5  # a 2D member steeper than 60 degrees is a wall, not a deck
+_MIN_OVERLAP_MM2 = 1.0  # a wheel patch overlapping the deck by less than this is off it
 _MAX_POSITIONS = 100_000  # far past MAX_CASES: a step typed in m instead of mm, not a real request
 
 
@@ -22,9 +28,12 @@ _MAX_POSITIONS = 100_000  # far past MAX_CASES: a step typed in m instead of mm,
 class PlannedCase:
     name: str
     front_chainage_mm: float
+    title: str | None = None  # a rule's own case title, e.g. the toetsmodel's "rs 1 - Conf. A - x = 3 m"
 
     @property
     def description(self) -> str:
+        if self.title:
+            return self.title
         return f"LLSM moving load: front axle at {self.front_chainage_mm:.0f} mm along the path"
 
 
@@ -41,6 +50,33 @@ class PlannedLoad:
     position: float | None = None  # ... at this relative position from its start
 
 
+@dataclass(frozen=True)
+class PlannedSurface:
+    """A wheel patch: a uniform free surface load over a polygon in plan."""
+
+    name: str
+    case: str
+    pressure_kn_m2: float  # negative: downward
+    corners_mm: tuple[tuple[float, float], ...]
+    z_mm: float = 0.0
+    on_deck_m2: float | None = None  # the part of the patch over the deck; None: all of it
+
+    @property
+    def area_m2(self) -> float:
+        return polygon_area(self.corners_mm) / 1e6
+
+    @property
+    def value_kn(self) -> float:
+        """The force that acts: a part beyond the deck edge does not (phase 4 verify, run 3)."""
+        area = self.area_m2 if self.on_deck_m2 is None else self.on_deck_m2
+        return self.pressure_kn_m2 * area
+
+    @property
+    def centre_mm(self) -> tuple[float, float]:
+        n = len(self.corners_mm)
+        return (sum(c[0] for c in self.corners_mm) / n, sum(c[1] for c in self.corners_mm) / n)
+
+
 @dataclass
 class MovingLoadPlan:
     group: str
@@ -48,25 +84,39 @@ class MovingLoadPlan:
     deck: str
     cases: list[PlannedCase] = field(default_factory=list)
     loads: list[PlannedLoad] = field(default_factory=list)
+    surfaces: list[PlannedSurface] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    left_out: list[str] = field(default_factory=list)  # wheels off the deck, left out by the rule
+    dropped: list[str] = field(default_factory=list)  # positions with no wheel on the deck
+    partly_off: int = 0  # patches written that reach beyond the deck edge
 
     def loads_of(self, case: str) -> list[PlannedLoad]:
         return [load for load in self.loads if load.case == case]
+
+    def surfaces_of(self, case: str) -> list[PlannedSurface]:
+        return [s for s in self.surfaces if s.case == case]
+
+    def names(self) -> set[str]:
+        return {self.group, *(c.name for c in self.cases), *(l.name for l in self.loads), *(s.name for s in self.surfaces)}
 
     def preview_table(self) -> list[dict]:
         rows = []
         for case in self.cases:
             loads = self.loads_of(case.name)
-            first = loads[0] if loads else None
-            rows.append({
+            patches = self.surfaces_of(case.name)
+            first = (loads[0].x_mm, loads[0].y_mm) if loads else patches[0].centre_mm if patches else None
+            row = {
                 "case": case.name,
                 "front_axle_along_path_mm": round(case.front_chainage_mm, 1),
-                "loads": len(loads),
-                "total_kN": round(sum(load.value_kn for load in loads), 3),
-                "first_load_x_mm": round(first.x_mm, 1) if first else None,
-                "first_load_y_mm": round(first.y_mm, 1) if first else None,
-            })
+                "loads": len(loads) + len(patches),
+                "total_kN": round(sum(load.value_kn for load in loads) + sum(p.value_kn for p in patches), 3),
+                "first_load_x_mm": round(first[0], 1) if first else None,
+                "first_load_y_mm": round(first[1], 1) if first else None,
+            }
+            if case.title:
+                row["title"] = case.title
+            rows.append(row)
         return rows
 
 
@@ -142,6 +192,68 @@ def _edge_distance(p, a, b) -> float:
     return math.dist(p, (a[0] + t * dx, a[1] + t * dy))
 
 
+def polygon_area(points) -> float:
+    """Area of a simple polygon in plan (shoelace), >= 0."""
+    return abs(_signed_area(points)) if len(points) >= 3 else 0.0
+
+
+def _signed_area(points) -> float:
+    points = list(points)
+    return sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(points, [*points[1:], points[0]])) / 2
+
+
+def clip(subject, window) -> list[tuple[float, float]]:
+    """``subject`` (any simple polygon) cut to the convex polygon ``window`` (Sutherland-Hodgman).
+
+    For a concave subject the result may run along the window's edge twice; its area is still right.
+    """
+    window = list(window)
+    if _signed_area(window) < 0:
+        window.reverse()
+    out = [tuple(p) for p in subject]
+    for a, b in zip(window, [*window[1:], window[0]]):
+        if not out:
+            break
+
+        def inside(q, a=a, b=b) -> bool:
+            return (b[0] - a[0]) * (q[1] - a[1]) - (b[1] - a[1]) * (q[0] - a[0]) >= 0
+
+        previous, kept = out[-1], []
+        for current in out:
+            if inside(current):
+                if not inside(previous):
+                    kept.append(_crossing(previous, current, a, b))
+                kept.append(current)
+            elif inside(previous):
+                kept.append(_crossing(previous, current, a, b))
+            previous = current
+        out = kept
+    return out
+
+
+def _crossing(p, q, a, b) -> tuple[float, float]:
+    """Where segment p-q crosses the line through a and b."""
+    dx, dy = q[0] - p[0], q[1] - p[1]
+    ex, ey = b[0] - a[0], b[1] - a[1]
+    denominator = dx * ey - dy * ex
+    t = 0.0 if denominator == 0 else ((a[0] - p[0]) * ey - (a[1] - p[1]) * ex) / denominator
+    return (p[0] + t * dx, p[1] + t * dy)
+
+
+def wheel_patch(centre, direction, side_mm: float) -> tuple[tuple[float, float], ...]:
+    """A square contact patch centred on the wheel, sides along and across the direction of travel.
+
+    Counter-clockwise from the rear right corner.
+    """
+    half = side_mm / 2
+    left = left_of(direction)
+    return tuple(
+        (centre[0] + along * half * direction[0] + across * half * left[0],
+         centre[1] + along * half * direction[1] + across * half * left[1])
+        for along, across in ((-1, -1), (1, -1), (1, 1), (-1, 1))
+    )
+
+
 def _deck_outlines(model: LoadModel, deck_outline_mm, deck_z_mm: float) -> tuple[list[tuple[str, tuple, float]], list[str]]:
     """(name, outline in mm, z in mm) per plate to put wheels on."""
     if deck_outline_mm is not None:
@@ -200,9 +312,38 @@ def build_plan(
     allow_many: bool = False,
     deck_outline_mm=None,
     deck_z_mm: float = 0.0,
+    fronts_mm: list[float] | None = None,
+    titles: list[str] | None = None,
+    off_deck: str = "refuse",
+    contact: str = "point",
+    wheel_mm: float = 400.0,
 ) -> MovingLoadPlan:
+    """The plan for one load group.
+
+    ``fronts_mm`` gives the front axle's chainages instead of ``step_mm`` (a rule's positions; they may lie
+    beyond the path's ends, which are then carried straight on), with ``titles`` as the cases' descriptions.
+    ``off_deck='leave_out'`` leaves wheels off the deck out instead of refusing them, as the toetsmodel does
+    with a vehicle that drives onto the deck; a position with no wheel left is dropped. ``contact='surface'``
+    writes each wheel as a ``wheel_mm`` square patch turned with the path; a patch is off the deck only when
+    no part of it is on it (a part beyond the edge does not act).
+    """
     group = f"{PREFIX}{name}".strip()
     plan = MovingLoadPlan(group, vehicle, deck)
+    if off_deck not in ("refuse", "leave_out"):
+        plan.problems.append(f"off_deck must be 'refuse' or 'leave_out', got {off_deck!r}")
+        return plan
+    if contact not in ("point", "surface"):
+        plan.problems.append(f"contact must be 'point' or 'surface', got {contact!r}")
+        return plan
+    if contact == "surface" and deck != "plate":
+        plan.problems.append("contact='surface' needs a plate deck; on a beam deck the axles are point loads")
+        return plan
+    if contact == "surface" and not (math.isfinite(wheel_mm) and wheel_mm > 0):
+        plan.problems.append(f"wheel_mm must be a positive number, got {wheel_mm:g}")
+        return plan
+    if titles is not None and (fronts_mm is None or len(titles) != len(fronts_mm)):
+        plan.problems.append("titles need fronts_mm, one title per position")
+        return plan
     if not name.strip() or any(c in name for c in "\"<>&"):
         plan.problems.append(f"name {name!r} cannot be used in a SCIA name")
         return plan
@@ -219,11 +360,16 @@ def build_plan(
         plan.problems.append("deck='beam' needs member: the name of the beam the vehicle drives on")
         return plan
 
-    fronts, problems = front_positions(path.length, vehicle.length_mm, step_mm, last_step)
-    plan.problems += problems
+    if fronts_mm is None:
+        fronts, problems = front_positions(path.length, vehicle.length_mm, step_mm, last_step)
+        plan.problems += problems
+    else:
+        fronts = [float(f) for f in fronts_mm]
+        if not fronts or not all(math.isfinite(f) for f in fronts):
+            plan.problems.append("fronts_mm must be finite numbers, at least one")
     if plan.problems:
         return plan
-    if len(fronts) > MAX_CASES and not allow_many:
+    if len(fronts) > MAX_CASES and not allow_many and fronts_mm is None:
         plan.problems.append(
             f"{len(fronts)} positions means {len(fronts)} load cases; more than {MAX_CASES} needs allow_many "
             "(or a larger step)"
@@ -260,47 +406,96 @@ def build_plan(
                     "was not checked."
                 )
 
-    off_deck: list[str] = []
+    leave_out = off_deck == "leave_out"
+    extend = fronts_mm is not None  # rule positions may stand partly beyond the path's ends
+    labels = _case_names(group, len(fronts))  # as named when no position is dropped
+    placed: list[tuple[float, str | None, list[tuple[str, PlannedLoad | PlannedSurface]]]] = []
+    missing: list[str] = []
     beside: list[str] = []
     stacked: list[str] = []
-    for case_name, front in zip(_case_names(group, len(fronts)), fronts):
-        plan.cases.append(PlannedCase(case_name, front))
+    for index, front in enumerate(fronts):
+        label = titles[index] if leave_out and titles else f"position {index + 1}" if leave_out else labels[index]
+        loads: list[tuple[str, PlannedLoad | PlannedSurface]] = []
         number = 0
         for axle in vehicle.axles:
-            centre, direction = path.at(front - axle.offset_mm)
+            centre, direction = path.at(front - axle.offset_mm, extend=extend)
             side = left_of(direction)
             base = (centre[0] + side[0] * lateral_offset_mm, centre[1] + side[1] * lateral_offset_mm)
             if beam is not None:
                 number += 1
                 loaded = _on_beam(beam, base)
                 if loaded is None:
-                    off_deck.append(f"{case_name} axle {number}")
+                    missing.append(f"{label} axle {number}")
                     continue
                 position, distance = loaded
                 if distance > _AXIS_TOLERANCE:
-                    beside.append(f"{case_name} axle {number} ({distance:.1f} mm)")
+                    beside.append(f"{label} axle {number} ({distance:.1f} mm)")
                     continue
-                plan.loads.append(PlannedLoad(
-                    f"{case_name} A{number}", case_name, -axle.load_kn, base[0], base[1],
-                    _beam_z(beam, position), beam.name, beam.member_id, position,
-                ))
+                loads.append((f"A{number}", PlannedLoad(
+                    "", "", -axle.load_kn, base[0], base[1], _beam_z(beam, position), beam.name, beam.member_id, position,
+                )))
                 continue
             wheels = [(-0.5, axle.load_kn / 2), (0.5, axle.load_kn / 2)] if vehicle.track_mm else [(0.0, axle.load_kn)]
             for across, load in wheels:
                 number += 1
                 width = across * (vehicle.track_mm or 0.0)
                 point = (base[0] + side[0] * width, base[1] + side[1] * width)
+                if contact == "surface":
+                    corners = wheel_patch(point, direction, wheel_mm)
+                    overlaps = [(polygon_area(clip(d[1], corners)), d) for d in decks]
+                    area = sum(o[0] for o in overlaps)  # decks side by side: the patch may lie on two
+                    _, on = max(overlaps, key=lambda o: o[0])
+                    # Refused, the wheel itself must be on the deck, as a point load; left out by the rule,
+                    # only a patch with no part on the deck goes (the toetsmodel writes the rest whole).
+                    off = area <= _MIN_OVERLAP_MM2 if leave_out else not any(_inside(point, d[1]) for d in decks)
+                    if off:
+                        missing.append(f"{label} W{number} at ({point[0]:.0f}, {point[1]:.0f}) mm")
+                        continue
+                    if not _inside(point, on[1]):
+                        on = next((d for d in decks if _inside(point, d[1])), on)
+                    samples = (point, *corners)
+                    over_two = [q for q in samples if sum(_strictly_inside(q, d[1]) for d in model_decks) > 1]
+                    if over_two:
+                        under = sorted({d[0] for d in model_decks for q in over_two if _strictly_inside(q, d[1])})
+                        stacked.append(f"{label} W{number} above {' and '.join(under)}")
+                    whole = polygon_area(corners)
+                    on_deck = None
+                    if area < whole - _MIN_OVERLAP_MM2:
+                        plan.partly_off += 1
+                        on_deck = area / 1e6
+                    pressure = -load / (wheel_mm * wheel_mm / 1e6)
+                    loads.append((f"W{number}", PlannedSurface("", "", pressure, corners, on[2], on_deck)))
+                    continue
                 on = next((d for d in decks if _inside(point, d[1])), None)
                 if on is None:
-                    off_deck.append(f"{case_name} W{number} at ({point[0]:.0f}, {point[1]:.0f}) mm")
+                    missing.append(f"{label} W{number} at ({point[0]:.0f}, {point[1]:.0f}) mm")
                     continue
                 under = [d[0] for d in model_decks if _strictly_inside(point, d[1])]
                 if len(under) > 1:
-                    stacked.append(f"{case_name} W{number} above {' and '.join(under)}")
-                plan.loads.append(PlannedLoad(f"{case_name} W{number}", case_name, -load, point[0], point[1], on[2]))
-    if off_deck:
+                    stacked.append(f"{label} W{number} above {' and '.join(under)}")
+                loads.append((f"W{number}", PlannedLoad("", "", -load, point[0], point[1], on[2])))
+        if leave_out and not loads:
+            plan.dropped.append(label)
+            continue
+        placed.append((front, titles[index] if titles else None, loads))
+
+    if leave_out:
+        plan.left_out, missing = missing, []
+    if fronts_mm is not None and len(placed) > MAX_CASES and not allow_many:
+        plan.problems.append(
+            f"{len(placed)} positions means {len(placed)} load cases; more than {MAX_CASES} needs allow_many"
+        )
+        return plan
+    if not placed:
+        plan.problems.append("no position puts a wheel on the deck")
+    for case_name, (front, title, loads) in zip(_case_names(group, len(placed)), placed):
+        plan.cases.append(PlannedCase(case_name, front, title))
+        for suffix, item in loads:
+            named = replace_fields(item, name=f"{case_name} {suffix}", case=case_name)
+            (plan.surfaces if isinstance(named, PlannedSurface) else plan.loads).append(named)
+    if missing:
         where = f"beam {beam.name}" if beam is not None else "the deck"
-        plan.problems.append(f"{len(off_deck)} loads fall off {where}: {_listing(off_deck)}")
+        plan.problems.append(f"{len(missing)} loads fall off {where}: {_listing(missing)}")
     if beside:
         plan.problems.append(
             f"{len(beside)} axles are beside beam {beam.name}; for a beam deck the path has to run along its axis: "
@@ -344,7 +539,7 @@ def _check_names(plan: MovingLoadPlan, model: LoadModel, replace: bool) -> None:
     run left behind would not be overwritten and would stay in the group or in a reused case,
     and the update cannot delete it: that is refused too.
     """
-    planned = {plan.group, *(c.name for c in plan.cases), *(load.name for load in plan.loads)}
+    planned = plan.names()
     taken = sorted(planned & model.names())
     if taken and not replace:
         plan.problems.append(

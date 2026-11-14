@@ -1,4 +1,4 @@
-"""The XML update that adds load groups, load cases and point forces to a saved model.
+"""The XML update that adds load groups, load cases, point forces and free surface loads to a saved model.
 
 Written by :func:`llsm.scia.esa_xml.run_update` with ``def_file=LOADS_DEF_FILE``. What the
 numbers mean, and that the XML takes N and m, was measured on the plate fixture:
@@ -22,6 +22,7 @@ _BEAM = ("{ECB5D684-7357-11D4-9F6C-00104BC3B443}", "EP_DSG_Elements.EP_Beam.1")
 _GROUPS = ("{F9D4AA72-49D5-11D4-A3CF-000000000000}", "DataSetScia.EP_LoadGroup.1", "196E8F76-7A40-441C-81DB-6476DAC8BCFF")
 _CASES = ("{0908D21F-481F-11D4-AB84-00C06C452330}", "DataSetScia.EP_LoadCase.1", "CA2AF6CC-B980-4C45-AFE3-85EC125810E8")
 _FREE = ("{E03984FC-B420-4C03-8D2F-72EA2FAB147D}", "DataAddLoad.EP_PointForceFree.1", "9C68624A-8E5C-47BD-A150-2AEC783D8A93")
+_SURFACE = ("{3E5FFA16-D1A4-4589-AD5A-4A0FC555E8B8}", "DataAddLoad.EP_SurfaceForceFree.1", "3BA95345-687F-4D1A-8BDB-462EAF38C865")
 _ON_BEAM = ("{BC16B3C2-F464-11D4-94D3-000000000000}", "DataAddLoad.EP_PointForceLine.1", "D7DC5706-2FCC-434E-9E37-8C0D0156F034")
 _COMBINATIONS = ("{C0FBF7E1-4A71-11D4-AB86-00C06C452330}", "DataSetSciaTom.EP_LoadCombi.1", "9F5CF12B-1690-400E-8030-62B13CE4E579")
 _RESULT_CLASSES = ("{8E5A5442-7217-460C-853D-9D35EC18FAB9}", "DataSetSciaTom.EP_SelectedLC.1", "84DFD127-4444-4378-A414-814FB757AE04")
@@ -68,6 +69,41 @@ class PointForceRow:
     member_name: str | None = None
     member_id: int | None = None
     position: float | None = None
+
+
+@dataclass(frozen=True)
+class SurfaceForceRow:
+    """A uniform vertical free surface load, already in SI: N/m², corners in m (x, y, z).
+
+    Valid on all 2D members, picked automatically, global axes, like the free point forces
+    (docs/verify/phase4-traffic-rules.md, S9).
+    """
+
+    name: str
+    case: str
+    value_n_m2: float
+    corners: tuple[tuple[float, float, float], ...]
+
+
+def _corners(index: int, corners: tuple[tuple[float, float, float], ...]) -> str:
+    rows = "\n".join(
+        f"""             <row id="{i}">
+               {_value(0, float(x))}
+               {_value(1, float(y))}
+               {_value(2, float(z))}
+               <p3 v="Line"/>
+             </row>"""
+        for i, (x, y, z) in enumerate(corners)
+    )
+    return f"""<p{index} t="">
+             <h>
+               <h0 t="Coord X"/>
+               <h1 t="Coord Y"/>
+               <h2 t="Coord Z"/>
+               <h3 t="Edge"/>
+             </h>
+{rows}
+           </p{index}>"""
 
 
 def _table(spec: tuple[str, str, str], name: str, headers: list[str], objects: list[str]) -> str:
@@ -130,23 +166,43 @@ def build_load_update(
     forces: list[PointForceRow],
     relation: str = "exclusive",
     def_name: str = LOADS_DEF_FILE.name,
+    surfaces: list[SurfaceForceRow] | None = None,
 ) -> str:
-    """One variable load group, its (static, variable) cases and their point forces."""
-    if not cases:
-        raise ValueError("at least one load case")
-    case_id = {c.name: i + 1 for i, c in enumerate(cases)}
-    unknown = sorted({f.case for f in forces} - case_id.keys())
+    """One variable load group, its (static, variable) cases, their point forces and free surface loads."""
+    return build_groups_update([(group, cases)], forces, relation, def_name, surfaces)
+
+
+def build_groups_update(
+    groups: list[tuple[str, list[LoadCaseRow]]],
+    forces: list[PointForceRow],
+    relation: str = "exclusive",
+    def_name: str = LOADS_DEF_FILE.name,
+    surfaces: list[SurfaceForceRow] | None = None,
+) -> str:
+    """Several variable load groups with their cases and loads, in one update (one ESA_XML run)."""
+    if not groups or not all(cases for _, cases in groups):
+        raise ValueError("at least one load group, each with at least one load case")
+    names = [g for g, _ in groups]
+    if len(set(names)) != len(names):
+        raise ValueError("load group names must be unique")
+    group_id = {g: i + 1 for i, g in enumerate(names)}
+    owner = [(c, g) for g, cases in groups for c in cases]
+    case_id = {c.name: i + 1 for i, (c, _) in enumerate(owner)}
+    if len(case_id) != len(owner):
+        raise ValueError("load case names must be unique")
+    surfaces = surfaces or []
+    unknown = sorted({f.case for f in [*forces, *surfaces]} - case_id.keys())
     if unknown:
         raise ValueError(f"forces on cases that are not written: {unknown}")
     parts = [
         _table(_GROUPS, "Load groups", ["Name", "Relation", "Load"], [
-            _object(1, group, [_value(0, group), _value(1, RELATION[relation]), _value(2, VARIABLE)])
+            _object(group_id[g], g, [_value(0, g), _value(1, RELATION[relation]), _value(2, VARIABLE)]) for g in names
         ]),
         _table(_CASES, "Load cases", ["Name", "Action type", "Description", "Load group", "Load type"], [
             _object(case_id[c.name], c.name, [
-                _value(0, c.name), _value(1, VARIABLE), _value(2, c.description), _ref(3, 1, group), _value(4, STATIC),
+                _value(0, c.name), _value(1, VARIABLE), _value(2, c.description), _ref(3, group_id[g], g), _value(4, STATIC),
             ])
-            for c in cases
+            for c, g in owner
         ]),
     ]
     free = [f for f in forces if f.member_name is None]
@@ -173,6 +229,25 @@ def build_load_update(
                 _value(8, float(f.position)), _value(9, 0),
             ])
             for i, f in enumerate(on_beam)
+        ]))
+    for s in surfaces:
+        if len(s.corners) < 3:
+            raise ValueError(f"surface load {s.name} needs at least three corners")
+    if surfaces:
+        parts.append(_table(_SURFACE, "Free surface loads", [
+            "Name", "Load case", "Direction", "Type", "Distribution", "q", "q1", "q2", "q3", "Validity", "Select",
+            "System", "Location", "Table of geometry",
+        ], [
+            # Every column up to the geometry, in the def's order: with a gap SCIA read the geometry as
+            # another column ("Unknown element 'row'", S9). Z direction, force, uniform, valid on all 2D
+            # members, picked automatically, global axes, length. A uniform load's value is q1: a value in q
+            # alone was not stored (S9). q gets the same value; with both, the load was not doubled (S10).
+            _object(i + 1, s.name, [
+                _value(0, s.name), _ref(1, case_id[s.case], s.case), _value(2, 2), _value(3, 0), _value(4, 0),
+                _value(5, float(s.value_n_m2)), _value(6, float(s.value_n_m2)), _value(7, 0.0), _value(8, 0.0), _value(9, 0),
+                _value(10, 0), _value(11, 0), _value(12, 0), _corners(13, s.corners),
+            ])
+            for i, s in enumerate(surfaces)
         ]))
     body = "\n".join(parts)
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

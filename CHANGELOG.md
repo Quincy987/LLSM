@@ -6,6 +6,52 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.13 — Traffic rules of the plaatbruggen toetsmodel (2026-11-15)
+
+### Added
+- **Verkeer per rijstrook volgens het toetsmodel plaatbruggen.** `moving_load_preview` /
+  `moving_load_apply` en `llsm moving-load` met `rule='toetsmodel'` (CLI `--rule toetsmodel
+  --thickness <mm>`) zetten de LM1-tandem in elke rijstrook op de posities die het toetsmodel
+  gebruikt: start 0,9 × dekdikte vanaf het einde, stappen van 1 m, 0,5 m rond steunpunten, elk
+  midden van een overspanning. De rijstroken komen uit dezelfde regels: configuratie A (BG8000,
+  vanaf de rechterrand), B (BG9000, vanaf de linkerrand) en C (BG10000, rijstrook 1 in het midden,
+  met Conf. D bij drie rijstroken); "theoretisch" over de dekbreedte of "echt" over de rijbaan
+  tussen de banden (`carriageway_mm`). Eén exclusieve groep per rijstrook en configuratie,
+  `LLSM-ML <naam> L<rijstrook><conf>`, met de titel van het toetsmodel als omschrijving
+  (`rs 1 - Conf. A - x = 3 m`). Alles in één update. De AI rekent geen regel uit: de code komt
+  uit het toetsmodel zelf, vastgezet op commit `e8e44e7` (`src/llsm/traffic_rules/_toetsmodel/`,
+  gemaakt met `scripts/vendor_toetsmodel_rules.py`; een test houdt de kopie gelijk aan het origineel).
+  De dekranden komen uit de plaat, de steunpunten zijn de dekeinden of `supports_mm` (posities langs
+  de rijlijn, of steunlijnen voor een scheef dek: elke rijstrook krijgt dan zijn eigen fijne stappen).
+- **Wielen als vlaklast.** Elk wiel kan een vrije vlaklast van 0,4 × 0,4 m zijn, meegedraaid met de
+  rijlijn (`contact='surface'`): standaard voor de LM1-tandem op een plaat, puntlasten blijven
+  mogelijk (`contact='point'`, met de waarschuwing over lokale pieken).
+- **Een voertuig deels naast het dek** wordt, zoals in het toetsmodel, niet geweigerd: wielen helemaal
+  naast het dek vallen weg, een vlak dat over de rand steekt wordt heel geschreven en SCIA belast alleen
+  het deel op het dek. De preview zegt hoeveel.
+
+### Changed
+- In een geval staat de echte LM1-last (150 / 100 / 50 kN per wiel in rijstrook 1 / 2 / 3, × α).
+  Het toetsmodel zet 100 kN per wiel in elke rijstrook en past zijn factoren in de combinaties toe.
+- **Ook de bestaande route (voertuig met vaste stap) schrijft de LM1-presets op een plaat nu als
+  vlaklasten van 0,4 × 0,4 m.** Een eigen aslijst blijft puntlasten. `contact='point'` geeft het oude gedrag.
+
+### Fixed
+- **Lange tabellen in een `.esa` worden heel gelezen.** SCIA bewaart zijn gegevens in stukken van
+  512 000 bytes; een tabel die langer is (42 belastinggevallen) liep door in het volgende stuk en werd
+  half gelezen, zodat de controle weigerde. Het rapport met `cases_group` leest via dezelfde weg en is
+  daarmee ook verholpen. De palen voor de bedding worden nu op dezelfde manier gelezen (op vijf modellen
+  precies hetzelfde resultaat als eerder).
+  Vrije vlaklasten die al in een model staan, worden nu ook gelezen en na het schrijven vergeleken; een
+  vlaklast in een opslagvorm die LLSM niet kent, houdt het model niet tegen maar wordt alleen op naam gevolgd.
+
+### Verified
+- `docs/verify/phase4-traffic-rules.md`: tegen de eigen generatoren van het toetsmodel, 455 gevallen op
+  vier dekken, 0 afwijkingen (wielvlakken binnen 1 mm). Op het demodek 42 gevallen, 138 van 138 vlakken
+  teruggelezen, via de CLI en de MCP-server; doorgerekend: kolomkrachten = lasten op het dek (6202,5 kN
+  per rijstrook, 202,5 kN voor een voertuig dat het dek op rijdt); het handgeval van fase 3 als punt- en
+  als vlaklast 900,0 = 900,0 kN.
+
 ## v0.3.12 — Results report of existing SCIA models (2026-11-14)
 
 ### Added

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llsm"
-version = "0.3.12"
+version = "0.3.13"
 description = "LLM-driven automation for SCIA Engineer"
 requires-python = ">=3.11"
 dependencies = [
@@ -31,3 +31,4 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "llsm.scia" = ["resources/*.def"]
+"llsm.traffic_rules._toetsmodel" = ["UPSTREAM.md"]

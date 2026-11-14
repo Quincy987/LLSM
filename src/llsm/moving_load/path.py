@@ -34,10 +34,25 @@ class RoadPath:
     def length(self) -> float:
         return sum(math.dist(a, b) for a, b in zip(self.points, self.points[1:]))
 
-    def at(self, chainage: float) -> tuple[Point2, Point2]:
-        """The point at ``chainage`` mm from the start, and the unit direction of travel there."""
-        if chainage < -1e-6 or chainage > self.length + 1e-6:
+    def at(self, chainage: float, extend: bool = False) -> tuple[Point2, Point2]:
+        """The point at ``chainage`` mm from the start, and the unit direction of travel there.
+
+        With ``extend`` a chainage before the start or past the end lies on the first or last segment
+        carried straight on: a vehicle placed by a rule may stand partly beyond the path's ends.
+        """
+        if not extend and (chainage < -1e-6 or chainage > self.length + 1e-6):
             raise PathError(f"chainage {chainage:g} mm is outside the path (0 to {self.length:g} mm)")
+        if chainage < 0:
+            a, b = self.points[0], self.points[1]
+            length = math.dist(a, b)
+            direction = ((b[0] - a[0]) / length, (b[1] - a[1]) / length)
+            return (a[0] + chainage * direction[0], a[1] + chainage * direction[1]), direction
+        if chainage > self.length:
+            a, b = self.points[-2], self.points[-1]
+            length = math.dist(a, b)
+            direction = ((b[0] - a[0]) / length, (b[1] - a[1]) / length)
+            beyond = chainage - self.length
+            return (b[0] + beyond * direction[0], b[1] + beyond * direction[1]), direction
         walked = 0.0
         segments = list(zip(self.points, self.points[1:]))
         for index, (a, b) in enumerate(segments):

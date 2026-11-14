@@ -64,3 +64,16 @@ def test_writing_again_needs_replace_and_then_overwrites(deck):
     assert not again["ok"] and "already exist" in again["problems"][0]
     replaced = apply_moving_load(Path(first["output"]), replace(REQUEST, replace=True))
     assert replaced["ok"] and replaced["written"] == 12, replaced
+
+
+RULE = MovingLoadRequest(path_mm=[[0, 2000], [6000, 2000]], rule="toetsmodel", thickness_mm=300)
+
+
+def test_toetsmodel_rule_lands_as_planned(deck):
+    """LM1 per lane at the toetsmodel's positions, wheels as surface loads (docs/verify/phase4-traffic-rules.md)."""
+    result = apply_moving_load(deck, RULE)
+    assert result["ok"], result
+    assert (result["planned_cases"], result["written"], result["expected"], result["cases_confirmed"]) == (42, 138, 138, 42)
+    saved = read_loads(Path(result["output"]))
+    assert {g.name for g in saved.groups} >= {"LLSM-ML TS L1A", "LLSM-ML TS L1B", "LLSM-ML TS L1C"}
+    assert {round(s.value) for s in saved.surfaces} == {-937500}
