@@ -396,20 +396,28 @@ def _register_common_tools(mcp: FastMCP) -> None:
     def moving_load_preview(
         model_path: str,
         path_mm: list[list[float]],
-        step_mm: float,
+        step_mm: float | None = None,
         vehicle_preset: str | None = None,
         axles: list[dict] | None = None,
         track_mm: float | None = None,
         alpha: float = 1.0,
         deck: str = "plate",
         member: str | None = None,
-        name: str = "TS1",
+        name: str | None = None,
         lateral_offset_mm: float = 0.0,
         last_step: str = "exact",
         replace: bool = False,
         allow_many: bool = False,
         deck_outline_mm: list[list[float]] | None = None,
         deck_z_mm: float = 0.0,
+        contact: str | None = None,
+        rule: str | None = None,
+        configurations: str = "ABC",
+        lanes: str = "theoretical",
+        thickness_mm: float | None = None,
+        deck_edges_mm: list[float] | None = None,
+        carriageway_mm: list[float] | None = None,
+        supports_mm: list | None = None,
     ) -> dict:
         """Work out the load cases a vehicle driving along a road puts on a saved .esa. Changes nothing.
 
@@ -421,34 +429,56 @@ def _register_common_tools(mcp: FastMCP) -> None:
         axles [{load_kn, offset_mm}] with offset behind the front axle (positive kN act downward) and
         optionally track_mm. deck "plate" puts a free point load per wheel on the 2D members; "beam"
         puts one load per axle on member. lateral_offset_mm moves the vehicle left (+) of the path.
-        last_step "short" adds a final position at the path end when the step does not fit."""
+        last_step "short" adds a final position at the path end when the step does not fit. contact
+        "surface" writes each wheel as a 0.4 x 0.4 m free surface load (default for an LM1 preset on a
+        plate), "point" a free point load (default for custom axles).
+
+        rule="toetsmodel" (instead of a vehicle and step_mm): the LM1 tandem in every notional lane, at
+        the positions of the plaatbruggen toetsmodel (start 0.9 x thickness from the deck end, steps of
+        1 m, 0.5 m near supports, every mid-span), one exclusive group "LLSM-ML <name> L<lane><conf>" per
+        lane and configuration (A: BG8000 lanes from the right-hand edge, B: BG9000 from the left, C:
+        BG10000 lane 1 in the middle). Needs thickness_mm. path_mm is the deck's axis; the deck edges are
+        taken from the plate (or deck_edges_mm [right, left] offsets from the path). lanes "real" lays
+        the lanes over the carriageway, carriageway_mm [right kerb, left kerb]. supports_mm: chainages
+        along the path, or support lines [[x, y], [x, y]] for a skewed deck; default the deck ends.
+        Wheels off the deck are left out, as in the toetsmodel. Show rule.lanes_laid_out and notes."""
         return moving_load_tools.preview_moving_load(
             Path(model_path),
             moving_load_tools.MovingLoadRequest(
                 path_mm=path_mm, step_mm=step_mm, vehicle_preset=vehicle_preset, axles=axles, track_mm=track_mm,
                 alpha=alpha, deck=deck, member=member, name=name, lateral_offset_mm=lateral_offset_mm,
                 last_step=last_step, replace=replace, allow_many=allow_many,
-                deck_outline_mm=deck_outline_mm, deck_z_mm=deck_z_mm,
+                deck_outline_mm=deck_outline_mm, deck_z_mm=deck_z_mm, contact=contact, rule=rule,
+                configurations=configurations, lanes=lanes, thickness_mm=thickness_mm, deck_edges_mm=deck_edges_mm,
+                carriageway_mm=carriageway_mm, supports_mm=supports_mm,
             ),
         )
 
     def moving_load_apply(
         model_path: str,
         path_mm: list[list[float]],
-        step_mm: float,
+        step_mm: float | None = None,
         vehicle_preset: str | None = None,
         axles: list[dict] | None = None,
         track_mm: float | None = None,
         alpha: float = 1.0,
         deck: str = "plate",
         member: str | None = None,
-        name: str = "TS1",
+        name: str | None = None,
         lateral_offset_mm: float = 0.0,
         last_step: str = "exact",
         replace: bool = False,
         allow_many: bool = False,
         deck_outline_mm: list[list[float]] | None = None,
         deck_z_mm: float = 0.0,
+        contact: str | None = None,
+        rule: str | None = None,
+        configurations: str = "ABC",
+        lanes: str = "theoretical",
+        thickness_mm: float | None = None,
+        deck_edges_mm: list[float] | None = None,
+        carriageway_mm: list[float] | None = None,
+        supports_mm: list | None = None,
         out_dir: str | None = None,
     ) -> dict:
         """Write the load cases from moving_load_preview to a NEW .esa next to the model and read them back.
@@ -462,7 +492,9 @@ def _register_common_tools(mcp: FastMCP) -> None:
                 path_mm=path_mm, step_mm=step_mm, vehicle_preset=vehicle_preset, axles=axles, track_mm=track_mm,
                 alpha=alpha, deck=deck, member=member, name=name, lateral_offset_mm=lateral_offset_mm,
                 last_step=last_step, replace=replace, allow_many=allow_many,
-                deck_outline_mm=deck_outline_mm, deck_z_mm=deck_z_mm,
+                deck_outline_mm=deck_outline_mm, deck_z_mm=deck_z_mm, contact=contact, rule=rule,
+                configurations=configurations, lanes=lanes, thickness_mm=thickness_mm, deck_edges_mm=deck_edges_mm,
+                carriageway_mm=carriageway_mm, supports_mm=supports_mm,
             ),
             out_dir=Path(out_dir) if out_dir else None,
         )

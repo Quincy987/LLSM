@@ -32,6 +32,24 @@ def _axles(text: str) -> list[dict]:
         raise argparse.ArgumentTypeError(f"axles as 'load_kN@offset_mm,...': {exc}") from exc
 
 
+def _pair(text: str) -> list[float]:
+    """'-2000,2000' -> [-2000, 2000]"""
+    try:
+        values = [float(v) for v in text.split(",")]
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"two numbers 'right,left' in mm: {exc}") from exc
+    if len(values) != 2:
+        raise argparse.ArgumentTypeError("two numbers 'right,left' in mm")
+    return values
+
+
+def _supports(text: str) -> list[float]:
+    try:
+        return [float(v) for v in text.split(",") if v.strip()]
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"support chainages 'a,b,...' in mm: {exc}") from exc
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="llsm moving-load", description="Put a vehicle at every step along a road on a saved SCIA model."
@@ -41,15 +59,26 @@ def _parser() -> argparse.ArgumentParser:
     def shared(sub: argparse.ArgumentParser) -> None:
         sub.add_argument("model", type=Path, help="Saved SCIA model (.esa).")
         sub.add_argument("--path", type=_points, required=True, help="Road axis in plan, mm: 'x,y;x,y[;...]'.")
-        sub.add_argument("--step", type=float, required=True, help="Step of the front axle, mm.")
+        sub.add_argument("--step", type=float, help="Step of the front axle, mm (not with --rule).")
         vehicle = sub.add_mutually_exclusive_group(required=True)
+        vehicle.add_argument("--rule", choices=("toetsmodel",),
+                             help="LM1 tandem in every notional lane at the plaatbruggen toetsmodel's positions.")
         vehicle.add_argument("--preset", help="LM1-TS1, LM1-TS2 or LM1-TS3.")
         vehicle.add_argument("--axles", type=_axles, help="'load_kN@offset_mm,...', offset behind the front axle.")
         sub.add_argument("--track", type=float, help="Wheel track in mm (custom axles); without it one load per axle.")
         sub.add_argument("--alpha", type=float, default=1.0, help="Factor on the LM1 axle loads (default 1.0).")
         sub.add_argument("--deck", choices=("plate", "beam"), default="plate")
         sub.add_argument("--member", help="The beam, with --deck beam.")
-        sub.add_argument("--name", default="TS1", help="Group name after 'LLSM-ML ' (default TS1).")
+        sub.add_argument("--name", help="Group name after 'LLSM-ML ' (default TS1; with --rule TS, plus lane and configuration).")
+        sub.add_argument("--contact", choices=("point", "surface"),
+                         help="Wheels as point loads or 0.4 x 0.4 m surface loads (default: surface for LM1 on a plate).")
+        sub.add_argument("--configurations", default="ABC", help="With --rule: A (BG8000), B (BG9000), C (BG10000); default ABC.")
+        sub.add_argument("--lanes", choices=("theoretical", "real"), default="theoretical",
+                         help="With --rule: lanes over the deck width, or over the carriageway (--carriageway).")
+        sub.add_argument("--thickness", type=float, help="With --rule: deck thickness, mm.")
+        sub.add_argument("--deck-edges", type=_pair, dest="deck_edges", help="With --rule: 'right,left' deck edge offsets from the path, mm.")
+        sub.add_argument("--carriageway", type=_pair, help="With --rule: 'right,left' kerb offsets from the path, mm.")
+        sub.add_argument("--supports", type=_supports, help="With --rule: support chainages along the path 'a,b,...' in mm.")
         sub.add_argument("--offset", type=float, default=0.0, help="Lateral offset of the vehicle from the path, mm (left +).")
         sub.add_argument("--last-step", choices=("exact", "short"), default="exact", dest="last_step")
         sub.add_argument("--deck-outline", type=_points, dest="deck_outline", help="Deck corners 'x,y;...' in mm, when the model's cannot be read.")
@@ -67,8 +96,9 @@ def _parser() -> argparse.ArgumentParser:
 def _print_table(rows: list[dict]) -> None:
     if not rows:
         return
-    table = [[label for _, label in _COLUMNS]] + [[str(row[key]) for key, _ in _COLUMNS] for row in rows]
-    widths = [max(len(line[i]) for line in table) for i in range(len(_COLUMNS))]
+    columns = [*_COLUMNS, ("title", "Title")] if any("title" in row for row in rows) else list(_COLUMNS)
+    table = [[label for _, label in columns]] + [[str(row.get(key, "")) for key, _ in columns] for row in rows]
+    widths = [max(len(line[i]) for line in table) for i in range(len(columns))]
     for line in table:
         print("  ".join(cell.ljust(width) for cell, width in zip(line, widths)).rstrip())
 
@@ -77,11 +107,17 @@ def _report(result: dict) -> int:
     print(f"Model: {result['model']} (saved by {result['saved_by'] or 'unknown'})")
     if result["vehicle"]:
         print(f"Vehicle: {result['vehicle']}")
-        print(f"Group: {result['group']} (exclusive, variable); deck: {result['deck']}")
+        print(f"Group: {result['group']} (exclusive, variable); deck: {result['deck']}; contact: {result['contact']}")
         print(f"Planned: {result['planned_cases']} load cases, {result['planned_loads']} loads")
+    if result.get("rule"):
+        rule = result["rule"]
+        print(f"Rule: {rule['source']}; {rule['lanes']} lanes; deck edges {rule['deck_edges_mm']} mm")
+        for lane in rule["lanes_laid_out"]:
+            print(f"  {lane['group']}: lane {lane['lane']} Conf. {lane['configuration']}, {lane['offset_from_axis_mm']} mm "
+                  f"beside the path, deck {lane['deck_from_to_mm']} mm, {lane['positions']} positions")
     print()
     _print_table(result["preview"])
-    for word, key in (("WARNING", "warnings"), ("PROBLEM", "problems")):
+    for word, key in (("NOTE", "notes"), ("WARNING", "warnings"), ("PROBLEM", "problems")):
         for line in result[key]:
             print(f"{word}: {line}")
     if result["action"] == "apply" and result.get("expected"):
@@ -106,7 +142,9 @@ def main(argv: list[str]) -> int:
         path_mm=args.path, step_mm=args.step, vehicle_preset=args.preset, axles=args.axles, track_mm=args.track,
         alpha=args.alpha, deck=args.deck, member=args.member, name=args.name, lateral_offset_mm=args.offset,
         last_step=args.last_step, replace=args.replace, allow_many=args.allow_many,
-        deck_outline_mm=args.deck_outline, deck_z_mm=args.deck_z,
+        deck_outline_mm=args.deck_outline, deck_z_mm=args.deck_z, contact=args.contact, rule=args.rule,
+        configurations=args.configurations, lanes=args.lanes, thickness_mm=args.thickness,
+        deck_edges_mm=args.deck_edges, carriageway_mm=args.carriageway, supports_mm=args.supports,
     )
     if args.command == "preview":
         return _report(preview_moving_load(args.model, request))

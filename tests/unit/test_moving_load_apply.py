@@ -180,3 +180,62 @@ def test_update_xml_names_every_case_and_load():
     xml = update_xml(plan)
     assert xml.count("<obj ") == 1 + 3 + 12
     assert 'nm="LLSM-ML TS1 03 W4"' in xml and '<p1 v="1"/>' in xml  # exclusive
+
+
+# --- the toetsmodel rule: several groups, wheel patches, one update ------------------------------------
+
+RULE = MovingLoadRequest(path_mm=[[0, 2000], [6000, 2000]], rule="toetsmodel", thickness_mm=300)
+
+
+def rule_written_model(break_value=False):
+    """What a correct write of RULE reads back as: every case, patch and group, ids as SCIA numbers them."""
+    from llsm.moving_load.apply import _prepare
+    from llsm.scia.esa_file import SurfaceLoad
+    _, _, plans = _prepare("preview", Path("m.esa"), RULE, lambda _: model())
+    groups, cases, patches, case_id, load_id = [], [], [], 8, 0
+    for plan in plans:
+        ids = []
+        for case in plan.cases:
+            case_id += 1
+            ids.append(case_id)
+            own = []
+            for patch in plan.surfaces_of(case.name):
+                load_id += 1
+                own.append(load_id)
+                value = patch.pressure_kn_m2 * 1000 * (1.01 if break_value and load_id == 1 else 1)
+                patches.append(SurfaceLoad(patch.name, load_id, case_id, value,
+                                           tuple((x / 1000, y / 1000, 0.0) for x, y in patch.corners_mm)))
+            cases.append(LoadCase(case.name, 1, *listing(own)))
+        groups.append(LoadGroup(plan.group, 1, 1, *listing(ids)))
+    after = model(groups=groups, cases=(BASE_CASE, *cases))
+    after.surfaces = patches
+    return after, plans
+
+
+def test_rule_write_is_one_update_and_confirmed(tmp_path):
+    after, plans = rule_written_model()
+    fake = Fake(tmp_path, after)
+    result = fake.apply(RULE)
+    assert result["ok"], result["mismatches"] + result["other_changes"] + result["problems"]
+    patches = sum(len(p.surfaces) for p in plans)
+    assert (result["written"], result["expected"], result["cases_confirmed"]) == (patches, patches, 42)
+    assert fake.xml.count("DataSetScia.EP_LoadGroup.1\" name=") == 1 and "EP_SurfaceForceFree" in fake.xml
+    assert "3 exclusive groups" in result["warnings"][-1]
+
+
+def test_rule_patch_with_a_wrong_value_is_a_mismatch(tmp_path):
+    after, _ = rule_written_model(break_value=True)
+    result = Fake(tmp_path, after).apply(RULE)
+    assert not result["ok"] and "N/m2" in result["mismatches"][0] and result["cases_confirmed"] == 41
+
+
+def test_someone_elses_surface_load_changing_is_reported(tmp_path):
+    from llsm.scia.esa_file import SurfaceLoad
+    other = SurfaceLoad("FF1", 50, 2, -31560.0, ((0, 0, 0), (1, 0, 0), (1, 1, 0)))
+    after, _ = rule_written_model()
+    after.surfaces.append(replace(other, value=-1.0))
+    fake = Fake(tmp_path, after)
+    fake.before = model()
+    fake.before.surfaces = [other]
+    result = fake.apply(RULE)
+    assert not result["ok"] and result["other_changes"] == ["surface load FF1 changed"]
