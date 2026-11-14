@@ -6,6 +6,9 @@ old type ("Geen ondersteunde taak").
 """
 import hashlib
 import struct
+import subprocess
+import sys
+import threading
 import xml.etree.ElementTree as ET
 import zipfile
 import zlib
@@ -13,10 +16,11 @@ from pathlib import Path
 
 import pytest
 
-from llsm.report import ReportRequest, cli, preview_report, write_report
+from llsm.report import ReportRequest, cli, jobs, preview_report, write_report
 from llsm.report.check import check_xlsx, parse_table
 from llsm.report.xlsx import read_sheets
 from llsm.scia.esa_file import LoadCase, LoadGroup, LoadModel, ReportIndex, StoredReport, read_report_index
+from llsm.scia import esa_xml
 from llsm.scia.esa_xml import RunResult
 from llsm.scia.load_xml import build_case_classes_update
 from llsm.scia.output_files import next_output_set
@@ -307,9 +311,7 @@ def test_empty_class_becomes_a_warning_in_the_result(tmp_path):
 
 # --- jobs (the MCP route: a print outlives one tool call) ----------------------------------------
 
-import threading  # noqa: E402
 
-from llsm.report import jobs  # noqa: E402
 
 
 def _drain():
@@ -372,10 +374,7 @@ def test_without_cases_group_no_class_is_flagged(tmp_path):
 
 # --- ESA_XML runs stop with the server -------------------------------------------------------------
 
-import subprocess  # noqa: E402
-import sys  # noqa: E402
 
-from llsm.scia import esa_xml  # noqa: E402
 
 
 def test_stop_all_stops_only_registered_runs():
@@ -410,7 +409,7 @@ def test_our_own_print_is_named_when_another_update_is_refused(monkeypatch):
         with esa_xml._RUNNING_LOCK:
             esa_xml._RUNNING.add(proc)
         monkeypatch.setattr(esa_xml, "running_scia", lambda: [(proc.pid, "esa_xml.exe")])
-        with pytest.raises(esa_xml.SciaRunning, match="LLSM is printing a report"):
+        with pytest.raises(esa_xml.SciaRunning, match="LLSM itself is running SCIA"):
             esa_xml.assert_no_scia()
         monkeypatch.setattr(esa_xml, "running_scia", lambda: [(proc.pid + 1_000_000, "sciaengineer.exe")])
         with pytest.raises(esa_xml.SciaRunning, match="SCIA is running"):
@@ -436,3 +435,10 @@ def test_preview_plans_the_outputs_in_out_dir(tmp_path):
     assert Path(result["outputs_planned"]["pdf"]).parent == elsewhere.resolve()
     missing = preview_report(fake.model, ReportRequest(), index_reader=lambda p: fake.idx, out_dir=tmp_path / "nope")
     assert not missing["ok"] and "Output folder not found" in missing["problems"][0]
+
+
+def test_empty_table_with_scias_message_says_what_to_do(tmp_path):
+    rows = [["Klasse: Alle BGT"], ["Selectie: Alle"], ["Fout E-C04: Niet alle items in deze klasse zijn berekend."],
+            ["E/W/N", "Aanwezig in elementen"], ["E-C04", " Alle"]]
+    check = check_xlsx(_workbook(tmp_path, {"3.1.1. Reacties": rows}))
+    assert not check.ok and "E-C04" in check.problems[1] and "calculate" in check.problems[1]

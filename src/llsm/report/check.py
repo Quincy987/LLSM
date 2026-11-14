@@ -227,6 +227,10 @@ def check_xlsx(path: Path) -> ReportCheck:
     if check.empty:
         check.problems.append(f"{len(check.empty)} results tables are empty: {', '.join(check.empty[:5])}"
                               + (" and more" if len(check.empty) > 5 else ""))
+        said = sorted({m for t in check.tables if t.sheet in check.empty for m in t.messages})
+        if said:
+            check.problems.append(f"SCIA printed: {'; '.join(said[:3])}. If that says items are not calculated, "
+                                  "print again with calculate, or calculate in SCIA and save.")
     if check.expected == 0:
         check.problems.append("The report has no results chapters: it prints input only, or the model has no results.")
     check.ok = not check.problems

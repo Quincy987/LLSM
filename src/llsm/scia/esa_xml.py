@@ -115,7 +115,7 @@ def running_scia() -> list[tuple[int, str]]:
 def assert_no_scia() -> None:
     found = running_scia()
     if found and all(pid in _own_pids() for pid, _ in found):
-        raise SciaRunning("LLSM is printing a report with ESA_XML right now; wait until report_status says it is done.")
+        raise SciaRunning("LLSM itself is running SCIA (ESA_XML) for another task right now, such as a report print; try again when that is done (report_status shows a print).")
     if found:
         raise SciaRunning(f"SCIA is running ({', '.join(name for _, name in found)}). Close it and try again.")
 

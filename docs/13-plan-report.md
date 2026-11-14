@@ -1,6 +1,11 @@
 # 13 — Plan: a results report for a saved SCIA model
 
-Date: 2026-11-13. Status: proposal after a spike (`docs/verify/report-route.md`), nothing built.
+Date: 2026-11-13. Status: v1 built (2026-11-14, `docs/verify/report.md`): §3 without the standard
+template of §2 and its gate (§4.1), which still need SCIA's GUI. Built differently from §3: no
+preview id (`report_write` takes the same arguments as `report_preview`), and in the chat the print
+is a job (`report_write` returns at once, `report_status` waits up to 4 min per call), because
+Claude Code ends an MCP call after 300 s. Added: `cases_group`, a chapter per moving-load case.
+Proposal after a spike (`docs/verify/report-route.md`).
 Asked by Sebastiaan van Rossum (mail 2026-11-12, "een SCIA Engineering report … alle resultaten van
 de verschillende belastingsgevallen en resultaatklassen op alle onderdelen van de constructie
 geordend") and Berber Renckens (a report is a lot of manual work).
