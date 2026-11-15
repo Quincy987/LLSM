@@ -11,11 +11,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   kiest zelf de route van het toetsmodel, zonder coördinaten, stap of dikte. In echte chatbeurten riep het model
   precies die route aan met alleen de bestandsnaam, ook bij "Kun je verkeer op het brugdek zetten?" (eerst de
   preview en de vraag, na "ja" wegschrijven).
-- **Modellen op bestandsnaam (chat).** Elk hulpmiddel voor een opgeslagen model (bedding, rijdende belasting, rapport)
-  vindt `brugdek.esa` of `kademuur_kaal` onder Documenten (de map van Windows, ook op OneDrive, en de lokale), of in de
-  mappen van `LLSM_MODEL_DIRS`. Twee modellen met
-  dezelfde naam: de chat vraagt welke, met beide paden. Geen enkel: hij zegt waar gezocht is. Een gevonden naam
-  blijft die sessie hetzelfde bestand betekenen, zodat preview en wegschrijven over hetzelfde model gaan.
+- **Modellen op bestandsnaam (chat).** Elk hulpmiddel voor een opgeslagen model (bedding, rijdende belasting,
+  rapport) vindt `brugdek.esa` of `kademuur_kaal` onder Documenten (de map van Windows, ook op OneDrive, en de
+  lokale), of in de mappen van `LLSM_MODEL_DIRS`. Twee modellen met dezelfde naam: de chat vraagt welke, met beide
+  paden. Geen enkel: hij zegt waar gezocht is. Een gevonden naam blijft die sessie hetzelfde bestand betekenen,
+  zodat preview en wegschrijven over hetzelfde model gaan.
 - **Rijlijn en dikte uit het model.** Met de toetsmodel-regels is de rijlijn de lengteas van de dekplaat en komt
   de dikte uit het `.esa`-bestand (gemeten op platen van 4 en 5 hoeken en een wand). Opgeven mag nog en gaat voor.
 

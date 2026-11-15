@@ -7,7 +7,9 @@ chat backend (ClaudeCodeBackend: the claude CLI with only LLSM's tools and the p
 prompt in one session, recording every tool call and its result. Writes WORKDIR/chat_turn.json.
 
 Exit 1 unless the traffic route was taken as an engineer's plain request needs: moving_load_preview and then
-moving_load_apply, each with rule='toetsmodel' and no path_mm, step_mm or thickness_mm.
+moving_load_apply, each with rule='toetsmodel' and no path_mm, step_mm or thickness_mm; and unless the model file
+the apply wrote is really there, read back with its LLSM-ML groups and wheel patches (the chat's words are not
+the evidence, the file is).
 """
 from __future__ import annotations
 
@@ -39,6 +41,19 @@ def start_server(work: Path) -> tuple[subprocess.Popen, dict]:
             return proc, json.loads(pid_file.read_text())
         time.sleep(1)
     raise SystemExit("MCP server did not start; see chat_server.log")
+
+
+def written(work: Path) -> dict | None:
+    """What the newest LLSM copy under ``work`` holds, read from the file itself; None when there is none."""
+    from llsm.scia.esa_file import read_loads  # noqa: PLC0415
+    copies = sorted(work.rglob("*_llsm-*.esa"), key=lambda p: p.stat().st_mtime)
+    copies = [p for p in copies if not p.stem.endswith("_FAILED")]
+    if not copies:
+        return None
+    model = read_loads(copies[-1])
+    groups = [g.name for g in model.groups if g.name.startswith("LLSM-ML ")]
+    patches = [s for s in model.surfaces if s.name.startswith("LLSM-ML ")]
+    return {"file": str(copies[-1]), "groups": groups, "patches": len(patches)}
 
 
 def main() -> int:
@@ -78,7 +93,10 @@ def main() -> int:
     plain = all(args.get("rule") == "toetsmodel" and not ({"path_mm", "step_mm", "thickness_mm"} & set(args))
                 for _, args in route)
     order = [tool for tool, _ in route]
+    saved = written(work)
     ok = plain and order[:1] == ["moving_load_preview"] and "moving_load_apply" in order
+    ok = ok and saved is not None and bool(saved["groups"]) and saved["patches"] > 0
+    print("WRITTEN:", saved)
     print("RESULT:", "PASS" if ok else "FAIL", order)
     return 0 if ok else 1
 
