@@ -21,7 +21,7 @@ from ._toetsmodel import lanes as upstream_lanes
 from ._toetsmodel.constants import geometry as upstream_geometry
 from ._toetsmodel.constants import loads as upstream_loads
 from ._toetsmodel.load_system.tandem_sequencer import tandem_system_sequencer
-from .frame import DeckFrame, FrameError, deck_edges, lane_extent, metres, millimetres, support_chainages
+from .frame import DeckFrame, FrameError, axis_of, deck_edges, lane_extent, metres, millimetres, support_chainages
 
 RULE_SOURCE = "toetsmodel plaatbruggen e8e44e7, tandem_sequencer.py and lane rules (lanes.py)"
 CONFIGURATIONS = {"A": "BG8000, lanes counted from the right-hand edge", "B": "BG9000, from the left-hand edge",
@@ -82,6 +82,8 @@ class RulePlan:
     plans: list[MovingLoadPlan] = field(default_factory=list)
     runs: list[LaneRun] = field(default_factory=list)
     frame: DeckFrame | None = None
+    axis_source: str | None = None  # "given", or the plate whose long axis it is
+    thickness_source: str | None = None  # "given", or the plate(s) it was read from
     problems: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
@@ -106,7 +108,7 @@ def _lane_centres(configuration: str, width_m: float) -> list[tuple[str, int, fl
 
 def plan_lm1_lanes(
     model: LoadModel,
-    path: RoadPath,
+    path: RoadPath | None,
     thickness_mm: float | None,
     configurations: str = "ABC",
     lanes: str = "theoretical",
@@ -121,15 +123,21 @@ def plan_lm1_lanes(
     deck_outline_mm=None,
     deck_z_mm: float = 0.0,
 ) -> RulePlan:
-    """One plan per lane and configuration, positions and lanes by the toetsmodel's rules."""
+    """One plan per lane and configuration, positions and lanes by the toetsmodel's rules.
+
+    Without ``path`` the axis is the deck plate's long axis; without ``thickness_mm`` the thickness is the
+    plate's own, read from the model. Either is refused when the model does not tell.
+    """
     result = RulePlan()
     try:
         _assert_same_tandem()
-        frame, outlines = _frame(model, path, thickness_mm, lanes, deck_edges_mm, carriageway_mm, deck_outline_mm, deck_z_mm)
+        frame, outlines = _frame(result, model, path, thickness_mm, lanes, deck_edges_mm, carriageway_mm,
+                                 deck_outline_mm, deck_z_mm)
     except (RuleError, FrameError) as exc:
         result.problems.append(str(exc))
         return result
     result.frame = frame
+    path = frame.path
     if not (math.isfinite(alpha) and alpha > 0):
         result.problems.append(f"alpha must be a positive number, got {alpha:g}")
         return result
@@ -177,20 +185,31 @@ def plan_lm1_lanes(
     return result
 
 
-def _frame(model, path, thickness_mm, lanes, deck_edges_mm, carriageway_mm, deck_outline_mm, deck_z_mm):
+def _frame(result, model, path, thickness_mm, lanes, deck_edges_mm, carriageway_mm, deck_outline_mm, deck_z_mm):
     if lanes not in ("theoretical", "real"):
         raise RuleError(f"lanes must be 'theoretical' or 'real', got {lanes!r}")
-    if thickness_mm is None:
-        raise RuleError(
-            "thickness_mm is needed: the toetsmodel starts the tandem 0.9 x the deck thickness from the deck end, "
-            "and LLSM does not read a plate's thickness from the model yet"
-        )
-    if not (math.isfinite(thickness_mm) and thickness_mm > 0):
-        raise RuleError(f"thickness_mm must be a positive number, got {thickness_mm:g}")
     decks, problems = _deck_outlines(model, deck_outline_mm, deck_z_mm)
     if not decks:
         raise RuleError("; ".join(problems) or "no deck found")
     outlines = [d[1] for d in decks]
+    names = [d[0] for d in decks]
+    if path is None:
+        if len(decks) != 1:
+            raise RuleError(f"the model has {len(decks)} decks ({', '.join(names)}): give path_mm, the axis to drive along")
+        path = axis_of(outlines[0])
+        result.axis_source = f"the long axis of {names[0]}"
+    else:
+        result.axis_source = "given"
+    if thickness_mm is None:
+        if deck_outline_mm is not None:
+            raise RuleError("with deck_outline_mm the deck is not a plate of the model, so its thickness is not "
+                            "known: give thickness_mm")
+        thickness_mm = _model_thickness(model, names)
+        result.thickness_source = f"read from {', '.join(names)}"
+    else:
+        result.thickness_source = "given"
+    if not (math.isfinite(thickness_mm) and thickness_mm > 0):
+        raise RuleError(f"thickness_mm must be a positive number, got {thickness_mm:g}")
     if deck_edges_mm is not None:
         right, left = _pair(deck_edges_mm, "deck_edges_mm")
     else:
@@ -207,6 +226,23 @@ def _frame(model, path, thickness_mm, lanes, deck_edges_mm, carriageway_mm, deck
     elif lanes == "real":
         raise RuleError("'real' lanes need carriageway_mm: the offsets of the right and left kerb from the axis, in mm")
     return DeckFrame(path, right, left, float(thickness_mm), carriageway), outlines
+
+
+def _model_thickness(model: LoadModel, names: list[str]) -> float:
+    """The decks' thickness in mm as the model stores it; refused when unread or when the decks differ."""
+    plates = {p.name: p for p in model.plates}
+    read = {n: plates[n].thickness if n in plates else None for n in names}
+    unread = [n for n, t in read.items() if t is None]
+    if unread:
+        raise RuleError(
+            f"the thickness of {', '.join(unread)} could not be read from the model; give thickness_mm "
+            "(the toetsmodel starts the tandem 0.9 x the deck thickness from the deck end)"
+        )
+    values = {round(t * 1000.0, 3) for t in read.values()}
+    if len(values) != 1:
+        shown = ", ".join(f"{n} {t * 1000:g} mm" for n, t in read.items())
+        raise RuleError(f"the decks differ in thickness ({shown}); give thickness_mm for the one the traffic drives on")
+    return values.pop()
 
 
 def _pair(values, label: str) -> tuple[float, float]:

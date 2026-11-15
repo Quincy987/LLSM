@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.14 — Traffic by a plain request (2026-11-15)
+
+### Added
+- **Gewoon zeggen wat je wilt.** "Zet de verkeersbelasting LM1 op het brugdek (brugdek.esa)" is genoeg: de chat
+  kiest zelf de route van het toetsmodel, zonder coördinaten, stap of dikte. In echte chatbeurten riep het model
+  precies die route aan met alleen de bestandsnaam, ook bij "Kun je verkeer op het brugdek zetten?" (eerst de
+  preview en de vraag, na "ja" wegschrijven).
+- **Modellen op bestandsnaam (chat).** Elk hulpmiddel voor een opgeslagen model (bedding, rijdende belasting,
+  rapport) vindt `brugdek.esa` of `kademuur_kaal` onder Documenten (de map van Windows, ook op OneDrive, en de
+  lokale), of in de mappen van `LLSM_MODEL_DIRS`. Twee modellen met dezelfde naam: de chat vraagt welke, met beide
+  paden. Geen enkel: hij zegt waar gezocht is. Een gevonden naam blijft die sessie hetzelfde bestand betekenen,
+  zodat preview en wegschrijven over hetzelfde model gaan.
+- **Rijlijn en dikte uit het model.** Met de toetsmodel-regels is de rijlijn de lengteas van de dekplaat en komt
+  de dikte uit het `.esa`-bestand (gemeten op platen van 4 en 5 hoeken en een wand). Opgeven mag nog en gaat voor.
+
+### Verified
+- `docs/verify/phase4-traffic-rules.md`, "Natural request": echte chatbeurten met een gewone zin (de route en het
+  weggeschreven bestand gecontroleerd: 3 groepen, 138 wielvlakken), opzoeken op naam via de MCP-server, de dikte
+  op vijf modellen. Unit-tests 465; de vergelijking met het toetsmodel nog steeds 0 afwijkingen.
+
+### Changed
+- `path_mm` is bij `rule='toetsmodel'` niet meer nodig (CLI: `--path` alleen zonder `--rule`). Kan de dikte niet
+  gelezen worden of verschillen de dekken, dan vraagt de tool erom; is er meer dan één dek, dan vraagt hij de rijlijn.
+
 ## v0.3.13 — Traffic rules of the plaatbruggen toetsmodel (2026-11-15)
 
 ### Added

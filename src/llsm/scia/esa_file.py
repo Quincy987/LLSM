@@ -283,6 +283,7 @@ class Plate:
     name: str
     node_ids: tuple[int, ...]
     outline: tuple[Point, ...]  # m; empty when a node could not be resolved
+    thickness: float | None = None  # m; None when the record is not in the measured layout
 
 
 @dataclass(frozen=True)
@@ -395,8 +396,26 @@ def _node(chunk: bytes, end: int, name: str) -> Node | None:
     return Node(name, node_id, point)  # type: ignore[arg-type]
 
 
+# A plate's thickness, measured on plates of 4 and 5 corners and a wall of known thickness (thickness_probe.py)
+# and on the demo models: the corner count sits at +47 after the name, the thickness (m) at 293 + 48 n. 48 bytes
+# before it: a nonzero u32 (an id: 0x13D on the fixture, 0x162 on the kademuur) and the u32 1. Without those the
+# thickness is not read (None), never guessed.
+_THICKNESS_RANGE = (0.01, 5.0)  # m
+
+
+def _thickness(chunk: bytes, end: int, record_end: int) -> float | None:
+    count = _u32(chunk, end + 47)
+    if not count or count < 3 or count > 1000:
+        return None
+    at = end + 293 + 48 * count
+    if at + 8 > record_end or not _u32(chunk, at - 48) or _u32(chunk, at - 44) != 1:
+        return None
+    value = _f64(chunk, at)
+    return value if value is not None and _THICKNESS_RANGE[0] <= value <= _THICKNESS_RANGE[1] else None
+
+
 def _plate(chunk: bytes, end: int, record_end: int, name: str) -> Plate:
-    """Every node the record refers to, in order. Internal nodes, if any, would be among them."""
+    """Every node the record refers to, in order (internal nodes, if any, would be among them), and its thickness."""
     ids: list[int] = []
     at = chunk.find(NODE_GUID, end, record_end)
     while at >= 0:
@@ -404,7 +423,7 @@ def _plate(chunk: bytes, end: int, record_end: int, name: str) -> Plate:
         if node_id and node_id not in ids:
             ids.append(node_id)
         at = chunk.find(NODE_GUID, at + 16, record_end)
-    return Plate(name, tuple(ids), ())
+    return Plate(name, tuple(ids), (), _thickness(chunk, end, record_end))
 
 
 def _group(chunk: bytes, start: int, end: int, name: str) -> LoadGroup | None:
@@ -523,7 +542,8 @@ def read_loads(path: Path) -> LoadModel:
         )
     nodes = {n.node_id: n.point for n in found[_NODE_TABLE]}
     plates = [
-        Plate(p.name, p.node_ids, tuple(nodes[i] for i in p.node_ids) if all(i in nodes for i in p.node_ids) else ())
+        Plate(p.name, p.node_ids, tuple(nodes[i] for i in p.node_ids) if all(i in nodes for i in p.node_ids) else (),
+              p.thickness)
         for p in found[_PLATE_TABLE]
     ]
     return LoadModel(

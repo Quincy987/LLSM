@@ -55,6 +55,7 @@ from .scia import esa_xml
 from .scia.autoclick import SciaDialogPending
 from .scia.loader import load as load_scia
 from .scia import tools as scia_tools
+from .scia import model_lookup
 from .scia.tools import LlsmContext
 
 
@@ -66,6 +67,17 @@ from .scia.tools import LlsmContext
 # tool calls serialise around the shared LlsmContext (claude rarely fires
 # parallel MCP calls but we don't rely on that).
 _TOOL_EXEC = ThreadPoolExecutor(max_workers=1, thread_name_prefix="llsm-tool")
+
+
+def _find_model(model_path: str, action: str) -> tuple[Path | None, dict | None]:
+    """The engineer's model from a path or a bare file name; or the result that says why not (and the candidates)."""
+    found = model_lookup.resolve_model(model_path)
+    if found.path is not None:
+        return found.path, None
+    return None, {
+        "ok": False, "action": action, "model": model_path, "saved_by": None, "candidates": found.candidates,
+        "problems": [found.problem], "warnings": [],
+    }
 
 
 def _state_block(result: dict) -> dict:
@@ -136,7 +148,15 @@ INSTRUCTIONS_BASE = (
     "Units: lengths in mm; line loads in kN/m. Z axis is vertical (up positive); "
     "for gravity-like downward loads use direction='Z' with a NEGATIVE magnitude.\n\n"
     "To put soil beddings on the piles of an existing saved model, use bedding_preview, then bedding_apply.\n\n"
-    "For moving traffic positions on an existing saved model: moving_load_preview, then moving_load_apply.\n\n"
+    "The engineer names a saved model by its file name (e.g. brugdek.esa): pass that name as model_path; the "
+    "tools find it under the Documents folders (or LLSM_MODEL_DIRS). Never ask for a full path first; ask only "
+    "when a tool lists several candidates.\n\n"
+    "Traffic on a saved model with a plate deck (verkeer, verkeersbelasting, LM1, tandem, rijdende belasting, "
+    "wiellasten): call moving_load_preview with model_path and rule='toetsmodel' and nothing else: no path_mm, "
+    "step_mm or thickness_mm unless the engineer gives them; the axis and the thickness come from the model. Show "
+    "the preview (groups, cases, rule.axis_mm, rule.thickness_mm) and ask once whether to write (not when the "
+    "engineer already asked to write it); then moving_load_apply with the same arguments. The even-step route "
+    "(path_mm and step_mm, no rule) is only for an explicit step or a custom axle list.\n\n"
     "For a results report of an existing saved model: report_preview, then report_write, "
     "then report_status until it is done.\n\n"
     + ANSWER_RULES
@@ -351,8 +371,11 @@ def _register_common_tools(mcp: FastMCP) -> None:
         unit is exactly one of: kh_kN_m3 (needs diameter_m), E_menard_MPa (needs diameter_m, alpha,
         groepsfactor) or k_line_kN_m2. piles is a comma-separated list of names and globs.
         datum_offset is the model z of NAP 0. replace and allow_existing mean the same as in bedding_apply."""
+        path, refused = _find_model(model_path, "preview")
+        if refused is not None:
+            return refused
         return bedding_tools.preview_bedding(
-            Path(model_path),
+            path,
             layers,
             bedding_tools.PlanRequest(
                 piles=piles, diameter_m=diameter_m, variant=variant, start_level_nap=start_level_nap,
@@ -381,8 +404,11 @@ def _register_common_tools(mcp: FastMCP) -> None:
         Trust only `ok`, `mismatches` and `other_changes` in the result; report `output` to the engineer.
         replace overwrites supports this tool wrote earlier; allow_existing adds to piles that
         already carry other line supports, which adds up their stiffness."""
+        path, refused = _find_model(model_path, "apply")
+        if refused is not None:
+            return refused
         return bedding_tools.apply_bedding(
-            Path(model_path),
+            path,
             layers,
             bedding_tools.PlanRequest(
                 piles=piles, diameter_m=diameter_m, variant=variant, start_level_nap=start_level_nap,
@@ -395,7 +421,8 @@ def _register_common_tools(mcp: FastMCP) -> None:
     # --- Moving load positions on a saved model ---
     def moving_load_preview(
         model_path: str,
-        path_mm: list[list[float]],
+        rule: str | None = None,
+        path_mm: list[list[float]] | None = None,
         step_mm: float | None = None,
         vehicle_preset: str | None = None,
         axles: list[dict] | None = None,
@@ -411,7 +438,6 @@ def _register_common_tools(mcp: FastMCP) -> None:
         deck_outline_mm: list[list[float]] | None = None,
         deck_z_mm: float = 0.0,
         contact: str | None = None,
-        rule: str | None = None,
         configurations: str = "ABC",
         lanes: str = "theoretical",
         thickness_mm: float | None = None,
@@ -419,33 +445,35 @@ def _register_common_tools(mcp: FastMCP) -> None:
         carriageway_mm: list[float] | None = None,
         supports_mm: list | None = None,
     ) -> dict:
-        """Work out the load cases a vehicle driving along a road puts on a saved .esa. Changes nothing.
+        """Traffic on a saved .esa: what would be written. Changes nothing. Always call this first.
 
-        Always call this first and show the engineer the table. One load case per position of the
-        front axle, in one exclusive variable load group "LLSM-ML <name>". path_mm is the road axis in
-        plan, [[x, y], ...] in mm; the wheels sit square to it, so a skewed deck is just a skewed path.
-        step_mm is how far the front axle moves per case. Vehicle: vehicle_preset LM1-TS1/LM1-TS2/LM1-TS3
-        (EN 1991-2 tandem, 2 axles 1200 mm apart, track 2000 mm; alpha multiplies the axle load), or
-        axles [{load_kn, offset_mm}] with offset behind the front axle (positive kN act downward) and
-        optionally track_mm. deck "plate" puts a free point load per wheel on the 2D members; "beam"
-        puts one load per axle on member. lateral_offset_mm moves the vehicle left (+) of the path.
-        last_step "short" adds a final position at the path end when the step does not fit. contact
-        "surface" writes each wheel as a 0.4 x 0.4 m free surface load (default for an LM1 preset on a
-        plate), "point" a free point load (default for custom axles).
+        Default for any traffic request on a plate deck: rule="toetsmodel" with only model_path (a file name
+        is enough). That puts the LM1 tandem in every notional lane at the plaatbruggen toetsmodel's
+        positions (start 0.9 x deck thickness from the deck end, steps of 1 m, 0.5 m near supports, every
+        mid-span), one exclusive group "LLSM-ML <name> L<lane><conf>" per lane and configuration (A: BG8000
+        lanes from the right-hand edge, B: BG9000 from the left, C: BG10000 lane 1 in the middle), wheels as
+        0.4 x 0.4 m surface loads. The axis is the deck plate's long axis and the thickness is read from the
+        plate (rule.axis_mm, rule.thickness_mm in the result); path_mm and thickness_mm override them. The deck
+        edges come from the plate (or deck_edges_mm [right, left] offsets from the axis). lanes "real" lays the
+        lanes over the carriageway, carriageway_mm [right kerb, left kerb]. supports_mm: chainages along the
+        axis, or support lines [[x, y], [x, y]] for a skewed deck, every support including the deck ends;
+        default the deck ends only. Wheels off the deck are left out, as in the toetsmodel. Show
+        rule.lanes_laid_out and notes. vehicle_preset, axles, step_mm, lateral_offset_mm and last_step are
+        refused with a rule.
 
-        rule="toetsmodel" (instead of a vehicle and step_mm): the LM1 tandem in every notional lane, at
-        the positions of the plaatbruggen toetsmodel (start 0.9 x thickness from the deck end, steps of
-        1 m, 0.5 m near supports, every mid-span), one exclusive group "LLSM-ML <name> L<lane><conf>" per
-        lane and configuration (A: BG8000 lanes from the right-hand edge, B: BG9000 from the left, C:
-        BG10000 lane 1 in the middle). Needs thickness_mm. path_mm is the deck's axis; the deck edges are
-        taken from the plate (or deck_edges_mm [right, left] offsets from the path). lanes "real" lays
-        the lanes over the carriageway, carriageway_mm [right kerb, left kerb]. supports_mm: chainages
-        along the path, or support lines [[x, y], [x, y]] for a skewed deck, every support including the
-        deck ends; default the deck ends only. vehicle_preset, axles, step_mm, lateral_offset_mm and
-        last_step are refused with a rule.
-        Wheels off the deck are left out, as in the toetsmodel. Show rule.lanes_laid_out and notes."""
+        Only for an explicit step or a custom vehicle (no rule): one load case per position of the front axle
+        in one exclusive group "LLSM-ML <name>". path_mm is the road axis in plan, [[x, y], ...] in mm; the
+        wheels sit square to it. step_mm is how far the front axle moves per case. Vehicle: vehicle_preset
+        LM1-TS1/LM1-TS2/LM1-TS3 (alpha multiplies the axle load), or axles [{load_kn, offset_mm}] with offset
+        behind the front axle and optionally track_mm. deck "plate" puts the wheels on the 2D members; "beam"
+        one load per axle on member. lateral_offset_mm moves the vehicle left (+) of the path. last_step
+        "short" adds a final position at the path end. contact "surface" (default for an LM1 preset on a
+        plate) or "point" (default for custom axles)."""
+        path, refused = _find_model(model_path, "preview")
+        if refused is not None:
+            return refused
         return moving_load_tools.preview_moving_load(
-            Path(model_path),
+            path,
             moving_load_tools.MovingLoadRequest(
                 path_mm=path_mm, step_mm=step_mm, vehicle_preset=vehicle_preset, axles=axles, track_mm=track_mm,
                 alpha=alpha, deck=deck, member=member, name=name, lateral_offset_mm=lateral_offset_mm,
@@ -458,7 +486,8 @@ def _register_common_tools(mcp: FastMCP) -> None:
 
     def moving_load_apply(
         model_path: str,
-        path_mm: list[list[float]],
+        rule: str | None = None,
+        path_mm: list[list[float]] | None = None,
         step_mm: float | None = None,
         vehicle_preset: str | None = None,
         axles: list[dict] | None = None,
@@ -474,7 +503,6 @@ def _register_common_tools(mcp: FastMCP) -> None:
         deck_outline_mm: list[list[float]] | None = None,
         deck_z_mm: float = 0.0,
         contact: str | None = None,
-        rule: str | None = None,
         configurations: str = "ABC",
         lanes: str = "theoretical",
         thickness_mm: float | None = None,
@@ -488,8 +516,11 @@ def _register_common_tools(mcp: FastMCP) -> None:
         The original is never changed. SCIA must be closed. Same arguments as moving_load_preview.
         Trust only `ok`, `mismatches` and `other_changes` in the result; report `output` to the engineer.
         replace overwrites what this tool wrote earlier under the same name, nothing else."""
+        path, refused = _find_model(model_path, "apply")
+        if refused is not None:
+            return refused
         return moving_load_tools.apply_moving_load(
-            Path(model_path),
+            path,
             moving_load_tools.MovingLoadRequest(
                 path_mm=path_mm, step_mm=step_mm, vehicle_preset=vehicle_preset, axles=axles, track_mm=track_mm,
                 alpha=alpha, deck=deck, member=member, name=name, lateral_offset_mm=lateral_offset_mm,
@@ -509,8 +540,11 @@ def _register_common_tools(mcp: FastMCP) -> None:
         Always call this first. Lists the engineering reports stored in the model, whether results
         are stored, the planned output files and the time it takes (several minutes per format).
         Whether the report's results items really print results is only known after report_write."""
+        path, refused = _find_model(model_path, "preview")
+        if refused is not None:
+            return refused
         return report_tools.preview_report(
-            Path(model_path), report_tools.ReportRequest(report_name, formats or ["pdf"], calculate, cases_group)
+            path, report_tools.ReportRequest(report_name, formats or ["pdf"], calculate, cases_group)
         )
 
     def report_write(model_path: str, report_name: str | None = None, formats: list[str] | None = None,
@@ -525,7 +559,9 @@ def _register_common_tools(mcp: FastMCP) -> None:
         (fresh) results. cases_group: a chapter per load case of that group (LLSM's moving-load groups,
         "LLSM-ML <name>"); needs calculate; its result classes exist on the copy only. Problems found
         from the file alone come back at once, without a job."""
-        path = Path(model_path)
+        path, refused = _find_model(model_path, "write")
+        if refused is not None:
+            return refused
         request = report_tools.ReportRequest(report_name, formats or ["pdf"], calculate, cases_group)
         preview = report_tools.preview_report(path, request, out_dir=Path(out_dir) if out_dir else None)
         if not preview["ok"]:

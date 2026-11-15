@@ -58,7 +58,7 @@ def _parser() -> argparse.ArgumentParser:
 
     def shared(sub: argparse.ArgumentParser) -> None:
         sub.add_argument("model", type=Path, help="Saved SCIA model (.esa).")
-        sub.add_argument("--path", type=_points, required=True, help="Road axis in plan, mm: 'x,y;x,y[;...]'.")
+        sub.add_argument("--path", type=_points, help="Road axis in plan, mm: 'x,y;x,y[;...]' (with --rule: default the deck's long axis).")
         sub.add_argument("--step", type=float, help="Step of the front axle, mm (not with --rule).")
         vehicle = sub.add_mutually_exclusive_group(required=True)
         vehicle.add_argument("--rule", choices=("toetsmodel",),

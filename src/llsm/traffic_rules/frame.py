@@ -65,6 +65,36 @@ class DeckFrame:
         return self.width_m
 
 
+def axis_of(outline: tuple[tuple[float, float], ...]) -> RoadPath:
+    """The long axis of a four-cornered deck: from the middle of one short (end) edge to the middle of the other.
+
+    Also for a skewed deck: its ends are the shorter pair of opposite edges. A square deck runs along global x.
+    The axis starts at the end with the smaller x (then the smaller y).
+    """
+    if len(outline) != 4:
+        raise FrameError(f"the deck has {len(outline)} corners; its axis is only taken from a four-cornered plate: give path_mm")
+    edges = [(outline[i], outline[(i + 1) % 4]) for i in range(4)]
+    pairs = [(edges[0], edges[2]), (edges[1], edges[3])]
+
+    def mid(edge):
+        return ((edge[0][0] + edge[1][0]) / 2, (edge[0][1] + edge[1][1]) / 2)
+
+    def ends_length(pair):
+        return math.dist(*pair[0]) + math.dist(*pair[1])
+
+    def along_x(pair):  # how much of the axis between this pair's midpoints runs along x
+        (ax, ay), (bx, by) = mid(pair[0]), mid(pair[1])
+        return abs(bx - ax) / max(math.dist((ax, ay), (bx, by)), 1e-9)
+
+    lengths = [ends_length(p) for p in pairs]
+    if abs(lengths[0] - lengths[1]) <= 1.0:  # square within 1 mm: drive along x
+        ends = max(pairs, key=along_x)
+    else:
+        ends = pairs[0] if lengths[0] < lengths[1] else pairs[1]
+    start, end = sorted((mid(ends[0]), mid(ends[1])))
+    return RoadPath.parse([start, end])
+
+
 def lateral_offset(path: RoadPath, point: Point2) -> tuple[float, float]:
     """(chainage, lateral offset) of a point: nearest point on the axis, offset positive to the left."""
     best: tuple[float, float, float] | None = None

@@ -44,12 +44,20 @@ def node_body(node_id, point):
     return bytes(body)
 
 
-def plate_body(node_ids):
-    body = bytearray(100 + 52 * len(node_ids))
+def plate_body(node_ids, thickness=None):
+    """Node GUIDs at 60 + 52 i; with ``thickness`` the measured layout: corner count at +47, value at
+    293 + 48 n, an id and the u32 1 48 bytes before it (thickness_probe.py)."""
+    n = len(node_ids)
+    body = bytearray(max(100 + 52 * n, 293 + 48 * n + 60))
     for i, node_id in enumerate(node_ids):
         at = 60 + 52 * i
         body[at:at + 16] = NODE
         struct.pack_into("<I", body, at + 16, node_id)
+    if thickness is not None:
+        struct.pack_into("<I", body, 47, n)
+        at = 293 + 48 * n
+        struct.pack_into("<II", body, at - 48, 0x13D, 1)
+        struct.pack_into("<d", body, at, thickness)
     return bytes(body)
 
 
@@ -221,3 +229,16 @@ def test_a_table_longer_than_one_piece_is_read_whole(tmp_path):
     whole = head + bytes(filler) + second + bytes(64)
     model = read_loads(loads_file(tmp_path, [whole[:PIECE], whole[PIECE:]], {"case": 2}))
     assert [c.name for c in model.cases] == ["C 01", "C 02"]
+
+
+@pytest.mark.parametrize("thickness, expected", [(0.3, 0.3), (0.45, 0.45), (None, None)])
+def test_plate_thickness(tmp_path, thickness, expected):
+    blocks = [table_block("plate", [top_level("D1", plate_body([1, 2, 3, 4], thickness))])]
+    assert read_loads(loads_file(tmp_path, blocks, {"plate": 1})).plates[0].thickness == expected
+
+
+def test_plate_thickness_without_its_marker_is_not_read(tmp_path):
+    body = bytearray(plate_body([1, 2, 3, 4], 0.3))
+    struct.pack_into("<I", body, 293 + 48 * 4 - 44, 7)  # not the u32 1 the layout has there
+    blocks = [table_block("plate", [top_level("D1", bytes(body))])]
+    assert read_loads(loads_file(tmp_path, blocks, {"plate": 1})).plates[0].thickness is None
