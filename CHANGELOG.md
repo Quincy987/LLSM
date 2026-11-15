@@ -19,6 +19,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Rijlijn en dikte uit het model.** Met de toetsmodel-regels is de rijlijn de lengteas van de dekplaat en komt
   de dikte uit het `.esa`-bestand (gemeten op platen van 4 en 5 hoeken en een wand). Opgeven mag nog en gaat voor.
 
+### Verified
+- `docs/verify/phase4-traffic-rules.md`, "Natural request": echte chatbeurten met een gewone zin (de route en het
+  weggeschreven bestand gecontroleerd: 3 groepen, 138 wielvlakken), opzoeken op naam via de MCP-server, de dikte
+  op vijf modellen. Unit-tests 465; de vergelijking met het toetsmodel nog steeds 0 afwijkingen.
+
 ### Changed
 - `path_mm` is bij `rule='toetsmodel'` niet meer nodig (CLI: `--path` alleen zonder `--rule`). Kan de dikte niet
   gelezen worden of verschillen de dekken, dan vraagt de tool erom; is er meer dan één dek, dan vraagt hij de rijlijn.
