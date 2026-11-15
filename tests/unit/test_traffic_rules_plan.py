@@ -11,8 +11,8 @@ from llsm.traffic_rules.frame import deck_edges, lane_extent, lateral_offset, su
 from llsm.traffic_rules.presets import plan_lm1_lanes
 
 
-def deck(length=6.0, width=4.0, name="D1"):
-    return Plate(name, (1, 2, 3, 4), ((0, 0, 0), (length, 0, 0), (length, width, 0), (0, width, 0)))
+def deck(length=6.0, width=4.0, name="D1", thickness=None):
+    return Plate(name, (1, 2, 3, 4), ((0, 0, 0), (length, 0, 0), (length, width, 0), (0, width, 0)), thickness)
 
 
 def model(*plates):
@@ -106,7 +106,7 @@ def test_real_lanes_over_the_carriageway():
 
 
 @pytest.mark.parametrize("kwargs, message", [
-    ({"thickness_mm": None}, "thickness_mm is needed"),
+    ({"thickness_mm": None}, "could not be read from the model"),
     ({"lanes": "real"}, "carriageway_mm"),
     ({"configurations": "X"}, "configurations"),
     ({"carriageway_mm": [-3000, 3000]}, "past the deck edges"),
@@ -170,3 +170,57 @@ def test_even_step_route_refuses_a_patch_whose_wheel_is_off_the_deck():
 def test_configurations_as_a_list():
     rules = plan_lm1_lanes(model(), DEMO_PATH, 300, configurations=["A", "C"])
     assert [r.suffix for r in rules.runs] == ["L1A", "L1C"]
+
+
+
+# --- a plain request: axis and thickness from the model ------------------------------------------------
+
+def test_axis_and_thickness_from_the_model_give_the_same_cases():
+    plain = plan_lm1_lanes(model(deck(thickness=0.3)), None, None)
+    given = plan_lm1_lanes(model(deck(thickness=0.3)), DEMO_PATH, 300)
+    assert plain.problems == [] and plain.frame.path.points == ((0.0, 2000.0), (6000.0, 2000.0))
+    assert plain.frame.thickness_mm == 300 and plain.thickness_source == "read from D1"
+    assert plain.axis_source == "the long axis of D1" and given.axis_source == "given"
+    assert [r.x_m for r in plain.runs] == [r.x_m for r in given.runs]
+    assert [len(p.surfaces) for p in plain.plans] == [len(p.surfaces) for p in given.plans]
+
+
+def test_a_deck_lying_along_y_drives_along_y():
+    along_y = Plate("D1", (1, 2, 3, 4), ((0, 0, 0), (4, 0, 0), (4, 6, 0), (0, 6, 0)), 0.3)
+    rules = plan_lm1_lanes(model(along_y), None, None, configurations="A")
+    assert rules.frame.path.points == ((2000.0, 0.0), (2000.0, 6000.0))
+    (run,) = rules.runs
+    assert (run.entry_mm, run.exit_mm, len(run.x_m)) == (pytest.approx(0), pytest.approx(6000), 14)
+    # lane 1 of Conf. A lies 1.5 m from the right-hand edge; driving along +y that edge is x = 4 m
+    assert run.lateral_mm == pytest.approx(-500)
+    assert rules.plans[0].surfaces[0].centre_mm[0] == pytest.approx(3500, abs=1)
+
+
+def test_axis_of_a_skewed_deck_and_refusals():
+    from llsm.traffic_rules.frame import FrameError, axis_of
+    skew = ((0, 0), (10000, 0), (12000, 4000), (2000, 4000))
+    assert axis_of(skew).points == ((1000.0, 2000.0), (11000.0, 2000.0))
+    with pytest.raises(FrameError, match="5 corners"):
+        axis_of(((0, 0), (1, 0), (2, 1), (1, 2), (0, 1)))
+    assert axis_of(((0, 0), (4000, 0), (4000, 4000), (0, 4000))).points == ((0.0, 2000.0), (4000.0, 2000.0))
+
+
+def test_thickness_unread_or_differing_is_asked_for():
+    unread = plan_lm1_lanes(model(deck()), None, None)
+    assert "thickness of D1 could not be read from the model; give thickness_mm" in unread.problems[0]
+    two = model(deck(thickness=0.3), Plate("D2", (5, 6, 7, 8), ((7, 0, 0), (9, 0, 0), (9, 4, 0), (7, 4, 0)), 0.4))
+    assert "give path_mm" in plan_lm1_lanes(two, None, None).problems[0]
+    differ = plan_lm1_lanes(two, RoadPath.parse([[0, 2000], [9000, 2000]]), None)
+    assert "decks differ in thickness (D1 300 mm, D2 400 mm)" in differ.problems[0]
+
+
+def test_plain_request_through_the_tool():
+    result = preview_moving_load("m.esa", MovingLoadRequest(rule="toetsmodel"), reader=lambda _: model(deck(thickness=0.3)))
+    assert result["ok"], result["problems"]
+    assert result["rule"]["axis_mm"] == [[0.0, 2000.0], [6000.0, 2000.0]] and result["rule"]["thickness_mm"] == 300
+    assert result["rule"]["thickness_source"] == "read from D1" and result["planned_cases"] == 42
+
+
+def test_even_step_route_still_needs_a_path():
+    request = MovingLoadRequest(step_mm=1600, vehicle_preset="LM1-TS1")
+    assert "path_mm is needed" in preview_moving_load("m.esa", request, reader=lambda _: model())["problems"][0]

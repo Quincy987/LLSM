@@ -34,7 +34,7 @@ _RULES = ("toetsmodel",)
 class MovingLoadRequest:
     """Everything that decides what gets written, apart from the model."""
 
-    path_mm: list
+    path_mm: list | None = None  # the road axis; with a rule it may be left out (the deck plate's long axis)
     step_mm: float | None = None  # the even-step route; not used with a rule
     vehicle_preset: str | None = None
     axles: list[dict] | None = None
@@ -104,8 +104,12 @@ def _prepare(
     action: str, model_path: Path, request: MovingLoadRequest, reader: Callable[[Path], LoadModel]
 ) -> tuple[dict, LoadModel | None, list[MovingLoadPlan]]:
     result = _base_result(action, model_path)
+    if request.path_mm is None and request.rule is None:
+        result["problems"] = [("path_mm is needed: the road axis [[x, y], ...] in mm (or rule='toetsmodel', which takes "
+                               "the deck plate's long axis)")]
+        return result, None, []
     try:
-        path = RoadPath.parse(request.path_mm)
+        path = RoadPath.parse(request.path_mm) if request.path_mm is not None else None
     except PathError as exc:
         result["problems"] = [str(exc)]
         return result, None, []
@@ -186,7 +190,10 @@ def _prepare_rule(result, model_path, request, path, reader):
             "lanes": request.lanes,
             "deck_edges_mm": [round(frame.right_edge_mm, 1), round(frame.left_edge_mm, 1)] if frame else None,
             "deck_width_m": round(frame.width_m, 3) if frame else None,
-            "thickness_mm": request.thickness_mm,
+            "axis_mm": [[round(x, 1), round(y, 1)] for x, y in frame.path.points] if frame else None,
+            "axis_source": rules.axis_source,
+            "thickness_mm": frame.thickness_mm if frame else request.thickness_mm,
+            "thickness_source": rules.thickness_source,
             "lanes_laid_out": [
                 {"group": p.group, "configuration": r.configuration, "lane": r.lane, "y_m": round(r.y_m, 3),
                  "offset_from_axis_mm": round(r.lateral_mm, 1), "deck_from_to_mm": [round(r.entry_mm, 1), round(r.exit_mm, 1)],
