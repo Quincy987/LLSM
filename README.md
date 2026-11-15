@@ -138,7 +138,7 @@ Piles that already carry other line supports are refused unless you pass `--allo
 
 ## Moving load on an existing model
 
-In the chat, just say what you want: "Zet de verkeersbelasting LM1 op het brugdek (brugdek.esa)". LLSM finds the model by its file name (under Documents, or the folders in `LLSM_MODEL_DIRS`, separated by `;`), takes the deck plate's long axis and thickness from the model, and puts the LM1 tandem in every notional lane at the positions of the plaatbruggen toetsmodel: one exclusive group per lane and configuration, wheels as 0.4 × 0.4 m surface loads. Same rules as beddings: a new `<model>_llsm-NN.esa`, read back and checked; SCIA closed.
+In the chat, just say what you want: "Zet de verkeersbelasting LM1 op het brugdek (brugdek.esa)". LLSM finds the model by its file name (under Documents: Windows' own Documents folder, also when it is on OneDrive, and the local one; or the folders in `LLSM_MODEL_DIRS`, separated by `;`), takes the deck plate's long axis and thickness from the model, and puts the LM1 tandem in every notional lane at the positions of the plaatbruggen toetsmodel: one exclusive group per lane and configuration, wheels as 0.4 × 0.4 m surface loads. Same rules as beddings: a new `<model>_llsm-NN.esa`, read back and checked; SCIA closed.
 
 The other route puts a vehicle at every step along a road: one load case per position of the front axle, all in one exclusive variable load group `LLSM-ML <name>`.
 

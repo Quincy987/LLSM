@@ -3,11 +3,13 @@
 The panel's chat has only LLSM's tools and runs in the repo folder, so "brugdek.esa" would be looked for there.
 An engineer names the model they have open; this finds it:
 
-* an existing path (absolute, or relative to the current folder) is used as is;
-* otherwise the name (".esa" added when missing, case does not matter) is searched in the model folders:
-  ``LLSM_MODEL_DIRS`` (folders separated by ``os.pathsep``) when set, else the user's Documents folder, to a
-  depth of four folders, skipping folders whose name starts with ``.``; and the folder of the last model a tool
-  used in this session, first.
+* a path (absolute, or with a folder in it) is used as is, and refused when it does not exist;
+* a bare file name (".esa" added when missing, case does not matter) is searched in the model folders, never in
+  the server's own working folder: ``LLSM_MODEL_DIRS`` (folders separated by ``os.pathsep``) when set, else the
+  user's Documents folder as Windows knows it (also when it is redirected, e.g. to OneDrive) and the local
+  ~/Documents when that is another folder, to a depth of four
+  folders, skipping folders whose name starts with ``.``; and the folder of the last model a tool used in this
+  session, first.
 
 One match is the model. Several: the caller lists them and asks which. None: the caller says where it looked.
 A name that matched one model, or that was given once as a full path, keeps meaning that file for the rest of the
@@ -33,10 +35,35 @@ class Lookup:
     problem: str | None = None
 
 
+def documents_folder() -> Path:
+    """The user's Documents folder as Windows knows it (FOLDERID_Documents); else ~/Documents."""
+    if os.name == "nt":
+        try:
+            import ctypes  # noqa: PLC0415
+            from ctypes import wintypes  # noqa: PLC0415
+
+            class _Guid(ctypes.Structure):
+                _fields_ = [("d1", wintypes.DWORD), ("d2", wintypes.WORD), ("d3", wintypes.WORD), ("d4", ctypes.c_ubyte * 8)]
+
+            documents = _Guid(0xFDD39AD0, 0x238F, 0x46AF, (ctypes.c_ubyte * 8)(0xAD, 0xB4, 0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7))
+            found = ctypes.c_wchar_p()
+            if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(documents), 0, None, ctypes.byref(found)) == 0:
+                try:
+                    return Path(found.value)
+                finally:
+                    ctypes.windll.ole32.CoTaskMemFree(found)
+        except (OSError, AttributeError, ValueError):
+            pass
+    return Path.home() / "Documents"
+
+
 def model_dirs() -> list[Path]:
     """Where a bare file name is searched, in order."""
     given = os.environ.get("LLSM_MODEL_DIRS", "").strip()
-    folders = [Path(p) for p in given.split(os.pathsep) if p.strip()] if given else [Path.home() / "Documents"]
+    if given:
+        folders = [Path(p) for p in given.split(os.pathsep) if p.strip()]
+    else:  # Windows' Documents (often on OneDrive) and the local one, when they differ: models live in both
+        folders = list(dict.fromkeys(f for f in (documents_folder(), Path.home() / "Documents") if f.is_dir()))
     if _last_folder is not None and _last_folder not in folders:
         folders.insert(0, _last_folder)
     return folders
@@ -64,13 +91,13 @@ def resolve_model(text: str) -> Lookup:
     if not raw:
         return Lookup(problem="No model given: name the .esa file.")
     given = Path(raw).expanduser()
-    if given.is_file():
+    if given.is_absolute() or given.parent != Path("."):
+        if not given.is_file():
+            return Lookup(problem=f"Model not found: {given}")
         chosen = given.resolve()
         _last_folder = chosen.parent
         _known[chosen.name.lower()] = chosen  # after "which one?", the bare name means the one chosen
         return Lookup(path=chosen)
-    if given.parent != Path(".") or given.is_absolute():
-        return Lookup(problem=f"Model not found: {given}")
     wanted = (raw if raw.lower().endswith(".esa") else raw + ".esa").lower()
     known = _known.get(wanted)
     if known is not None and known.is_file():

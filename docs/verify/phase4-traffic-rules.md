@@ -82,8 +82,9 @@ Engineers do not type "volgens het toetsmodel", coordinates or a thickness: they
 they want. Three things make that work, checked here.
 
 **The model by its file name.** The chat has only LLSM's tools and runs in the repo folder, so "brugdek.esa" was
-"Model not found". Every saved-model tool now looks a bare name up (`.esa` optional, any case) under Documents or
-the folders in `LLSM_MODEL_DIRS`, to four folders deep, skipping hidden ones, the last model's folder first.
+"Model not found". Every saved-model tool now looks a bare name up (`.esa` optional, any case) under Documents (Windows' known
+Documents folder, on this PC `OneDrive - Gemeente Amsterdam\Documenten`, and the local `~\Documents` where the
+demo models are) or the folders in `LLSM_MODEL_DIRS`, never in the server's own working folder, to four folders deep, skipping hidden ones, the last model's folder first.
 Through the MCP server (`verify_app_rule.py`, `LLSM_MODEL_DIRS` = the work folder): `brugdek.esa` found;
 `nergens.esa` refused, naming the folder searched; `dubbel.esa`, present twice, refused with both paths, newest
 first; `report_preview` and `bedding_preview` (`kademuur_kaal`, no extension) find their models the same way. A

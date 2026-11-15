@@ -68,5 +68,17 @@ def test_a_remembered_model_that_is_gone_is_searched_again(tree):
     assert "No model called brugdek.esa" in resolve_model("brugdek").problem
 
 
+def test_a_bare_name_is_not_taken_from_the_working_folder(tree, tmp_path_factory, monkeypatch):
+    here = tmp_path_factory.mktemp("server_cwd")
+    (here / "brugdek.esa").write_bytes(b"stray")
+    monkeypatch.chdir(here)
+    assert resolve_model("brugdek.esa").path == (tree / "LLSM demo" / "brugdek.esa").resolve()
+
+
+def test_documents_folder_is_a_folder():
+    from llsm.scia.model_lookup import documents_folder
+    assert documents_folder().name  # on Windows the known folder, which may be redirected
+
+
 def test_a_path_that_does_not_exist_is_not_searched(tree):
     assert resolve_model(str(tree / "elders" / "brugdek.esa")).problem.startswith("Model not found")
