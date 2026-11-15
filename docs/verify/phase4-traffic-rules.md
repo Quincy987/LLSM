@@ -90,6 +90,8 @@ Through the MCP server (`verify_app_rule.py`, `LLSM_MODEL_DIRS` = the work folde
 first; `report_preview` and `bedding_preview` (`kademuur_kaal`, no extension) find their models the same way. A
 name that matched one model (or that the engineer then gave as a full path) keeps meaning that file for the
 session, so a preview and its apply act on the same model even if another copy appears in between (unit tests).
+Without `LLSM_MODEL_DIRS`, as the panel runs: `brugdek.esa`, `kademuur_kaal` and `brugdek_llsm-01` resolve to the
+files in `C:\Users\klerk015\Documents\LLSM demo`, found through the local Documents folder next to the OneDrive one.
 
 **The thickness from the plate** (`thickness_probe.py`). Three plates of known thickness written through the XML
 route (4 corners 0.25 m, 5 corners 0.45 m, a vertical wall 0.35 m) and the demo models: the corner count sits at
