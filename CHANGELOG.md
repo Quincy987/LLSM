@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.14 — Traffic by a plain request (2026-11-15)
+
 ### Added
 - **Gewoon zeggen wat je wilt.** "Zet de verkeersbelasting LM1 op het brugdek (brugdek.esa)" is genoeg: de chat
   kiest zelf de route van het toetsmodel, zonder coördinaten, stap of dikte. In echte chatbeurten riep het model
