@@ -5,6 +5,9 @@
 Starts the MCP server from this checkout (PYTHONPATH=src) with LLSM_MODEL_DIRS=WORKDIR, then runs the panel's own
 chat backend (ClaudeCodeBackend: the claude CLI with only LLSM's tools and the panel's system prompt) for each
 prompt in one session, recording every tool call and its result. Writes WORKDIR/chat_turn.json.
+
+Exit 1 unless the traffic route was taken as an engineer's plain request needs: moving_load_preview and then
+moving_load_apply, each with rule='toetsmodel' and no path_mm, step_mm or thickness_mm.
 """
 from __future__ import annotations
 
@@ -70,7 +73,14 @@ def main() -> int:
             print("CALL", call["tool"], json.dumps(call["payload"], ensure_ascii=False)[:400])
     (work / "chat_turn.json").write_text(json.dumps({"turns": turns, "tool_events": calls}, indent=1, ensure_ascii=False),
                                          encoding="utf-8")
-    return 0
+    started = [(c["tool"], c["payload"]) for c in calls if c["phase"] == "start" and isinstance(c["payload"], dict)]
+    route = [(tool, args) for tool, args in started if tool in ("moving_load_preview", "moving_load_apply")]
+    plain = all(args.get("rule") == "toetsmodel" and not ({"path_mm", "step_mm", "thickness_mm"} & set(args))
+                for _, args in route)
+    order = [tool for tool, _ in route]
+    ok = plain and order[:1] == ["moving_load_preview"] and "moving_load_apply" in order
+    print("RESULT:", "PASS" if ok else "FAIL", order)
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

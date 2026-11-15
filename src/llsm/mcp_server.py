@@ -48,7 +48,6 @@ from mcp.server.fastmcp import FastMCP
 
 from . import bedding as bedding_tools
 from . import moving_load as moving_load_tools
-from .scia import model_lookup
 from . import report as report_tools
 from .answer_rules import ANSWER_RULES
 from .mcp_guard import GuardMiddleware
@@ -56,6 +55,7 @@ from .scia import esa_xml
 from .scia.autoclick import SciaDialogPending
 from .scia.loader import load as load_scia
 from .scia import tools as scia_tools
+from .scia import model_lookup
 from .scia.tools import LlsmContext
 
 
@@ -75,7 +75,7 @@ def _find_model(model_path: str, action: str) -> tuple[Path | None, dict | None]
     if found.path is not None:
         return found.path, None
     return None, {
-        "ok": False, "action": action, "model": model_path, "candidates": found.candidates,
+        "ok": False, "action": action, "model": model_path, "saved_by": None, "candidates": found.candidates,
         "problems": [found.problem], "warnings": [],
     }
 
@@ -155,8 +155,8 @@ INSTRUCTIONS_BASE = (
     "wiellasten): call moving_load_preview with model_path and rule='toetsmodel' and nothing else: no path_mm, "
     "step_mm or thickness_mm unless the engineer gives them; the axis and the thickness come from the model. Show "
     "the preview (groups, cases, rule.axis_mm, rule.thickness_mm) and ask once whether to write (not when the "
-    "engineer already asked to write it); then moving_load_apply with the same arguments. The even-step route (path_mm and step_mm, no rule) is only for "
-    "an explicit step or a custom axle list.\n\n"
+    "engineer already asked to write it); then moving_load_apply with the same arguments. The even-step route "
+    "(path_mm and step_mm, no rule) is only for an explicit step or a custom axle list.\n\n"
     "For a results report of an existing saved model: report_preview, then report_write, "
     "then report_status until it is done.\n\n"
     + ANSWER_RULES

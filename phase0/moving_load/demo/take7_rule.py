@@ -23,7 +23,6 @@ import json
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 
 from take6 import (  # noqa: F401  (same desktop, same SCIA: the measured positions)
     CASE_ROW_X, CASE_ROWS_Y, COMMAND_HIT, COMMAND_SEARCH, DEMO, FIXTURE, GROUP_ROW, GROUPS_CLOSE, LOAD_CASE_BOX,
@@ -120,5 +119,4 @@ def montage() -> None:
 
 
 if __name__ == "__main__":
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
     {"prepare": prepare, "chat": chat, "scia": scia, "montage": montage}[sys.argv[1]]()

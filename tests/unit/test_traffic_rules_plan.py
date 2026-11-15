@@ -214,6 +214,12 @@ def test_thickness_unread_or_differing_is_asked_for():
     assert "decks differ in thickness (D1 300 mm, D2 400 mm)" in differ.problems[0]
 
 
+def test_a_given_outline_needs_a_thickness():
+    rules = plan_lm1_lanes(model(deck(thickness=0.3)), None, None,
+                           deck_outline_mm=[[0, 0], [6000, 0], [6000, 4000], [0, 4000]])
+    assert "with deck_outline_mm" in rules.problems[0]
+
+
 def test_plain_request_through_the_tool():
     result = preview_moving_load("m.esa", MovingLoadRequest(rule="toetsmodel"), reader=lambda _: model(deck(thickness=0.3)))
     assert result["ok"], result["problems"]

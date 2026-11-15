@@ -86,6 +86,9 @@ async def runs(info: dict, model: Path) -> dict:
             out["twice"] = await call("moving_load_preview", {"model_path": "dubbel.esa", **ARGS})
             print("  candidates", [c["path"] for c in out["twice"].get("candidates", [])], flush=True)
             out["report_by_name"] = await call("report_preview", {"model_path": model.name})
+            out["bedding_by_name"] = await call("bedding_preview", {
+                "model_path": "kademuur_kaal", "diameter_m": 0.4,
+                "layers": [{"top": -2, "bottom": -8, "value": 5000, "unit": "kh_kN_m3", "description": "klei"}]})
             out["apply"] = await call("moving_load_apply", {"model_path": model.name, **ARGS})
             if out["apply"]["ok"]:
                 out["again_without_replace"] = await call("moving_load_apply", {"model_path": out["apply"]["output"], **ARGS})
@@ -97,6 +100,7 @@ def main() -> int:
     work.mkdir(parents=True, exist_ok=True)
     model = work / SOURCE.name
     shutil.copyfile(SOURCE, model)
+    shutil.copyfile(SOURCE.with_name("kademuur_kaal.esa"), work / "kademuur_kaal.esa")
     for folder in ("a", "b"):  # one name, two models
         (work / folder).mkdir(exist_ok=True)
         shutil.copyfile(SOURCE, work / folder / "dubbel.esa")

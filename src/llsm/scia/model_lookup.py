@@ -10,6 +10,9 @@ An engineer names the model they have open; this finds it:
   used in this session, first.
 
 One match is the model. Several: the caller lists them and asks which. None: the caller says where it looked.
+A name that matched one model, or that was given once as a full path, keeps meaning that file for the rest of the
+session while it exists, so a preview and the apply after it act on the same model (and the folders are not
+searched again).
 """
 from __future__ import annotations
 
@@ -20,6 +23,7 @@ from pathlib import Path
 
 MAX_DEPTH = 4
 _last_folder: Path | None = None  # the folder of the last model found, this session
+_known: dict[str, Path] = {}  # bare name (lower case, with .esa) -> the one model it matched, this session
 
 
 @dataclass
@@ -61,11 +65,17 @@ def resolve_model(text: str) -> Lookup:
         return Lookup(problem="No model given: name the .esa file.")
     given = Path(raw).expanduser()
     if given.is_file():
-        _last_folder = given.resolve().parent
-        return Lookup(path=given.resolve())
+        chosen = given.resolve()
+        _last_folder = chosen.parent
+        _known[chosen.name.lower()] = chosen  # after "which one?", the bare name means the one chosen
+        return Lookup(path=chosen)
     if given.parent != Path(".") or given.is_absolute():
         return Lookup(problem=f"Model not found: {given}")
     wanted = (raw if raw.lower().endswith(".esa") else raw + ".esa").lower()
+    known = _known.get(wanted)
+    if known is not None and known.is_file():
+        _last_folder = known.parent
+        return Lookup(path=known)
     folders = model_dirs()
     found: list[Path] = []
     for folder in folders:
@@ -73,6 +83,7 @@ def resolve_model(text: str) -> Lookup:
     found = list(dict.fromkeys(found))
     if len(found) == 1:
         _last_folder = found[0].parent
+        _known[wanted] = found[0]
         return Lookup(path=found[0])
     where = ", ".join(str(f) for f in folders)
     if not found:
@@ -85,6 +96,7 @@ def resolve_model(text: str) -> Lookup:
 
 
 def forget() -> None:
-    """Drop the remembered folder (tests)."""
+    """Drop the remembered folder and names (tests)."""
     global _last_folder
     _last_folder = None
+    _known.clear()

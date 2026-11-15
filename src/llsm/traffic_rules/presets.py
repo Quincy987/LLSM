@@ -201,6 +201,9 @@ def _frame(result, model, path, thickness_mm, lanes, deck_edges_mm, carriageway_
     else:
         result.axis_source = "given"
     if thickness_mm is None:
+        if deck_outline_mm is not None:
+            raise RuleError("with deck_outline_mm the deck is not a plate of the model, so its thickness is not "
+                            "known: give thickness_mm")
         thickness_mm = _model_thickness(model, names)
         result.thickness_source = f"read from {', '.join(names)}"
     else:

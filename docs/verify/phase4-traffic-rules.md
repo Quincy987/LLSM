@@ -86,7 +86,9 @@ they want. Three things make that work, checked here.
 the folders in `LLSM_MODEL_DIRS`, to four folders deep, skipping hidden ones, the last model's folder first.
 Through the MCP server (`verify_app_rule.py`, `LLSM_MODEL_DIRS` = the work folder): `brugdek.esa` found;
 `nergens.esa` refused, naming the folder searched; `dubbel.esa`, present twice, refused with both paths, newest
-first; `report_preview` and `bedding_preview` (`kademuur_kaal`, no extension) find their models the same way.
+first; `report_preview` and `bedding_preview` (`kademuur_kaal`, no extension) find their models the same way. A
+name that matched one model (or that the engineer then gave as a full path) keeps meaning that file for the
+session, so a preview and its apply act on the same model even if another copy appears in between (unit tests).
 
 **The thickness from the plate** (`thickness_probe.py`). Three plates of known thickness written through the XML
 route (4 corners 0.25 m, 5 corners 0.45 m, a vertical wall 0.35 m) and the demo models: the corner count sits at
@@ -106,9 +108,10 @@ plate that does not have 4 corners: the tool asks for `path_mm`.
 | `moving_load_preview(model_path="brugdek.esa", rule="toetsmodel")` | ok, 42 cases; axis (0, 2000) → (6000, 2000) mm "the long axis of D1"; thickness 300 mm "read from D1" |
 | Same, `thickness_mm=400` | ok, 39 cases (13 positions per lane: start 0.9 × 0.4 m) |
 | `moving_load_apply(model_path="brugdek.esa", rule="toetsmodel")` | 138 of 138 patches, 42 of 42 cases, 51 s; again without `replace` refused |
-| **A real chat turn** (`chat_turn.py`: this build's MCP server and the panel's own chat backend, Claude Code CLI, only LLSM's tools): "Zet de verkeersbelasting LM1 op het brugdek (brugdek.esa) en schrijf het weg." | 87 s. The model called `moving_load_preview {"model_path": "brugdek.esa", "rule": "toetsmodel"}`, then `moving_load_apply` with the same two arguments, nothing else. Its answer: written to `brugdek_llsm-01.esa`, 138 wheel loads and 42 cases confirmed, axis (0, 2000) → (6000, 2000) mm, 300 mm from plate D1, the three groups with 14 cases each, 30 wheels off the deck left out, supports at the deck ends. |
+| **A real chat turn** (`chat_turn.py`: this build's MCP server and the panel's own chat backend, Claude Code CLI, only LLSM's tools; exits 1 unless preview then apply, each with only the file name and the rule): "Zet de verkeersbelasting LM1 op het brugdek (brugdek.esa) en schrijf het weg." | PASS, twice (87 s and, after the review, 82 s). The model called `moving_load_preview {"model_path": "brugdek.esa", "rule": "toetsmodel"}`, then `moving_load_apply` with the same two arguments, nothing else. Its answer: written to `brugdek_llsm-01.esa`, 138 wheel loads and 42 cases confirmed, axis (0, 2000) → (6000, 2000) mm, 300 mm from plate D1, the three groups with 14 cases each, 30 wheels off the deck left out, supports at the deck ends. |
+| Two turns, looser: "Kun je verkeer op het brugdek zetten?", then "ja, schrijf maar weg" | PASS (30 s + 65 s). No file name given: the model tried `brugdek.esa`, found it, showed the preview (axis, 300 mm from D1, three groups of 14) and asked whether that was the model and whether to write; after "ja" it called `moving_load_apply` with the same two arguments. |
 
-Regression: `pytest tests/unit` 460 passed; live tests 3 of 3 (291 s); the toetsmodel comparison again 0
+Regression: `pytest tests/unit` 463 passed; live tests 3 of 3 (291 s); the toetsmodel comparison again 0
 mismatches over 455 cases.
 
 ## Open
@@ -117,5 +120,7 @@ mismatches over 455 cases.
 2. Supports are not read from the model: the deck's ends per lane, unless `supports_mm` (chainages or support lines).
 3. Two road zones ("real" lanes in two carriageways) are not offered; the toetsmodel's helpers for them are not copied.
 4. v2.1: service vehicle, accidental vehicles (standard and Amsterdam), tram, UDL, dispersal (plan §4).
-5. Free surface loads stored in another layout (another distribution, selected members): known by name only, so
+5. A plate with variable thickness was not measured: what the reader takes as its thickness is then unchecked.
+   The preview always shows the thickness used and where it came from.
+6. Free surface loads stored in another layout (another distribution, selected members): known by name only, so
    after a write they are checked for being there, not for their values.

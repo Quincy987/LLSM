@@ -49,12 +49,23 @@ def test_hidden_folders_are_skipped(tree):
     assert resolve_model("verborgen.esa").path is None
 
 
-def test_an_existing_path_is_used_and_its_folder_searched_first(tree, tmp_path_factory):
+def test_a_chosen_path_is_what_the_bare_name_means_afterwards(tree, tmp_path_factory):
     other = tmp_path_factory.mktemp("elders")
     (other / "brugdek.esa").write_bytes(b"y")
     assert resolve_model(str(other / "brugdek.esa")).path == (other / "brugdek.esa").resolve()
-    found = resolve_model("brugdek.esa")  # now in two places: the last model's folder and the tree
-    assert found.path is None and len(found.candidates) == 2
+    assert resolve_model("brugdek.esa").path == (other / "brugdek.esa").resolve()  # not "several"
+
+
+def test_preview_and_apply_get_the_same_model(tree):
+    first = resolve_model("brugdek").path
+    (tree / "Oud" / "brugdek.esa").write_bytes(b"later copy")  # a second one appears between the two calls
+    assert resolve_model("brugdek.esa").path == first
+
+
+def test_a_remembered_model_that_is_gone_is_searched_again(tree):
+    first = resolve_model("brugdek").path
+    first.unlink()
+    assert "No model called brugdek.esa" in resolve_model("brugdek").problem
 
 
 def test_a_path_that_does_not_exist_is_not_searched(tree):
