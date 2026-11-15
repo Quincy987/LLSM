@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Gewoon zeggen wat je wilt.** "Zet de verkeersbelasting LM1 op het brugdek (brugdek.esa)" is genoeg: de chat
+  kiest zelf de route van het toetsmodel, zonder coördinaten, stap of dikte. In een echte chatbeurt riep het model
+  precies die route aan, met alleen de bestandsnaam.
+- **Modellen op bestandsnaam (chat).** Elk hulpmiddel voor een opgeslagen model (bedding, rijdende belasting, rapport)
+  vindt `brugdek.esa` of `kademuur_kaal` onder Documenten, of in de mappen van `LLSM_MODEL_DIRS`. Twee modellen met
+  dezelfde naam: de chat vraagt welke, met beide paden. Geen enkel: hij zegt waar gezocht is.
+- **Rijlijn en dikte uit het model.** Met de toetsmodel-regels is de rijlijn de lengteas van de dekplaat en komt
+  de dikte uit het `.esa`-bestand (gemeten op platen van 4 en 5 hoeken en een wand). Opgeven mag nog en gaat voor.
+
+### Changed
+- `path_mm` is bij `rule='toetsmodel'` niet meer nodig (CLI: `--path` alleen zonder `--rule`). Kan de dikte niet
+  gelezen worden of verschillen de dekken, dan vraagt de tool erom; is er meer dan één dek, dan vraagt hij de rijlijn.
+
 ## v0.3.13 — Traffic rules of the plaatbruggen toetsmodel (2026-11-15)
 
 ### Added

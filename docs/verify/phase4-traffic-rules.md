@@ -76,9 +76,44 @@ What this run settled about the rule:
 - Bedding on a copy of the kademuur demo model (`llsm bedding apply`, one clay layer, D 0.4 m): 32 of 32 confirmed, 40.9 s.
 - The toetsmodel checkout was read and run, never changed (`git status` before and after: only its own untracked `.review_tmp/`).
 
+## Natural request (2026-11-15)
+
+Engineers do not type "volgens het toetsmodel", coordinates or a thickness: they name their model and say what
+they want. Three things make that work, checked here.
+
+**The model by its file name.** The chat has only LLSM's tools and runs in the repo folder, so "brugdek.esa" was
+"Model not found". Every saved-model tool now looks a bare name up (`.esa` optional, any case) under Documents or
+the folders in `LLSM_MODEL_DIRS`, to four folders deep, skipping hidden ones, the last model's folder first.
+Through the MCP server (`verify_app_rule.py`, `LLSM_MODEL_DIRS` = the work folder): `brugdek.esa` found;
+`nergens.esa` refused, naming the folder searched; `dubbel.esa`, present twice, refused with both paths, newest
+first; `report_preview` and `bedding_preview` (`kademuur_kaal`, no extension) find their models the same way.
+
+**The thickness from the plate** (`thickness_probe.py`). Three plates of known thickness written through the XML
+route (4 corners 0.25 m, 5 corners 0.45 m, a vertical wall 0.35 m) and the demo models: the corner count sits at
++47 after the plate record's name, the thickness at 293 + 48 n, and 48 bytes before it a nonzero u32 (an id:
+0x13D on the fixture, 0x162 on the kademuur) followed by the u32 1. Read back: 0.25 / 0.45 / 0.35 m (probe),
+0.3 m (plate fixture, brugdek and its LLSM copy), 0.4 m for deck E1 and wall E2 of every kademuur model and of a
+real model with 319 line supports. Independent check on the kademuur deck: its mid-plane is at z = −1.1 m and the
+wall's surface loads start at its top, z = −0.9 m, so 0.4 m. Without the marker the thickness stays unread and
+the tool asks for `thickness_mm`; decks of different thickness are asked for too.
+
+**The axis from the plate.** With a rule and no `path_mm` the axis runs between the midpoints of the plate's two
+shorter (end) edges, also on a skewed deck; a deck along y drives along y (unit tests). More than one deck, or a
+plate that does not have 4 corners: the tool asks for `path_mm`.
+
+| Run | Result |
+|---|---|
+| `moving_load_preview(model_path="brugdek.esa", rule="toetsmodel")` | ok, 42 cases; axis (0, 2000) → (6000, 2000) mm "the long axis of D1"; thickness 300 mm "read from D1" |
+| Same, `thickness_mm=400` | ok, 39 cases (13 positions per lane: start 0.9 × 0.4 m) |
+| `moving_load_apply(model_path="brugdek.esa", rule="toetsmodel")` | 138 of 138 patches, 42 of 42 cases, 51 s; again without `replace` refused |
+| **A real chat turn** (`chat_turn.py`: this build's MCP server and the panel's own chat backend, Claude Code CLI, only LLSM's tools): "Zet de verkeersbelasting LM1 op het brugdek (brugdek.esa) en schrijf het weg." | 87 s. The model called `moving_load_preview {"model_path": "brugdek.esa", "rule": "toetsmodel"}`, then `moving_load_apply` with the same two arguments, nothing else. Its answer: written to `brugdek_llsm-01.esa`, 138 wheel loads and 42 cases confirmed, axis (0, 2000) → (6000, 2000) mm, 300 mm from plate D1, the three groups with 14 cases each, 30 wheels off the deck left out, supports at the deck ends. |
+
+Regression: `pytest tests/unit` 460 passed; live tests 3 of 3 (291 s); the toetsmodel comparison again 0
+mismatches over 455 cases.
+
 ## Open
 
-1. Plate thickness is not read from the `.esa`: `thickness_mm` is asked for.
+1. Plate thickness is read from the `.esa` (see "Natural request"); a plate in another layout still asks for it.
 2. Supports are not read from the model: the deck's ends per lane, unless `supports_mm` (chainages or support lines).
 3. Two road zones ("real" lanes in two carriageways) are not offered; the toetsmodel's helpers for them are not copied.
 4. v2.1: service vehicle, accidental vehicles (standard and Amsterdam), tram, UDL, dispersal (plan §4).

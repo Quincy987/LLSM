@@ -6,6 +6,10 @@ Needs SCIA closed. Copies the demo deck (brugdek.esa: plate D1 6 x 4 m on four c
 never touches the original. Runs moving_load_preview and moving_load_apply with rule='toetsmodel', then the
 same apply on its own output without replace (must be refused), and shuts the server down through
 /admin/shutdown. Writes WORKDIR/verify_app_rule.json.
+
+The model is named by its file name only, as an engineer does: the server runs with LLSM_MODEL_DIRS=WORKDIR.
+The plain request is rule='toetsmodel' and nothing else (axis and thickness from the model). Also checked: a name
+two copies share (refused, both listed), a name that does not exist, thickness_mm overriding the model's.
 """
 from __future__ import annotations
 
@@ -26,7 +30,7 @@ from mcp.client.streamable_http import streamablehttp_client
 
 REPO = Path(__file__).resolve().parents[2]
 SOURCE = Path(r"C:\Users\klerk015\Documents\LLSM demo\brugdek.esa")
-ARGS = {"path_mm": [[0, 2000], [6000, 2000]], "rule": "toetsmodel", "thickness_mm": 300}
+ARGS = {"rule": "toetsmodel"}  # what the chat sends for "zet de verkeersbelasting LM1 op het brugdek"
 
 
 def digest(path: Path) -> str:
@@ -37,7 +41,7 @@ def start_server(work: Path) -> tuple[subprocess.Popen, dict]:
     pid_file, port_file = work / "server_pid.json", work / "server_port.txt"
     for f in (pid_file, port_file):
         f.unlink(missing_ok=True)
-    env = {**os.environ, "PYTHONPATH": str(REPO / "src")}
+    env = {**os.environ, "PYTHONPATH": str(REPO / "src"), "LLSM_MODEL_DIRS": str(work)}
     log = open(work / "server.log", "wb")
     proc = subprocess.Popen([sys.executable, "-m", "llsm.mcp_server", "--http", "--port-file", str(port_file),
                              "--pid-file", str(pid_file)], env=env, stdout=log, stderr=log, cwd=work)
@@ -49,8 +53,8 @@ def start_server(work: Path) -> tuple[subprocess.Popen, dict]:
 
 
 def summary(data: dict) -> dict:
-    keep = ("ok", "planned_cases", "planned_loads", "written", "expected", "cases_confirmed", "output", "seconds",
-            "groups", "contact", "problems", "mismatches", "other_changes", "notes")
+    keep = ("ok", "model", "planned_cases", "planned_loads", "written", "expected", "cases_confirmed", "output",
+            "seconds", "groups", "contact", "rule", "candidates", "problems", "mismatches", "other_changes", "notes")
     return {k: data.get(k) for k in keep}
 
 
@@ -68,13 +72,21 @@ async def runs(info: dict, model: Path) -> dict:
                 started = time.time()
                 res = await session.call_tool(name, args, read_timeout_seconds=timedelta(minutes=30))
                 data = json.loads(res.content[0].text)
-                print(f"{name}: ok={data['ok']} {round(time.time() - started)} s; cases={data['planned_cases']} "
+                print(f"{name}: ok={data['ok']} {round(time.time() - started)} s; cases={data.get('planned_cases')} "
                       f"written={data.get('written')}/{data.get('expected')} problems={[p[:140] for p in data['problems']]}",
                       flush=True)
                 return data
 
-            out["preview"] = await call("moving_load_preview", {"model_path": str(model), **ARGS})
-            out["apply"] = await call("moving_load_apply", {"model_path": str(model), **ARGS})
+            out["preview"] = await call("moving_load_preview", {"model_path": model.name, **ARGS})
+            rule = out["preview"].get("rule") or {}
+            print("  axis", rule.get("axis_mm"), rule.get("axis_source"), "| thickness", rule.get("thickness_mm"),
+                  rule.get("thickness_source"), "| model", out["preview"].get("model"), flush=True)
+            out["thicker"] = await call("moving_load_preview", {"model_path": model.name, **ARGS, "thickness_mm": 400})
+            out["missing"] = await call("moving_load_preview", {"model_path": "nergens.esa", **ARGS})
+            out["twice"] = await call("moving_load_preview", {"model_path": "dubbel.esa", **ARGS})
+            print("  candidates", [c["path"] for c in out["twice"].get("candidates", [])], flush=True)
+            out["report_by_name"] = await call("report_preview", {"model_path": model.name})
+            out["apply"] = await call("moving_load_apply", {"model_path": model.name, **ARGS})
             if out["apply"]["ok"]:
                 out["again_without_replace"] = await call("moving_load_apply", {"model_path": out["apply"]["output"], **ARGS})
     return out
@@ -85,6 +97,9 @@ def main() -> int:
     work.mkdir(parents=True, exist_ok=True)
     model = work / SOURCE.name
     shutil.copyfile(SOURCE, model)
+    for folder in ("a", "b"):  # one name, two models
+        (work / folder).mkdir(exist_ok=True)
+        shutil.copyfile(SOURCE, work / folder / "dubbel.esa")
     source_hash, copy_hash = digest(SOURCE), digest(model)
     proc, info = start_server(work)
     try:

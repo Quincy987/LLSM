@@ -138,14 +138,17 @@ Piles that already carry other line supports are refused unless you pass `--allo
 
 ## Moving load on an existing model
 
-Put a vehicle at every step along a road on a saved SCIA model: one load case per position of the front axle, all in one exclusive variable load group `LLSM-ML <name>`. Same rules as beddings: a new `<model>_llsm-NN.esa`, read back and checked; SCIA closed.
+In the chat, just say what you want: "Zet de verkeersbelasting LM1 op het brugdek (brugdek.esa)". LLSM finds the model by its file name (under Documents, or the folders in `LLSM_MODEL_DIRS`, separated by `;`), takes the deck plate's long axis and thickness from the model, and puts the LM1 tandem in every notional lane at the positions of the plaatbruggen toetsmodel: one exclusive group per lane and configuration, wheels as 0.4 × 0.4 m surface loads. Same rules as beddings: a new `<model>_llsm-NN.esa`, read back and checked; SCIA closed.
+
+The other route puts a vehicle at every step along a road: one load case per position of the front axle, all in one exclusive variable load group `LLSM-ML <name>`.
 
 ```powershell
+.venv\Scripts\llsm moving-load preview bridge.esa --rule toetsmodel
 .venv\Scripts\llsm moving-load preview bridge.esa --path "500,2000;4900,2000" --step 1600 --preset LM1-TS1
 .venv\Scripts\llsm moving-load apply bridge.esa --path "500,2000;4900,2000" --step 1600 --axles "200@0,100@1200" --track 2000
 ```
 
-Coordinates in mm, axle loads in kN (downward), offsets behind the front axle. On a plate deck each wheel gets a free point load; `--deck beam --member L1` puts one load per axle on a beam. A skewed deck needs no angle: draw the path along the road. Details and limits: `docs/10-plan-moving-load.md`, `docs/verify/phase3-moving-load.md`.
+Coordinates in mm, axle loads in kN (downward), offsets behind the front axle. On a plate deck each wheel gets a free point load; `--deck beam --member L1` puts one load per axle on a beam. A skewed deck needs no angle: draw the path along the road. Details and limits: `docs/10-plan-moving-load.md`, `docs/verify/phase3-moving-load.md`, `docs/verify/phase4-traffic-rules.md`.
 
 ---
 
