@@ -116,7 +116,7 @@ plate that does not have 4 corners: the tool asks for `path_mm`.
 | The files those chats wrote, read back (`chat_turn.written`) | both: 3 groups `LLSM-ML TS L1A/B/C`, 138 wheel patches |
 | Final run on the committed code (`f115711`): the same plain prompt, then `verify_app_rule.py` | chat PASS in 89 s (preview, then apply, each with only the name and the rule; the file read back: 3 groups, 138 patches; server log clean). MCP checks all as above: 42 cases from the model's axis and 300 mm, 39 with 400 mm, missing and duplicate names refused, report and bedding by name, apply 138 of 138, repeat refused, shutdown 200 |
 
-Regression: `pytest tests/unit` 463 passed; live tests 3 of 3 (291 s); the toetsmodel comparison again 0
+Regression: `pytest tests/unit` 465 passed; live tests 3 of 3 (291 s); the toetsmodel comparison again 0
 mismatches over 455 cases.
 
 ## Open
