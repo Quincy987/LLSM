@@ -119,6 +119,16 @@ plate that does not have 4 corners: the tool asks for `path_mm`.
 Regression: `pytest tests/unit` 465 passed; live tests 3 of 3 (291 s); the toetsmodel comparison again 0
 mismatches over 455 cases.
 
+## Video (take 8, 2026-11-16)
+
+`Documents\LLSM demo\LLSM-traffic-demo.mp4` (104.9 s: the deck, the chat, SCIA) and `-montage.mp4` (81.6 s, side
+by side), with the stills `LLSM-traffic-chat.jpg`, `-positie01/08/14.png` and `-groepen.png`. Recorded with
+`phase0/moving_load/demo/take7_rule.py` on the merged main (v0.3.14): the real panel typed "Zet de verkeersbelasting
+LM1 op het brugdek (brugdek.esa) en schrijf het weg." and had the copy written in 1:03 min (preview, then apply,
+both with only the file name and the rule); SCIA then shows cases L1A 01 (driving on, front wheels only), 08
+(x = 3 m, mid-span) and 14 (driving off) and the three LLSM-ML groups (Exclusief, Variabel). SCIA's active-case list
+opens scrolled to the active case, so the rows are counted from it; take 6's fixed rows picked 01, 03 and 06 first.
+
 ## Open
 
 1. Plate thickness is read from the `.esa` (see "Natural request"); a plate in another layout still asks for it.

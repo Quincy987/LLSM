@@ -5,7 +5,8 @@ editable install of main) and a free desktop: it starts SCIA full screen and dri
 
   python take7_rule.py prepare     fresh demo model, prompt, make7.py; SCIA screenshot for calibration
   python take7_rule.py chat        record the real panel answering the prompt (no mouse/keyboard)
-  python take7_rule.py scia        record SCIA: the original, then the copy cycling cases L1A 01..03, then the groups
+  python take7_rule.py scia        record SCIA: the original, then the copy with cases L1A 01, 08 and 14, then the groups
+  python take7_rule.py scia-after  only the copy (the original's recording is kept)
   python take7_rule.py montage     cut take7/LLSM-traffic-demo.mp4 (and the sequential version)
 
 Unlike take 6 the prompt is what an engineer types: the model's file name and what they want, no coordinates,
@@ -13,9 +14,10 @@ step or thickness. LLSM finds brugdek.esa under Documents, takes the deck's long
 the model, and writes 3 groups of 14 positions (42 cases, 138 wheel patches; docs/verify/phase4-traffic-rules.md).
 
 The SCIA clicks reuse take 6's coordinates (measured on SCIA 24.0.3015.64, 1929 x 1149 desktop). The active-case
-list shows BG1 and then the cases in order, so the three measured rows are L1A 01..03: the tandem driving onto the
-deck (front axle at 70, 570 and 1070 mm, at first only the front wheels on the deck). A middle position (L1A 08)
-needs a scrolled list: measure it on calibrate.png first if wanted.
+list opens scrolled so that the ACTIVE case is its first row (y 120, rows 32.6 px apart; seen in take 8's frames),
+so a row is counted from the case that is active at that moment: BG1 -> L1A 01 is row 1, 01 -> 08 is row 7,
+08 -> 14 is row 6. Shown: the tandem driving onto the deck (01, only the front wheels on it), mid-span (08,
+x = 3 m) and driving off (14, only the rear wheels left).
 """
 from __future__ import annotations
 
@@ -25,17 +27,18 @@ import subprocess
 import sys
 
 from take6 import (  # noqa: F401  (same desktop, same SCIA: the measured positions)
-    CASE_ROW_X, CASE_ROWS_Y, COMMAND_HIT, COMMAND_SEARCH, DEMO, FIXTURE, GROUP_ROW, GROUPS_CLOSE, LOAD_CASE_BOX,
-    MODEL, PY, VIDEO, _view,
+    CASE_ROW_X, COMMAND_HIT, COMMAND_SEARCH, DEMO, FIXTURE, GROUP_ROW, GROUPS_CLOSE, LOAD_CASE_BOX, MODEL, PY, VIDEO,
+    _view,
 )
 
-TAKE = VIDEO / "take7"
+TAKE = VIDEO / "take8"  # take7 is the report demo
 COPY = DEMO / "brugdek_llsm-01.esa"
 PROMPT = "Zet de verkeersbelasting LM1 op het brugdek (brugdek.esa) en schrijf het weg."
-CASES = [
-    ("LLSM-ML TS L1A 01", "Positie 1: de tandem rijdt het dek op, alleen de voorwielen staan erop"),
-    ("LLSM-ML TS L1A 02", "Positie 2: 0,5 m verder; vlak bij het steunpunt kleine stappen, zoals het toetsmodel"),
-    ("LLSM-ML TS L1A 03", "Positie 3: weer 0,5 m; nu staan ook de achterwielen deels op het dek"),
+ROW_Y0, ROW_STEP = 120, 32.6  # the active case's row, and the pitch of the rows below it
+CASES = [  # (case, rows below the case active before it, caption)
+    ("LLSM-ML TS L1A 01", 1, "Positie 1 van 14: de tandem rijdt het dek op, alleen de voorwielen staan erop"),
+    ("LLSM-ML TS L1A 08", 7, "Positie 8: x = 3 m, het midden van de overspanning, altijd een positie in het toetsmodel"),
+    ("LLSM-ML TS L1A 14", 6, "Positie 14: de tandem rijdt het dek af; bij de steunpunten stappen van 0,5 m"),
 ]
 
 TEXTS = {
@@ -94,7 +97,8 @@ def _steps(before: bool) -> list:
                 ["sleep", 3.0], ["shot", "before"], ["sleep", 1.0]]
     steps: list = [*_view(), ["label", "De kopie: de tandem op elke positie die het toetsmodel gebruikt", 2.0],
                    ["sleep", 2.0]]
-    for (case, text), row_y in zip(CASES, CASE_ROWS_Y):
+    for case, rows_down, text in CASES:
+        row_y = round(ROW_Y0 + ROW_STEP * rows_down)
         steps += [["click", x, y], ["sleep", 1.2], ["click", CASE_ROW_X, row_y], ["sleep", 0.3], ["move", 1000, 900],
                   ["label", text, 2.2], ["sleep", 2.8], ["shot", case[-6:].replace(" ", "_")]]
     gx, gy = GROUP_ROW
@@ -105,8 +109,10 @@ def _steps(before: bool) -> list:
     return steps
 
 
-def scia() -> None:
-    for name, model, sub, before in (("before", MODEL, "frames_scia_before", True), ("after", COPY, "frames_scia", False)):
+def scia(only_after: bool = False) -> None:
+    runs = (("before", MODEL, "frames_scia_before", True), ("after", COPY, "frames_scia", False))
+    for name, model, sub, before in runs[1:] if only_after else runs:
+        shutil.rmtree(TAKE / sub, ignore_errors=True)
         steps = TAKE / f"take7_{name}.json"
         steps.write_text(json.dumps(_steps(before), ensure_ascii=False, indent=1), encoding="utf-8")
         subprocess.run([PY, str(VIDEO / "rec5.py"), str(TAKE), str(model), sub, str(steps)], check=True)
@@ -119,4 +125,4 @@ def montage() -> None:
 
 
 if __name__ == "__main__":
-    {"prepare": prepare, "chat": chat, "scia": scia, "montage": montage}[sys.argv[1]]()
+    {"prepare": prepare, "chat": chat, "scia": scia, "scia-after": lambda: scia(True), "montage": montage}[sys.argv[1]]()
