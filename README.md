@@ -8,8 +8,15 @@ Inspired by VibeModel (the Revit equivalent, internal).
 
 ## Status
 
-- ✅ **Phase 0 complete** — autonomous end-to-end pipeline proven. See [`docs/06-phase0-results.md`](docs/06-phase0-results.md).
-- ✅ **Phase 1** — Python package, 25 SCIA tools, multi-provider LLM support, chat panel, MCP integration, CLI.
+Current release: **v0.3.15** (see [`CHANGELOG.md`](CHANGELOG.md)).
+
+- ✅ **Build a model from a chat** (chat → ADM model → SCIA → analysis), 32 tools, chat panel, CLI, Claude Code / API / OpenAI / Gemini / local backends. [`docs/06-phase0-results.md`](docs/06-phase0-results.md)
+- ✅ **Beddings on a saved model** (v0.3.6): soil layers onto the piles, a checked new file next to the model. [`docs/verify/phase1-bedding.md`](docs/verify/phase1-bedding.md)
+- ✅ **Pilot readiness** (v0.3.7): LLSM only manages the SCIA it started, `install.cmd`, `llsm diagnose`. [`docs/verify/phase2-pilot.md`](docs/verify/phase2-pilot.md)
+- ✅ **Moving load on a saved model** (v0.3.11): one load case per vehicle position along a road. [`docs/verify/phase3-moving-load.md`](docs/verify/phase3-moving-load.md)
+- ✅ **Results report of a saved model** (v0.3.12): SCIA's own engineering report as PDF, checked for results. [`docs/verify/report.md`](docs/verify/report.md)
+- ✅ **Traffic by the toetsmodel's rules** (v0.3.13, v0.3.14): LM1 per notional lane at the plaatbruggen toetsmodel's positions, from a plain request that names the file. [`docs/verify/phase4-traffic-rules.md`](docs/verify/phase4-traffic-rules.md)
+- ✅ **Model builder fixes** (v0.3.15): a load case takes its action type from its group, duplicate names are refused. [`docs/verify/builder-rules.md`](docs/verify/builder-rules.md)
 
 ## Installation
 
@@ -171,21 +178,43 @@ The XLSX is always made too: it is what the check reads. `--calculate` runs a li
 ```
 LLSM/
 ├── .mcp.json                   # Claude Code auto-loads the llsm MCP server
+├── install.cmd                 # venv + packages, ends with llsm diagnose
+├── LLSM Panel.bat              # double-click launcher for the panel
 ├── src/llsm/
 │   ├── mcp_server.py           # MCP wrapper — SCIA tools exposed to Claude Code
-│   ├── cli.py                  # headless Anthropic-API CLI
+│   ├── mcp_supervisor.py       # keeps the persistent MCP server child running
+│   ├── mcp_guard.py            # who may talk to the local MCP server (token)
+│   ├── cli.py                  # llsm: headless CLI + bedding / moving-load / report / diagnose
 │   ├── panel.py                # Tk chat panel docked to SCIA
+│   ├── diagnose.py             # llsm diagnose: can this computer run LLSM?
+│   ├── answer_rules.py         # how an answer is shaped for the chat pane
 │   ├── scia/
 │   │   ├── loader.py           # DLL discovery + load (pythonnet)
-│   │   ├── autoclick.py        # background thread that dismisses SCIA dialogs
+│   │   ├── autoclick.py        # watches the dialogs of the SCIA this session started
 │   │   ├── session.py          # SciaSession — SCIA lifecycle + STA dispatcher
-│   │   ├── builder.py          # ADM model builder helpers
-│   │   └── tools.py            # LLM-callable tool functions
-│   └── llm/                    # backends: claude-code, api, openai, gemini,
-│                               # openai-compatible + credentials + tool loop
+│   │   ├── builder.py          # ADM model builder (new models)
+│   │   ├── tools.py            # LLM-callable tool functions
+│   │   ├── esa_file.py         # read a saved .esa without SCIA
+│   │   ├── esa_xml.py          # update a saved model through ESA_XML.exe
+│   │   ├── load_xml.py         # XML for load groups, cases, point and surface loads
+│   │   ├── model_lookup.py     # find a saved model by its file name
+│   │   └── output_files.py     # where an updated model goes (<model>_llsm-NN.esa)
+│   ├── bedding/                # soil beddings onto the piles of a saved model
+│   ├── moving_load/            # one load case per vehicle position on a saved model
+│   ├── traffic_rules/          # the toetsmodel's lane and position rules mapped onto a deck
+│   │   └── _toetsmodel/        # vendored from the plaatbruggen toetsmodel (UPSTREAM.md)
+│   ├── report/                 # print and check a saved model's engineering report
+│   ├── llm/                    # backends: claude-code, api, openai, gemini,
+│   │                           # openai-compatible + credentials + tool loop
+│   ├── conversation/           # panel session logic, view, menu, theme
+│   └── history/                # chat history + recent models
+├── scripts/                    # vendor_toetsmodel_rules.py
 ├── tests/
-├── phase0/                     # Phase 0 verification artifacts
-└── docs/                       # design + research + Phase 0 results
+│   ├── unit/                   # no SCIA needed
+│   └── live/                   # against SCIA; LLSM_LIVE=1, skip while a SCIA runs
+├── phase0/                     # spikes and demo scripts
+└── docs/                       # design, plans, research
+    └── verify/                 # verification report per phase
 ```
 
 ## Docs
@@ -198,13 +227,22 @@ LLSM/
 | 04 | [`docs/04-architecture-options.md`](docs/04-architecture-options.md) | Four architectural paths + tradeoffs |
 | 05 | [`docs/05-plan.md`](docs/05-plan.md) | Phased roadmap |
 | 06 | [`docs/06-phase0-results.md`](docs/06-phase0-results.md) | Phase 0 verification |
+| 07 | [`docs/07-vibemodel-lessons-for-scia.md`](docs/07-vibemodel-lessons-for-scia.md) | VibeModel lessons for LLSM |
+| 08 | [`docs/08-plan-v0.4-vibemodel-parity.md`](docs/08-plan-v0.4-vibemodel-parity.md) | Plan: VibeModel parity (errors, trust, verify) |
+| 09 | [`docs/09-plan-v0.4-existing-models.md`](docs/09-plan-v0.4-existing-models.md) | Plan: work on the engineer's existing model (beddings first) |
+| 10 | [`docs/10-plan-moving-load.md`](docs/10-plan-moving-load.md) | Plan: traffic loads on a saved model, with the toetsmodel's rules |
+| 11 | [`docs/11-plan-results-to-idea.md`](docs/11-plan-results-to-idea.md) | Plan: plate results in IDEA's column order |
+| 12 | [`docs/12-plan-combinations.md`](docs/12-plan-combinations.md) | Plan: propose load combinations (proposal, not built) |
+| 13 | [`docs/13-plan-report.md`](docs/13-plan-report.md) | Plan: a results report for a saved model |
+
+What was tested, and how, per phase: [`docs/verify/`](docs/verify/) (route spike, beddings, pilot, moving load, traffic rules, report, builder rules, chat formatting).
 
 ## Current tool surface (32 tools)
 
 - **Model defs**: `new_model`, `add_material`, `add_rectangular_section`
 - **Geometry**: `add_node`, `add_beam`, `update_node`, `set_member_endpoints`, `set_member_cross_section`, `delete_object`
 - **Supports**: `add_fixed_support`, `add_pinned_support`, `add_roller_support`
-- **Loads**: `add_load_group`, `add_load_case`, `add_line_load`, `set_line_load_magnitude`
+- **Loads**: `add_load_group`, `add_load_case`, `add_line_load`, `set_line_load_magnitude` (a load case takes its action type from its group: Variable and Moving give a variable case with duration Short, Fire and Seismic an accidental one, Tensioning a permanent one; `action_type` and `duration` override)
 - **Query**: `model_summary`, `get_node_position`, `refresh_from_scia`
 - **Results**: `get_beam_deflection`, `get_beam_inner_forces`
 - **SCIA drive**: `launch_scia`, `push_model`, `run_analysis`, `close_scia`
@@ -212,8 +250,12 @@ LLSM/
 - **Moving load on a saved model**: `moving_load_preview`, `moving_load_apply` (an even step, or `rule='toetsmodel'`: LM1 per notional lane at the plaatbruggen toetsmodel's positions, wheels as 0.4 × 0.4 m surface loads)
 - **Results report of a saved model**: `report_preview`, `report_write`, `report_status`
 
-## Known limitations (Phase 2)
+Names are unique per model: an `add_*` with a name that already exists is refused and adds nothing.
+
+## Known limitations today
 
 - Cross-sections are rectangular-only (no IPE/HEA library lookup yet).
-- Building a model from scratch: no point loads, surface loads, slabs, or load combinations yet (point and surface loads on a saved model: see Moving load).
+- Building a model from scratch: no point loads, surface loads or slabs yet (point and surface loads on a saved model: see Moving load).
+- No load combinations are written, neither when building nor on a saved model ([`docs/12-plan-combinations.md`](docs/12-plan-combinations.md) is a proposal; the moving-load envelope is open).
+- The OpenAPI cannot attach to a SCIA the engineer opened by hand ([`docs/03-scia-integration.md`](docs/03-scia-integration.md)). The saved-model routes therefore work on the file with SCIA closed: ESA_XML writes a new `<model>_llsm-NN.esa` next to it.
 - Single SCIA install assumed on the machine.
