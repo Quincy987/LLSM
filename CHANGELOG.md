@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - **Belastinggevallen krijgen het juiste type.** Een geval in een veranderlijke groep (of verkeer, `Moving`) wordt nu als veranderlijk geschreven, niet meer altijd als permanent, met duur kort tenzij je een andere duur geeft; brand en aardbeving als buitengewoon, voorspanning als permanent. Op te heffen met `action_type`. Wat SCIA's model niet aanneemt (eigen gewicht in een veranderlijke groep, een duur op een permanent geval) wordt met reden geweigerd. docs/verify/builder-rules.md
 - **Dubbele namen worden geweigerd.** Een tweede knoop, staaf of last met een bestaande naam komt niet meer stilletjes in het model; de tool zegt welke naam al bestaat en voegt niets toe.
-- **Wat SCIA's model weigert, meldt de tool.** Een object dat het model niet aanneemt, gaf geen fout en was er gewoon niet; nu `ok: false` met de reden.
+- **Wat SCIA's model weigert, meldt de tool.** Een object dat het model niet aanneemt, gaf geen fout en was er gewoon niet; nu `ok: false`, met welk object het was.
 - **Verwijderen beschermt nu echt.** Een knoop, doorsnede of staaf die nog gebruikt wordt, kon zonder waarschuwing weg; nu noemt de tool wat ervan afhangt.
 - **Een lijnlast aanpassen werkt.** `set_line_load_magnitude` meldde ok en veranderde niets; nu wordt de waarde echt gezet.
 - **Het modeloverzicht in de zijbalk** (API-backends) was leeg en toonde lijnlasten zonder staaf en waarde; nu klopt het.

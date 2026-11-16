@@ -25,7 +25,11 @@ Found while reviewing the fix, same file, all existing before this change:
 - `LoadGroupType`: Accidental, Fire, Moving, Permanent, Seismic, Tensioning, Variable
 - `ActionType`: Accidental, Permanent, Variable. `Duration`: Long, Medium, Short, Instantaneous
 - Any group kind takes any action type. A Variable case needs a `Duration`; a Permanent case must not
-  have one; an Accidental one takes either. `SelfWeight` only on a Permanent case.
+  have one; an Accidental one takes either. `SelfWeight` only on a Permanent case. Through the builder,
+  all 7 group kinds x 3 action types x Standard/SelfWeight (42): each case lands or is refused with a
+  reason, none goes missing.
+- `RemoveItemFromModel` returns nothing and does remove: after `delete_object` the name is gone from the
+  model and can be used again.
 
 ```
 group kind   -> action type

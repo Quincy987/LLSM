@@ -8,8 +8,9 @@ from typing import Any
 
 # A load case's ADM ActionType follows its load group's LoadGroupType. Checked with pythonnet on the
 # SCIA 24 SDK (2026-11-16): LoadGroupType has Accidental, Fire, Moving, Permanent, Seismic, Tensioning,
-# Variable; ActionType has only Accidental, Permanent, Variable. ADM's ValidateModel accepts any pairing,
-# so the mapping is LLSM's: the three shared names map to themselves; prestress (Tensioning) is a
+# Variable; ActionType has only Accidental, Permanent, Variable. AddItemToModel takes a case of any action
+# type in a group of any kind (all 21 pairings tried, each case checked to be in the model), so the
+# mapping is LLSM's: the three shared names map to themselves; prestress (Tensioning) is a
 # permanent action, traffic (Moving) a variable one, fire and earthquake are accidental-type situations
 # (EN 1990 6.4.3.3 / 6.4.3.4). Pass action_type to add_load_case to choose otherwise.
 ACTION_TYPE_BY_GROUP_KIND = {
@@ -110,25 +111,29 @@ class ModelBuilder:
     # --- Name bookkeeping ----------------------------------------------------
 
     def _check_free(self, name: str) -> None:
-        """Refuse a name that is already taken. Runs BEFORE AddItemToModel, so nothing half-lands.
-
-        The model's own ModelInformation carries the model's name but is not an object an engineer
-        names, so it does not block a node or beam of that name.
-        """
+        """Refuse a name that is already taken. Runs BEFORE AddItemToModel, so nothing half-lands."""
         existing = self._objects_by_name.get(name)
         if existing is None:
-            for obj in self._model:
-                try:
-                    if obj.Name == name and _kind_of(obj) != "ModelInformation":
-                        existing = obj
-                        break
-                except Exception:
-                    continue
+            existing = self._find(name)
         if existing is not None:
             raise DuplicateNameError(
                 f"an object named {name!r} already exists ({_kind_of(existing)}); "
                 "choose another name or delete it first"
             )
+
+    def _find(self, name: str) -> Any:
+        """The object of that name in the ADM model (concrete, not IAnalysisObject), or None.
+
+        Skips the model's ModelInformation: it carries the model's name but is nothing an engineer
+        names, so it neither blocks that name nor answers a lookup of it.
+        """
+        for obj in self._model:
+            try:
+                if obj.Name == name and _kind_of(obj) != "ModelInformation":
+                    return _unwrap(obj)
+            except Exception:
+                continue
+        return None
 
     def _register(self, name: str, obj: Any, group_kind: str | None = None) -> None:
         """Record a just-added object. Never scans or raises: the object is already in the model."""
@@ -536,11 +541,10 @@ class ModelBuilder:
     def get(self, name: str) -> Any:
         if name in self._objects_by_name:
             return self._objects_by_name[name]
-        for obj in self._model:
-            if obj.Name == name:
-                obj = _unwrap(obj)
-                self._objects_by_name[name] = obj
-                return obj
+        obj = self._find(name)
+        if obj is not None:
+            self._objects_by_name[name] = obj
+            return obj
         raise KeyError(f"no ADM object named {name!r}")
 
     @property

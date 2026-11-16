@@ -136,6 +136,9 @@ def test_model_information_does_not_block_a_name():
     b = _bare_builder()
     b._model.append(_obj("portaal", "ModelInformation"))
     b._check_free("portaal")  # a node named like the model is fine
+    with pytest.raises(KeyError):
+        b.get("portaal")  # nor does a lookup find it, so it can never be cached as that name
+    assert "portaal" not in b._objects_by_name
 
 
 def test_refusals_are_value_errors():
