@@ -23,9 +23,19 @@ ACTION_TYPE_BY_GROUP_KIND = {
 }
 ACTION_TYPES = ("Permanent", "Variable", "Accidental")
 
+# ADM's AddItemToModel refuses (returns False, raises nothing) a Variable case without a Duration and
+# a Permanent case with one; SelfWeight is accepted only on a Permanent case. Checked on the SCIA 24 SDK
+# (2026-11-16). Duration matters mainly for timber (k_mod); Short is the default here.
+DURATIONS = ("Long", "Medium", "Short", "Instantaneous")
+DEFAULT_VARIABLE_DURATION = "Short"
+
 
 class DuplicateNameError(ValueError):
     """An object with this name is already in the model."""
+
+
+class AdmRefusedError(ValueError):
+    """ADM's AddItemToModel returned False: the object did not land in the model."""
 
 
 def action_type_for(group_kind: str) -> str:
@@ -42,6 +52,33 @@ def check_action_type(action_type: str) -> str:
     if action_type not in ACTION_TYPES:
         raise ValueError(f"unknown action type {action_type!r}; known: {', '.join(ACTION_TYPES)}")
     return action_type
+
+
+def case_duration(kind: str, action_type: str, duration: str | None) -> str | None:
+    """The Duration to set on a case (None: leave unset), or ValueError for a case ADM would drop."""
+    if kind == "SelfWeight" and action_type != "Permanent":
+        raise ValueError(f"a SelfWeight case must be permanent; its group makes it {action_type}")
+    if action_type != "Variable":
+        if duration:
+            raise ValueError(f"duration is for a variable case only; this case is {action_type}")
+        return None
+    duration = duration or DEFAULT_VARIABLE_DURATION
+    if duration not in DURATIONS:
+        raise ValueError(f"unknown duration {duration!r}; known: {', '.join(DURATIONS)}")
+    return duration
+
+
+def _unwrap(obj: Any) -> Any:
+    """Objects read back from the ADM model come as IAnalysisObject; this is the concrete object."""
+    return getattr(obj, "__implementation__", obj)
+
+
+def _kind_of(obj: Any) -> str:
+    """The .NET class name (StructuralPointConnection, ...), also for objects read back from the model."""
+    try:
+        return str(obj.GetType().Name)
+    except Exception:
+        return type(obj).__name__
 
 
 class ModelBuilder:
@@ -73,19 +110,23 @@ class ModelBuilder:
     # --- Name bookkeeping ----------------------------------------------------
 
     def _check_free(self, name: str) -> None:
-        """Refuse a name that is already taken. Runs BEFORE AddItemToModel, so nothing half-lands."""
+        """Refuse a name that is already taken. Runs BEFORE AddItemToModel, so nothing half-lands.
+
+        The model's own ModelInformation carries the model's name but is not an object an engineer
+        names, so it does not block a node or beam of that name.
+        """
         existing = self._objects_by_name.get(name)
         if existing is None:
             for obj in self._model:
                 try:
-                    if obj.Name == name:
+                    if obj.Name == name and _kind_of(obj) != "ModelInformation":
                         existing = obj
                         break
                 except Exception:
                     continue
         if existing is not None:
             raise DuplicateNameError(
-                f"an object named {name!r} already exists ({type(existing).__name__}); "
+                f"an object named {name!r} already exists ({_kind_of(existing)}); "
                 "choose another name or delete it first"
             )
 
@@ -94,6 +135,13 @@ class ModelBuilder:
         self._objects_by_name[name] = obj
         if group_kind is not None:
             self._group_kinds[name] = group_kind
+
+    def _add(self, name: str, obj: Any, group_kind: str | None = None) -> None:
+        """The one way an add_* puts an object in the model: name check, add, record."""
+        self._check_free(name)
+        if self._svc.AddItemToModel(self._model, obj) is False:
+            raise AdmRefusedError(f"SCIA's model refused {_kind_of(obj)} {name!r}; nothing was added")
+        self._register(name, obj, group_kind)
 
     def _import_namespaces(self) -> None:
         import ModelExchanger.AnalysisDataModel as adm
@@ -111,9 +159,7 @@ class ModelBuilder:
         m = self._adm.Libraries.StructuralMaterial(
             self._System.Guid.NewGuid(), name, mt, name
         )
-        self._check_free(name)
-        self._svc.AddItemToModel(self._model, m)
-        self._register(name, m)
+        self._add(name, m)
         return m
 
     # --- Cross-sections ----------------------------------------------------
@@ -127,9 +173,7 @@ class ModelBuilder:
             self._System.Guid.NewGuid(), name, mat,
             self._adm.Enums.ProfileLibraryId.Rectangle, params
         )
-        self._check_free(name)
-        self._svc.AddItemToModel(self._model, xs)
-        self._register(name, xs)
+        self._add(name, xs)
         return xs
 
     # --- Geometry ----------------------------------------------------------
@@ -141,9 +185,7 @@ class ModelBuilder:
             self._un.Length(y_mm, self._un.Units.LengthUnit.Millimeter),
             self._un.Length(z_mm, self._un.Units.LengthUnit.Millimeter),
         )
-        self._check_free(name)
-        self._svc.AddItemToModel(self._model, n)
-        self._register(name, n)
+        self._add(name, n)
         return n
 
     def add_beam(self, name: str, node_a: str, node_b: str, cross_section: str) -> Any:
@@ -163,9 +205,7 @@ class ModelBuilder:
             self._System.Guid.NewGuid(), name, curves, self.get(cross_section)
         )
         beam.Layer = "LayerADM"
-        self._check_free(name)
-        self._svc.AddItemToModel(self._model, beam)
-        self._register(name, beam)
+        self._add(name, beam)
         return beam
 
     # --- Supports ----------------------------------------------------------
@@ -189,9 +229,7 @@ class ModelBuilder:
         ro = self._constraint_rot("Rigid")
         s.TranslationX = tr; s.TranslationY = tr; s.TranslationZ = tr
         s.RotationX = ro;    s.RotationY = ro;    s.RotationZ = ro
-        self._check_free(name)
-        self._svc.AddItemToModel(self._model, s)
-        self._register(name, s)
+        self._add(name, s)
         return s
 
     def add_pinned_support(self, name: str, node: str) -> Any:
@@ -203,9 +241,7 @@ class ModelBuilder:
         ro = self._constraint_rot("Free")
         s.TranslationX = tr; s.TranslationY = tr; s.TranslationZ = tr
         s.RotationX = ro;    s.RotationY = ro;    s.RotationZ = ro
-        self._check_free(name)
-        self._svc.AddItemToModel(self._model, s)
-        self._register(name, s)
+        self._add(name, s)
         return s
 
     def add_roller_support(self, name: str, node: str, direction: str = "Z") -> Any:
@@ -220,9 +256,7 @@ class ModelBuilder:
         s.TranslationY = tr_r if direction == "Y" else tr_f
         s.TranslationZ = tr_r if direction == "Z" else tr_f
         s.RotationX = ro_f; s.RotationY = ro_f; s.RotationZ = ro_f
-        self._check_free(name)
-        self._svc.AddItemToModel(self._model, s)
-        self._register(name, s)
+        self._add(name, s)
         return s
 
     # --- Loads -------------------------------------------------------------
@@ -236,36 +270,45 @@ class ModelBuilder:
         )
         lg.Relation = self._adm.Enums.Relation.Standard
         lg.Load = self._cs.FlexibleEnum[self._adm.Enums.Load](self._adm.Enums.Load.Domestic)
-        self._check_free(name)
-        self._svc.AddItemToModel(self._model, lg)
-        self._register(name, lg, group_kind=kind)
+        self._add(name, lg, group_kind=kind)
         return lg
 
-    def resolve_action_type(self, group: str, action_type: str | None = None) -> tuple[str, str | None]:
-        """(action type for a case in ``group``, warning or None). An explicit action_type wins."""
-        if action_type is not None:
-            return check_action_type(action_type), None
+    def resolve_action_type(self, group: str, action_type: str | None = None) -> str:
+        """The action type for a case in ``group``. An explicit action_type wins ("" counts as not given).
+
+        Every ADM load group has a LoadGroupType; an object without one is not a load group, and is
+        refused rather than given a guessed type.
+        """
+        if action_type:
+            return check_action_type(action_type)
         kind = self._group_kinds.get(group)
         if kind is None:  # a group this builder did not add: read its type from the ADM object
             group_obj = self.get(group)
             try:
-                kind = group_obj.LoadGroupType.ToString()
+                kind = str(group_obj.LoadGroupType)
             except AttributeError:
-                return "Permanent", f"the type of load group {group!r} could not be read: action type assumed Permanent"
-        return action_type_for(kind), None
+                raise ValueError(f"{group!r} is a {_kind_of(group_obj)}, not a load group") from None
+        return action_type_for(kind)
 
-    def add_load_case(self, name: str, group: str, kind: str = "Standard", action_type: str | None = None) -> Any:
-        """kind: Standard, SelfWeight. action_type follows the group (Permanent/Variable/...) unless given."""
+    def add_load_case(
+        self, name: str, group: str, kind: str = "Standard", action_type: str | None = None,
+        duration: str | None = None,
+    ) -> Any:
+        """kind: Standard, SelfWeight. action_type follows the group (Permanent/Variable/...) unless given.
+
+        duration (Long, Medium, Short, Instantaneous) is for a variable case only; Short when not given.
+        """
         lc_type = getattr(self._adm.Enums.LoadCaseType, kind)
-        resolved, _ = self.resolve_action_type(group, action_type)
+        resolved = self.resolve_action_type(group, action_type)
+        duration = case_duration(kind, resolved, duration)
         lc = self._adm.Loads.StructuralLoadCase(
             self._System.Guid.NewGuid(), name,
             getattr(self._adm.Enums.ActionType, resolved),
             self.get(group), lc_type
         )
-        self._check_free(name)
-        self._svc.AddItemToModel(self._model, lc)
-        self._register(name, lc)
+        if duration is not None:
+            lc.Duration = getattr(self._adm.Enums.Duration, duration)
+        self._add(name, lc)
         return lc
 
     def add_line_load(
@@ -283,9 +326,7 @@ class ModelBuilder:
             self.get(load_case), bref,
         )
         ld.Direction = getattr(self._adm.Enums.ActionDirection, direction)
-        self._check_free(name)
-        self._svc.AddItemToModel(self._model, ld)
-        self._register(name, ld)
+        self._add(name, ld)
         return ld
 
     # --- Edit primitives ---------------------------------------------------
@@ -325,7 +366,9 @@ class ModelBuilder:
     def set_line_load_magnitude(self, name: str, magnitude_kn_per_m: float) -> Any:
         """Adjust the magnitude of an existing line load (kN/m)."""
         load = self.get(name)
-        load.Value = self._un.ForcePerLength(
+        # ADM's uniform curve action holds its value in Value1 (there is no Value: setting one only
+        # added a Python attribute, so the edit reported ok and changed nothing).
+        load.Value1 = self._un.ForcePerLength(
             magnitude_kn_per_m, self._un.Units.ForcePerLengthUnit.KilonewtonPerMeter
         )
         return load
@@ -390,6 +433,7 @@ class ModelBuilder:
                 return None
 
         for obj in self._model:
+            obj = _unwrap(obj)  # read back as IAnalysisObject: no CrossSection, Curves, ... on it
             obj_name = _name_of(obj)
             if obj_name is None or obj_name == target_name:
                 continue
@@ -433,8 +477,8 @@ class ModelBuilder:
             except Exception:
                 pass
             try:
-                ref = getattr(obj, "Reference", None)
-                if ref is not None and _name_of(getattr(ref, "Beam", None)) == target_name:
+                ref = getattr(obj, "StructuralReference", None)
+                if ref is not None and _name_of(getattr(ref, "ReferenceMember", None)) == target_name:
                     deps.append(obj_name); continue
             except Exception:
                 pass
@@ -494,6 +538,7 @@ class ModelBuilder:
             return self._objects_by_name[name]
         for obj in self._model:
             if obj.Name == name:
+                obj = _unwrap(obj)
                 self._objects_by_name[name] = obj
                 return obj
         raise KeyError(f"no ADM object named {name!r}")
@@ -574,6 +619,7 @@ class ModelBuilder:
                 return "?"
 
         for obj in self._model:
+            obj = _unwrap(obj)  # read back as IAnalysisObject: no CrossSection, Curves, ... on it
             try:
                 t = type(obj).__name__
             except Exception:
@@ -634,7 +680,7 @@ class ModelBuilder:
                     except Exception:
                         pass
                     try:
-                        target = _name(obj.Reference.Beam)
+                        target = _name(obj.StructuralReference.ReferenceMember)
                     except Exception:
                         pass
                     try:
@@ -642,7 +688,7 @@ class ModelBuilder:
                     except Exception:
                         pass
                     try:
-                        mag = _knpm(obj.Value)
+                        mag = _knpm(obj.Value1)
                     except Exception:
                         pass
                     out["loads"].append({

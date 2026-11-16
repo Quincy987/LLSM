@@ -50,4 +50,5 @@ Plan: `docs/09-plan-v0.4-existing-models.md` (order) + `docs/08-plan-v0.4-vibemo
 ## Housekeeping
 - [x] Rebase branch on main (mcp<2 pin, install fixes)
 - [x] Known bugs: load cases always `ActionType.Permanent`; duplicate names overwrite (fixed, unit + in-memory ADM check; live SCIA run still open: docs/verify/builder-rules.md)
+- [ ] Live run `tests/live/test_builder_rules_live.py` on a free desktop; check SCIA keeps a variable case's duration on push
 - [ ] README stale

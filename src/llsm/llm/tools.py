@@ -7,6 +7,8 @@ Names MUST match function names in llsm.scia.tools.
 """
 from __future__ import annotations
 
+from ..scia.builder import ACTION_TYPE_BY_GROUP_KIND, ACTION_TYPES, DURATIONS
+
 TOOL_DEFS = [
     {
         "name": "new_model",
@@ -117,7 +119,8 @@ TOOL_DEFS = [
             "type": "object",
             "properties": {
                 "name": {"type": "string"},
-                "kind": {"type": "string", "enum": ["Permanent", "Variable", "Accidental"]},
+                "kind": {"type": "string", "enum": list(ACTION_TYPE_BY_GROUP_KIND),
+                         "description": "Moving for traffic. A load case takes its action type from this."},
             },
             "required": ["name"],
         },
@@ -131,6 +134,10 @@ TOOL_DEFS = [
                 "name": {"type": "string"},
                 "group": {"type": "string"},
                 "kind": {"type": "string", "enum": ["Standard", "SelfWeight"]},
+                "action_type": {"type": "string", "enum": list(ACTION_TYPES),
+                                "description": "Leave out: it follows the load group."},
+                "duration": {"type": "string", "enum": list(DURATIONS),
+                             "description": "Variable cases only; Short when left out."},
             },
             "required": ["name", "group"],
         },

@@ -1,8 +1,8 @@
 """Build a beam through the tools, push it to SCIA, calculate. Needs SCIA, a licence and LLSM_LIVE=1.
 
 Checks on the live route what tests/unit/test_builder_rules.py checks without SCIA: a load case takes
-its action type from its group (Variable here, Accidental for a Seismic group), a duplicate name is
-refused and nothing lands, and the model still pushes and calculates. docs/verify/builder-rules.md.
+its action type from its group (Variable with a Short duration here, Accidental for a Seismic group) and
+really lands in the model, a duplicate name is refused and nothing lands, and the model still pushes and calculates. docs/verify/builder-rules.md.
 """
 import os
 
@@ -41,9 +41,11 @@ def test_action_type_and_duplicates_on_the_live_route(ctx):
     assert all(s["ok"] for s in steps), steps
 
     case = tools.add_load_case(ctx, "LC_q", "LG_var")
-    assert case["ok"] and case["action_type"] == "Variable", case
+    assert case["ok"] and case["action_type"] == "Variable" and case["duration"] == "Short", case
     quake = tools.add_load_case(ctx, "LC_eq", "LG_eq")
     assert quake["ok"] and quake["action_type"] == "Accidental", quake
+    names = tools.model_summary(ctx)["names"]
+    assert "LC_q" in names and "LC_eq" in names  # ADM drops a variable case without a duration silently
     assert tools.add_line_load(ctx, "q1", beam="B1", load_case="LC_q", magnitude_kn_per_m=-5.0)["ok"]
     assert tools.add_line_load(ctx, "q2", beam="B1", load_case="LC_eq", magnitude_kn_per_m=-1.0)["ok"]
 

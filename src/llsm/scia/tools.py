@@ -66,11 +66,12 @@ class LlsmContext:
 
 
 def _refused(name: str, exc: ValueError) -> dict:
-    """A duplicate name, or an unknown group kind / action type: a clear result, nothing added."""
+    """A refused add (duplicate name, unknown kind, a case ADM will not take): nothing was added."""
     out = {"ok": False, "error": str(exc), "name": name}
     if isinstance(exc, DuplicateNameError):
         out["duplicate"] = True
     return out
+
 
 def new_model(ctx: LlsmContext, name: str = "LLSM_Model") -> dict:
     """Start a fresh in-memory ADM model."""
@@ -154,17 +155,17 @@ def add_load_group(ctx: LlsmContext, name: str, kind: str = "Permanent") -> dict
 
 
 def add_load_case(ctx: LlsmContext, name: str, group: str, kind: str = "Standard",
-                  action_type: str | None = None) -> dict:
-    """action_type follows the group (Permanent/Variable/...) unless given."""
+                  action_type: str | None = None, duration: str | None = None) -> dict:
+    """action_type follows the group (Permanent/Variable/...) unless given; duration for variable cases."""
     ctx.ensure_builder()
     try:
-        resolved, warning = ctx.builder.resolve_action_type(group, action_type)
-        ctx.builder.add_load_case(name, group, kind=kind, action_type=resolved)
+        case = ctx.builder.add_load_case(name, group, kind=kind, action_type=action_type, duration=duration)
     except ValueError as exc:
         return _refused(name, exc)
-    out = {"ok": True, "name": name, "group": group, "kind": kind, "action_type": resolved}
-    if warning:
-        out["warning"] = warning
+    # Read back from the stored case, so the result says what landed, not what was asked for.
+    out = {"ok": True, "name": name, "group": group, "kind": kind, "action_type": str(case.ActionType)}
+    if out["action_type"] == "Variable":
+        out["duration"] = str(case.Duration)
     return out
 
 

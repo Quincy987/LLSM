@@ -263,11 +263,14 @@ def _register_common_tools(mcp: FastMCP) -> None:
         """Add a load group. kind: Permanent, Variable, Accidental, Moving (traffic), Tensioning, Fire or Seismic."""
         return scia_tools.add_load_group(_ctx, name=name, kind=kind)
 
-    def add_load_case(name: str, group: str, kind: str = "Standard", action_type: str | None = None) -> dict:
-        """Add a load case inside a group. kind: Standard or SelfWeight.
+    def add_load_case(name: str, group: str, kind: str = "Standard", action_type: str | None = None,
+                      duration: str | None = None) -> dict:
+        """Add a load case inside a group. kind: Standard or SelfWeight (permanent cases only).
 
-        action_type follows the group (Permanent/Variable/...) unless given (Permanent, Variable or Accidental)."""
-        return scia_tools.add_load_case(_ctx, name=name, group=group, kind=kind, action_type=action_type)
+        action_type follows the group (Permanent/Variable/...) unless given (Permanent, Variable or Accidental).
+        duration (Long, Medium, Short, Instantaneous) is for a variable case only; Short when not given."""
+        return scia_tools.add_load_case(_ctx, name=name, group=group, kind=kind, action_type=action_type,
+                                        duration=duration)
 
     def add_line_load(name: str, beam: str, load_case: str,
                       magnitude_kn_per_m: float, direction: str = "Z") -> dict:
