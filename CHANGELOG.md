@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.16 — README up to date (2026-11-16)
+
+### Changed
+- **README bijgewerkt tot v0.3.15.** De status noemt nu elke release sinds fase 1 met zijn verificatierapport (beddingen, pilot, rijdende last, rapport, verkeersregels, builder); de projectindeling klopt weer met de mappen; de documententabel loopt tot plan 13 en wijst naar `docs/verify/`; bij de belastinggevallen staat dat het type uit de groep komt en dat namen uniek zijn. Bij de beperkingen staat nu dat LLSM geen belastingcombinaties in een model schrijft, en dat het niet aan een met de hand geopende SCIA kan koppelen (beddingen en rijdende last schrijven daarom een nieuw bestand, het rapport print van een kopie).
+
 ## v0.3.15 — Model builder: load-case types and duplicate names (2026-11-16)
 
 ### Fixed

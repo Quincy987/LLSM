@@ -32,7 +32,6 @@ Plan: `docs/09-plan-v0.4-existing-models.md` (order) + `docs/08-plan-v0.4-vibemo
 - [x] `llsm moving-load` + MCP tools; hand case end to end, 12/12 loads and 3/3 cases confirmed
 - [ ] Find the UCS value that an update sets from 1012 to 0 (same mechanism as the code-manager 100 → 0?)
 - [ ] Decode combinations in the reader, then write the envelope (S8)
-- [ ] Demo video take 6 + GUI picture of case 02: `phase0/moving_load/demo/take6.py` (needs a free desktop; calibrate the load-case box first)
 - [ ] Mail Tom and Sophie the five questions (docs/10 §5): model copy, vehicle, deck type, skew, naming
 
 ## Report (docs/13, verify: docs/verify/report.md)
@@ -51,4 +50,4 @@ Plan: `docs/09-plan-v0.4-existing-models.md` (order) + `docs/08-plan-v0.4-vibemo
 - [x] Rebase branch on main (mcp<2 pin, install fixes)
 - [x] Known bugs: load cases always `ActionType.Permanent`; duplicate names overwrite (fixed, unit + in-memory ADM check; live SCIA run still open: docs/verify/builder-rules.md)
 - [ ] Live run `tests/live/test_builder_rules_live.py` on a free desktop; check SCIA keeps a variable case's duration on push
-- [ ] README stale
+- [x] README stale
