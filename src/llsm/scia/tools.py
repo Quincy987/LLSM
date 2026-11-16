@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 import time
 
-from .builder import ModelBuilder
+from .builder import DuplicateNameError, ModelBuilder
 from .autoclick import SciaDialogPending
 from .session import SciaSession
 
@@ -64,6 +64,15 @@ class LlsmContext:
 # Tools: model building (off-SCIA, pure builder operations)
 # ===================================================================
 
+
+def _refused(name: str, exc: ValueError) -> dict:
+    """A refused add (duplicate name, unknown kind, a case ADM will not take): nothing was added."""
+    out = {"ok": False, "error": str(exc), "name": name}
+    if isinstance(exc, DuplicateNameError):
+        out["duplicate"] = True
+    return out
+
+
 def new_model(ctx: LlsmContext, name: str = "LLSM_Model") -> dict:
     """Start a fresh in-memory ADM model."""
     if ctx.builder is not None:
@@ -75,61 +84,97 @@ def new_model(ctx: LlsmContext, name: str = "LLSM_Model") -> dict:
 
 def add_material(ctx: LlsmContext, name: str, kind: str = "Steel") -> dict:
     ctx.ensure_builder()
-    ctx.builder.add_material(name, kind=kind)
+    try:
+        ctx.builder.add_material(name, kind=kind)
+    except ValueError as exc:
+        return _refused(name, exc)
     return {"ok": True, "name": name, "kind": kind}
 
 
 def add_rectangular_section(ctx: LlsmContext, name: str, material: str, width_mm: float, height_mm: float) -> dict:
     ctx.ensure_builder()
-    ctx.builder.add_rectangular_section(name, material, width_mm, height_mm)
+    try:
+        ctx.builder.add_rectangular_section(name, material, width_mm, height_mm)
+    except ValueError as exc:
+        return _refused(name, exc)
     return {"ok": True, "name": name, "material": material, "size_mm": [width_mm, height_mm]}
 
 
 def add_node(ctx: LlsmContext, name: str, x_mm: float, y_mm: float, z_mm: float) -> dict:
     ctx.ensure_builder()
-    ctx.builder.add_node(name, x_mm, y_mm, z_mm)
+    try:
+        ctx.builder.add_node(name, x_mm, y_mm, z_mm)
+    except ValueError as exc:
+        return _refused(name, exc)
     return {"ok": True, "name": name, "xyz_mm": [x_mm, y_mm, z_mm]}
 
 
 def add_beam(ctx: LlsmContext, name: str, node_a: str, node_b: str, cross_section: str) -> dict:
     ctx.ensure_builder()
-    ctx.builder.add_beam(name, node_a, node_b, cross_section)
+    try:
+        ctx.builder.add_beam(name, node_a, node_b, cross_section)
+    except ValueError as exc:
+        return _refused(name, exc)
     return {"ok": True, "name": name, "between": [node_a, node_b], "section": cross_section}
 
 
 def add_fixed_support(ctx: LlsmContext, name: str, node: str) -> dict:
     ctx.ensure_builder()
-    ctx.builder.add_fixed_support(name, node)
+    try:
+        ctx.builder.add_fixed_support(name, node)
+    except ValueError as exc:
+        return _refused(name, exc)
     return {"ok": True, "name": name, "node": node, "type": "fixed"}
 
 
 def add_pinned_support(ctx: LlsmContext, name: str, node: str) -> dict:
     ctx.ensure_builder()
-    ctx.builder.add_pinned_support(name, node)
+    try:
+        ctx.builder.add_pinned_support(name, node)
+    except ValueError as exc:
+        return _refused(name, exc)
     return {"ok": True, "name": name, "node": node, "type": "pinned"}
 
 
 def add_roller_support(ctx: LlsmContext, name: str, node: str, direction: str = "Z") -> dict:
     ctx.ensure_builder()
-    ctx.builder.add_roller_support(name, node, direction=direction)
+    try:
+        ctx.builder.add_roller_support(name, node, direction=direction)
+    except ValueError as exc:
+        return _refused(name, exc)
     return {"ok": True, "name": name, "node": node, "type": f"roller_{direction}"}
 
 
 def add_load_group(ctx: LlsmContext, name: str, kind: str = "Permanent") -> dict:
     ctx.ensure_builder()
-    ctx.builder.add_load_group(name, kind=kind)
+    try:
+        ctx.builder.add_load_group(name, kind=kind)
+    except ValueError as exc:
+        return _refused(name, exc)
     return {"ok": True, "name": name, "kind": kind}
 
 
-def add_load_case(ctx: LlsmContext, name: str, group: str, kind: str = "Standard") -> dict:
+def add_load_case(ctx: LlsmContext, name: str, group: str, kind: str = "Standard",
+                  action_type: str | None = None, duration: str | None = None) -> dict:
+    """action_type follows the group (Permanent/Variable/...) unless given; duration for variable cases."""
     ctx.ensure_builder()
-    ctx.builder.add_load_case(name, group, kind=kind)
-    return {"ok": True, "name": name, "group": group, "kind": kind}
+    try:
+        case = ctx.builder.add_load_case(name, group, kind=kind, action_type=action_type, duration=duration)
+    except ValueError as exc:
+        return _refused(name, exc)
+    # Read back from the stored case, so the result says what landed, not what was asked for.
+    out = {"ok": True, "name": name, "group": group, "kind": kind, "action_type": str(case.ActionType)}
+    if out["action_type"] == "Variable":
+        out["duration"] = str(case.Duration)
+    return out
 
 
 def add_line_load(ctx: LlsmContext, name: str, beam: str, load_case: str, magnitude_kn_per_m: float, direction: str = "Z") -> dict:
     ctx.ensure_builder()
-    ctx.builder.add_line_load(name, beam, load_case, magnitude_kn_per_m, direction=direction)
+    try:
+        ctx.builder.add_line_load(name, beam, load_case, magnitude_kn_per_m, direction=direction)
+    except ValueError as exc:
+        return _refused(name, exc)
     return {"ok": True, "name": name, "beam": beam, "load_case": load_case, "q_kNpm": magnitude_kn_per_m, "direction": direction}
 
 

@@ -147,6 +147,7 @@ INSTRUCTIONS_BASE = (
     "  3. launch_scia -> push_model -> run_analysis\n\n"
     "Units: lengths in mm; line loads in kN/m. Z axis is vertical (up positive); "
     "for gravity-like downward loads use direction='Z' with a NEGATIVE magnitude.\n\n"
+    "Names must be unique per model; a duplicate is refused, use another name or delete_object first.\n\n"
     "To put soil beddings on the piles of an existing saved model, use bedding_preview, then bedding_apply.\n\n"
     "The engineer names a saved model by its file name (e.g. brugdek.esa): pass that name as model_path; the "
     "tools find it under the Documents folders (or LLSM_MODEL_DIRS). Never ask for a full path first; ask only "
@@ -259,12 +260,17 @@ def _register_common_tools(mcp: FastMCP) -> None:
         return scia_tools.add_roller_support(_ctx, name=name, node=node, direction=direction)
 
     def add_load_group(name: str, kind: str = "Permanent") -> dict:
-        """Add a load group. kind: Permanent, Variable, or Accidental."""
+        """Add a load group. kind: Permanent, Variable, Accidental, Moving (traffic), Tensioning, Fire or Seismic."""
         return scia_tools.add_load_group(_ctx, name=name, kind=kind)
 
-    def add_load_case(name: str, group: str, kind: str = "Standard") -> dict:
-        """Add a load case inside a group. kind: Standard or SelfWeight."""
-        return scia_tools.add_load_case(_ctx, name=name, group=group, kind=kind)
+    def add_load_case(name: str, group: str, kind: str = "Standard", action_type: str | None = None,
+                      duration: str | None = None) -> dict:
+        """Add a load case inside a group. kind: Standard or SelfWeight (permanent cases only).
+
+        action_type follows the group (Permanent/Variable/...) unless given (Permanent, Variable or Accidental).
+        duration (Long, Medium, Short, Instantaneous) is for a variable case only; Short when not given."""
+        return scia_tools.add_load_case(_ctx, name=name, group=group, kind=kind, action_type=action_type,
+                                        duration=duration)
 
     def add_line_load(name: str, beam: str, load_case: str,
                       magnitude_kn_per_m: float, direction: str = "Z") -> dict:
