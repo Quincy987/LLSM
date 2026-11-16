@@ -8,9 +8,9 @@ Inspired by VibeModel (the Revit equivalent, internal).
 
 ## Status
 
-Current release: **v0.3.15** (see [`CHANGELOG.md`](CHANGELOG.md)).
+Every release and what it changed: [`CHANGELOG.md`](CHANGELOG.md).
 
-- ✅ **Build a model from a chat** (chat → ADM model → SCIA → analysis), 32 tools, chat panel, CLI, Claude Code / API / OpenAI / Gemini / local backends. [`docs/06-phase0-results.md`](docs/06-phase0-results.md)
+- ✅ **Build a model from a chat** (chat → ADM model → SCIA → analysis): chat panel, CLI and an MCP server (32 tools in all), Claude Code / API / OpenAI / Gemini / local backends. [`docs/06-phase0-results.md`](docs/06-phase0-results.md)
 - ✅ **Beddings on a saved model** (v0.3.6): soil layers onto the piles, a checked new file next to the model. [`docs/verify/phase1-bedding.md`](docs/verify/phase1-bedding.md)
 - ✅ **Pilot readiness** (v0.3.7): LLSM only manages the SCIA it started, `install.cmd`, `llsm diagnose`. [`docs/verify/phase2-pilot.md`](docs/verify/phase2-pilot.md)
 - ✅ **Moving load on a saved model** (v0.3.11): one load case per vehicle position along a road. [`docs/verify/phase3-moving-load.md`](docs/verify/phase3-moving-load.md)
@@ -188,6 +188,7 @@ LLSM/
 │   ├── panel.py                # Tk chat panel docked to SCIA
 │   ├── diagnose.py             # llsm diagnose: can this computer run LLSM?
 │   ├── answer_rules.py         # how an answer is shaped for the chat pane
+│   ├── dev_watcher.py          # file watcher for the panel's --dev hot reload
 │   ├── scia/
 │   │   ├── loader.py           # DLL discovery + load (pythonnet)
 │   │   ├── autoclick.py        # watches the dialogs of the SCIA this session started
@@ -256,6 +257,6 @@ Names are unique per model: an `add_*` with a name that already exists is refuse
 
 - Cross-sections are rectangular-only (no IPE/HEA library lookup yet).
 - Building a model from scratch: no point loads, surface loads or slabs yet (point and surface loads on a saved model: see Moving load).
-- No load combinations are written, neither when building nor on a saved model ([`docs/12-plan-combinations.md`](docs/12-plan-combinations.md) is a proposal; the moving-load envelope is open).
-- The OpenAPI cannot attach to a SCIA the engineer opened by hand ([`docs/03-scia-integration.md`](docs/03-scia-integration.md)). The saved-model routes therefore work on the file with SCIA closed: ESA_XML writes a new `<model>_llsm-NN.esa` next to it.
+- LLSM writes no load combinations into a model, neither when building nor on a saved one ([`docs/12-plan-combinations.md`](docs/12-plan-combinations.md) is a proposal; the moving-load envelope is open). Only the report's chapter per load case uses one combination per case, on its throwaway print copy.
+- The OpenAPI cannot attach to a SCIA the engineer opened by hand, nor read back a model it did not build ([`docs/03-scia-integration.md`](docs/03-scia-integration.md)). So the saved-model routes work on the file through ESA_XML, with SCIA closed: beddings and moving load write a new `<model>_llsm-NN.esa` next to it; the report prints from a copy.
 - Single SCIA install assumed on the machine.
