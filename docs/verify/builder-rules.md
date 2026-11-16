@@ -55,6 +55,12 @@ with a reason. The tool reports the action type and duration read back from the 
   (StructuralPointConnection)", nothing added. A node named like the model: accepted. Deleting `N1`:
   blocked by `B1`, `S1`. Line load edit -5 → -9 kN/m: read back -9. Snapshot lists the load on `B1`.
   `ValidateModel`: ok.
+- Through the MCP server (stdio, the route the chat uses; 2026-11-16): the instructions carry the
+  uniqueness rule and `add_load_case` offers `action_type` and `duration`. Cases in Variable / Moving /
+  Permanent groups came back Variable+Short / Variable+Short / Permanent, `duration="Long"` kept;
+  SelfWeight in a variable group, a duration on a permanent case, group kind `Traffic` and a second
+  `N1`: `ok: false` with the reason (the last with `duplicate: true`). `model_summary` then held one
+  `N1` and every accepted case. `delete_object(N1)`: blocked by `B1`, `S1`. Line load edit: ok.
 - **Live SCIA push + calculation: NOT RUN.** Another session had SCIA open on the demo model
   (`brugdek.esa`, started by `scia_ctl.py`), and LLSM never starts a second SCIA beside someone's.
   To run it: `LLSM_LIVE=1 python -m pytest tests/live/test_builder_rules_live.py` on a free desktop
