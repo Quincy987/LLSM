@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.15 — Model builder: load-case types and duplicate names (2026-11-16)
+
 ### Fixed
 - **Belastinggevallen krijgen het juiste type.** Een geval in een veranderlijke groep (of verkeer, `Moving`) wordt nu als veranderlijk geschreven, niet meer altijd als permanent, met duur kort tenzij je een andere duur geeft; brand en aardbeving als buitengewoon, voorspanning als permanent. Op te heffen met `action_type`. Wat SCIA's model niet aanneemt (eigen gewicht in een veranderlijke groep, een duur op een permanent geval) wordt met reden geweigerd. docs/verify/builder-rules.md
 - **Dubbele namen worden geweigerd.** Een tweede knoop, staaf of last met een bestaande naam komt niet meer stilletjes in het model; de tool zegt welke naam al bestaat en voegt niets toe.
