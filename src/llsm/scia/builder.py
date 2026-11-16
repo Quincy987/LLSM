@@ -6,6 +6,43 @@ then gets pushed into SCIA via SciaSession.push_model().
 from __future__ import annotations
 from typing import Any
 
+# A load case's ADM ActionType follows its load group's LoadGroupType. Checked with pythonnet on the
+# SCIA 24 SDK (2026-11-16): LoadGroupType has Accidental, Fire, Moving, Permanent, Seismic, Tensioning,
+# Variable; ActionType has only Accidental, Permanent, Variable. ADM's ValidateModel accepts any pairing,
+# so the mapping is LLSM's: the three shared names map to themselves; prestress (Tensioning) is a
+# permanent action, traffic (Moving) a variable one, fire and earthquake are accidental-type situations
+# (EN 1990 6.4.3.3 / 6.4.3.4). Pass action_type to add_load_case to choose otherwise.
+ACTION_TYPE_BY_GROUP_KIND = {
+    "Permanent": "Permanent",
+    "Variable": "Variable",
+    "Accidental": "Accidental",
+    "Tensioning": "Permanent",
+    "Moving": "Variable",
+    "Fire": "Accidental",
+    "Seismic": "Accidental",
+}
+ACTION_TYPES = ("Permanent", "Variable", "Accidental")
+
+
+class DuplicateNameError(ValueError):
+    """An object with this name is already in the model."""
+
+
+def action_type_for(group_kind: str) -> str:
+    """The load-case action type for a load group kind; ValueError for an unknown kind."""
+    try:
+        return ACTION_TYPE_BY_GROUP_KIND[str(group_kind)]
+    except KeyError:
+        raise ValueError(
+            f"unknown load group kind {group_kind!r}; known: {', '.join(ACTION_TYPE_BY_GROUP_KIND)}"
+        ) from None
+
+
+def check_action_type(action_type: str) -> str:
+    if action_type not in ACTION_TYPES:
+        raise ValueError(f"unknown action type {action_type!r}; known: {', '.join(ACTION_TYPES)}")
+    return action_type
+
 
 class ModelBuilder:
     """Builds an ADM analysis model in memory.
@@ -31,6 +68,32 @@ class ModelBuilder:
         self._svc.AddItemToModel(self._model, info)
 
         self._objects_by_name: dict[str, Any] = {}
+        self._group_kinds: dict[str, str] = {}
+
+    # --- Name bookkeeping ----------------------------------------------------
+
+    def _check_free(self, name: str) -> None:
+        """Refuse a name that is already taken. Runs BEFORE AddItemToModel, so nothing half-lands."""
+        existing = self._objects_by_name.get(name)
+        if existing is None:
+            for obj in self._model:
+                try:
+                    if obj.Name == name:
+                        existing = obj
+                        break
+                except Exception:
+                    continue
+        if existing is not None:
+            raise DuplicateNameError(
+                f"an object named {name!r} already exists ({type(existing).__name__}); "
+                "choose another name or delete it first"
+            )
+
+    def _register(self, name: str, obj: Any, group_kind: str | None = None) -> None:
+        """Record a just-added object. Never scans or raises: the object is already in the model."""
+        self._objects_by_name[name] = obj
+        if group_kind is not None:
+            self._group_kinds[name] = group_kind
 
     def _import_namespaces(self) -> None:
         import ModelExchanger.AnalysisDataModel as adm
@@ -48,8 +111,9 @@ class ModelBuilder:
         m = self._adm.Libraries.StructuralMaterial(
             self._System.Guid.NewGuid(), name, mt, name
         )
+        self._check_free(name)
         self._svc.AddItemToModel(self._model, m)
-        self._objects_by_name[name] = m
+        self._register(name, m)
         return m
 
     # --- Cross-sections ----------------------------------------------------
@@ -63,8 +127,9 @@ class ModelBuilder:
             self._System.Guid.NewGuid(), name, mat,
             self._adm.Enums.ProfileLibraryId.Rectangle, params
         )
+        self._check_free(name)
         self._svc.AddItemToModel(self._model, xs)
-        self._objects_by_name[name] = xs
+        self._register(name, xs)
         return xs
 
     # --- Geometry ----------------------------------------------------------
@@ -76,8 +141,9 @@ class ModelBuilder:
             self._un.Length(y_mm, self._un.Units.LengthUnit.Millimeter),
             self._un.Length(z_mm, self._un.Units.LengthUnit.Millimeter),
         )
+        self._check_free(name)
         self._svc.AddItemToModel(self._model, n)
-        self._objects_by_name[name] = n
+        self._register(name, n)
         return n
 
     def add_beam(self, name: str, node_a: str, node_b: str, cross_section: str) -> Any:
@@ -97,8 +163,9 @@ class ModelBuilder:
             self._System.Guid.NewGuid(), name, curves, self.get(cross_section)
         )
         beam.Layer = "LayerADM"
+        self._check_free(name)
         self._svc.AddItemToModel(self._model, beam)
-        self._objects_by_name[name] = beam
+        self._register(name, beam)
         return beam
 
     # --- Supports ----------------------------------------------------------
@@ -122,8 +189,9 @@ class ModelBuilder:
         ro = self._constraint_rot("Rigid")
         s.TranslationX = tr; s.TranslationY = tr; s.TranslationZ = tr
         s.RotationX = ro;    s.RotationY = ro;    s.RotationZ = ro
+        self._check_free(name)
         self._svc.AddItemToModel(self._model, s)
-        self._objects_by_name[name] = s
+        self._register(name, s)
         return s
 
     def add_pinned_support(self, name: str, node: str) -> Any:
@@ -135,8 +203,9 @@ class ModelBuilder:
         ro = self._constraint_rot("Free")
         s.TranslationX = tr; s.TranslationY = tr; s.TranslationZ = tr
         s.RotationX = ro;    s.RotationY = ro;    s.RotationZ = ro
+        self._check_free(name)
         self._svc.AddItemToModel(self._model, s)
-        self._objects_by_name[name] = s
+        self._register(name, s)
         return s
 
     def add_roller_support(self, name: str, node: str, direction: str = "Z") -> Any:
@@ -151,33 +220,52 @@ class ModelBuilder:
         s.TranslationY = tr_r if direction == "Y" else tr_f
         s.TranslationZ = tr_r if direction == "Z" else tr_f
         s.RotationX = ro_f; s.RotationY = ro_f; s.RotationZ = ro_f
+        self._check_free(name)
         self._svc.AddItemToModel(self._model, s)
-        self._objects_by_name[name] = s
+        self._register(name, s)
         return s
 
     # --- Loads -------------------------------------------------------------
 
     def add_load_group(self, name: str, kind: str = "Permanent") -> Any:
+        """kind: Permanent, Variable, Accidental, Moving, Tensioning, Fire, Seismic."""
+        action_type_for(kind)  # an unknown kind is refused here, with the known ones listed
         lg = self._adm.Loads.StructuralLoadGroup(
             self._System.Guid.NewGuid(), name,
             getattr(self._adm.Enums.LoadGroupType, kind)
         )
         lg.Relation = self._adm.Enums.Relation.Standard
         lg.Load = self._cs.FlexibleEnum[self._adm.Enums.Load](self._adm.Enums.Load.Domestic)
+        self._check_free(name)
         self._svc.AddItemToModel(self._model, lg)
-        self._objects_by_name[name] = lg
+        self._register(name, lg, group_kind=kind)
         return lg
 
-    def add_load_case(self, name: str, group: str, kind: str = "Standard") -> Any:
-        """kind: Standard, SelfWeight."""
+    def resolve_action_type(self, group: str, action_type: str | None = None) -> tuple[str, str | None]:
+        """(action type for a case in ``group``, warning or None). An explicit action_type wins."""
+        if action_type is not None:
+            return check_action_type(action_type), None
+        kind = self._group_kinds.get(group)
+        if kind is None:  # a group this builder did not add: read its type from the ADM object
+            group_obj = self.get(group)
+            try:
+                kind = group_obj.LoadGroupType.ToString()
+            except AttributeError:
+                return "Permanent", f"the type of load group {group!r} could not be read: action type assumed Permanent"
+        return action_type_for(kind), None
+
+    def add_load_case(self, name: str, group: str, kind: str = "Standard", action_type: str | None = None) -> Any:
+        """kind: Standard, SelfWeight. action_type follows the group (Permanent/Variable/...) unless given."""
         lc_type = getattr(self._adm.Enums.LoadCaseType, kind)
+        resolved, _ = self.resolve_action_type(group, action_type)
         lc = self._adm.Loads.StructuralLoadCase(
             self._System.Guid.NewGuid(), name,
-            self._adm.Enums.ActionType.Permanent,
+            getattr(self._adm.Enums.ActionType, resolved),
             self.get(group), lc_type
         )
+        self._check_free(name)
         self._svc.AddItemToModel(self._model, lc)
-        self._objects_by_name[name] = lc
+        self._register(name, lc)
         return lc
 
     def add_line_load(
@@ -195,8 +283,9 @@ class ModelBuilder:
             self.get(load_case), bref,
         )
         ld.Direction = getattr(self._adm.Enums.ActionDirection, direction)
+        self._check_free(name)
         self._svc.AddItemToModel(self._model, ld)
-        self._objects_by_name[name] = ld
+        self._register(name, ld)
         return ld
 
     # --- Edit primitives ---------------------------------------------------
@@ -394,6 +483,7 @@ class ModelBuilder:
             )
 
         self._objects_by_name.pop(name, None)
+        self._group_kinds.pop(name, None)
         deleted.append(name)
         return deleted
 

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Belastinggevallen krijgen het juiste type.** Een geval in een veranderlijke groep (of verkeer, `Moving`) wordt nu als veranderlijk geschreven, niet meer altijd als permanent; brand en aardbeving als buitengewoon, voorspanning als permanent. Op te heffen met `action_type`. docs/verify/builder-rules.md
+- **Dubbele namen worden geweigerd.** Een tweede knoop, staaf of last met een bestaande naam komt niet meer stilletjes in het model; de tool zegt welke naam al bestaat en voegt niets toe.
+
 ## v0.3.14 — Traffic by a plain request (2026-11-15)
 
 ### Added

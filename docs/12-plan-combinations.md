@@ -3,7 +3,8 @@
 Date: 2026-11-12. Status: proposal, nothing built. Builds on `09-plan-v0.4-existing-models.md`
 ("Deferred: Combinations per code") and `08-plan-v0.4-vibemodel-parity.md` D4/E5.
 Prior attempts: none in code (`git log -i --grep=combination` is empty); D4/E5 were planned, never built.
-`builder.add_load_case` exists for live-built models only and always writes `ActionType.Permanent`.
+`builder.add_load_case` exists for live-built models only; since 2026-11-16 its `ActionType` follows the
+load group (it was always `Permanent`).
 
 **Compare before building (added 2026-11-13).** The plaatbruggen toetsmodel already has a traffic
 combination generator: `src/integrations/scia_integration/load_combination_generator/`
