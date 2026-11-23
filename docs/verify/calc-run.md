@@ -13,6 +13,10 @@ Date: 2026-11-23. SCIA Engineer 24.0.3015.64. Scripts: `phase0/calc/` (one per t
   type *Standard*. SCIA's solver refuses it ("Voorbereiding van statische belastingsgevallen: NIET
   OK"); a variable case must be *Static*. The builder now writes Static. That fault would also have
   stopped an engineer who pressed Calculate in SCIA on a chat-built model.
+- **The owner's suggestion works: forces from SCIA's own report.** The test beam, pushed into a copy of
+  a model that carries an engineering report (brugdek.esa), saved, then calculated and printed by
+  LLSM's existing report route, gives My = −161.19 kNm at the middle support (hand 162 kNm, −0.5 %),
+  in 226 s, with SCIA closed (try 14). What it needs is a start model with a report in it.
 - **Reading forces back through the OpenAPI is not possible here.** The results API does not even
   start on a calculated model saved by an engineer (kademuur.esa, 32 result sets). The old cause in
   `docs/06-phase0-results.md` (ApiGuid.ToString, "fix with a C# shim") is wrong: SCIA's lookup is
@@ -67,7 +71,7 @@ and C, EG (self weight) and Verkeer-UDL (-9 kN/m on both spans). Hand value for 
 | 13 | Same project, SCIA's Calculate (7.3 s), `SaveToFile` | 0 result sets: the calculation removed the results and made none. |
 | ctrl | `ESA_XML LIN -tESA` on `kademuur_kaal.esa` (53 s, Succeeded) | 32 → 0 result sets: the output file keeps no results. |
 | ctrl | brugdek with traffic: `llsm report write --calculate --cases-group "LLSM-ML TS L1A" --format xlsx` (1004 s) | OK: 112 of 112 results tables with rows; L1A 14 reaction resultant R_z 202.5 kN = the preview's total. |
-| 14 | The owner's route: the test beam pushed into a copy of brugdek.esa (it has Report_1), saved, same report command with a group "LLSM-ML CB" | TRY14 |
+| 14 | The owner's route: the test beam pushed into a copy of brugdek.esa (it has Report_1), saved, same report command with a group "LLSM-ML CB" | **OK, 226 s** (LIN + XLSX print). Class *LLSM-ML CB 01*, 1D internal forces: CB_Veld1 at x = 12 m and CB_Veld2 at 0: My = −161.19 kNm, Vz = ∓67.43 kN; CB_Veld1 at 4.667 m: My = 91.31 kNm. Hand: 162 kNm (−0.5 %), 5qL/8 = 67.5 kN, 9qL²/128 = 91.1 kNm. The report's member table lists CB_Veld1/2 next to the deck's columns. |
 
 Not run: plan step 3b (a start model saved by SCIA 24) and step 4 (fixed support, combination). Try
 1 on the corrected model showed the hidden calculation is inert whatever the model, and the Calculate
@@ -107,12 +111,31 @@ over 3 minutes (HubServer limit).
    driven: `ExecuteCommandString("CMD.TOOLS.CALCULATION")`, press Bereken, read SCIA's closing
    message (it says which step failed). That is GUI automation of SCIA's own dialog, so it needs the
    same care as the licence notices (only LLSM's own SCIA, only that dialog).
-2. **Numbers back in the chat:** the results API is out on this licence (it does not start even on a
-   model with results). The routes left are SCIA's printed output: the engineering report (`llsm
-   report`, needs a report in the model, made once in SCIA 24) or the XML IO export (`-x`, also a
-   document made once in the GUI). Both work on a saved file with SCIA closed and take minutes, not
-   seconds. That is the owner's suggestion, and it fits a "calculate and report" request, not a quick
-   question in a chat about an open model.
+2. **Numbers back in the chat, proposed design (not built):** keep the push as it is, then "calculate
+   and report": push into a copy of an LLSM start model that carries a standard report (items over all
+   result classes, selections *Alle*), save it with `SaveToFile` (answer "Gegevens converteren?" for
+   that file only), close SCIA, and run `write_report(calculate=True, cases_group=...)` with the chat's
+   cases in one group named `<group> NN`; read the per-case 1D internal forces table. Measured: 226 s
+   for the beam in the 36 MB brugdek copy. The start model is the one step that needs SCIA's GUI: an
+   empty project with the standard report, made once in SCIA 24 (the open TODO "standard LLSM report
+   template"). Try 14 also answers part of that TODO's gate 4.1: a report made for one model printed
+   members and a per-case class it never had. The table holds the extremes per member, which is what
+   an engineer asks in a chat (moment at the support, maximum span moment).
 3. **Ask SCIA (Nemetschek)** whether the hidden linear calculation can be enabled for the
    gemeente's licence. It is the command their own OpenAPI uses; without it the OpenAPI cannot
    calculate on a customer licence at all.
+
+## Verification of the change (2026-11-23)
+
+| Check | Result |
+|---|---|
+| Unit suite (`tests/unit`, incl. new `test_run_analysis.py` and load-type tests) | 500 passed, 2 skipped |
+| Live `tests/live/test_calc_live.py` (test beam through the tool functions the MCP server calls) | passed, 75 s: `run_analysis` → `ok: false, calculated: false`, the plain message; `get_beam_inner_forces` → the same message; the case is stored as Static |
+| Live `tests/live/test_builder_rules_live.py` | passed (now accepts "ok only with results") |
+| Traffic preview on brugdek.esa with the changed code | 42 cases, 138 loads, no problems (unchanged) |
+| Report route (control and try 14) with the changed code | OK, see the table above |
+| SCIA processes after every run | none left |
+
+On every close SCIA's COM connection drops while it quits (`InvalidComObjectException` / pytest's
+"Windows fatal exception: code 0x800706be" in `kill_remembered`); the runs still pass and leave no
+process. That was so before this change too.
