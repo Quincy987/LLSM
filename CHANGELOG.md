@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **"Berekening gelukt" zonder resultaten is weg.** `run_analysis` meldde ok terwijl SCIA niets had berekend; nu is het alleen ok als SCIA echt krachten teruggeeft voor de eerste staaf en het eerste belastinggeval. Anders zegt het, net als beide resultaattools, in gewone taal dat het model met net in SCIA staat maar niet berekend is, en dat je in SCIA zelf rekent. De rekenopdracht die LLSM kan sturen is SCIA's "verborgen lineaire berekening", die SCIA's eigen configuratie alleen voor intern gebruik bij SCIA toestaat. docs/verify/calc-run.md
+- **Een veranderlijk belastinggeval krijgt het type Statisch.** Het werd als Standaard geschreven; dat weigert SCIA's rekenkern ("Voorbereiding van statische belastingsgevallen: NIET OK"), ook als je in SCIA zelf op Berekenen drukt. Permanente gevallen blijven Standaard of Eigen gewicht.
+
+### Changed
+- **De oorzaak in docs/06 is gecorrigeerd.** Lege resultaten kwamen niet door een fout in het opzoeken van het belastinggeval; dat opzoeken klopt. De voorgestelde C#-hulp is geschrapt.
+
 ## v0.3.16 — README up to date (2026-11-16)
 
 ### Changed

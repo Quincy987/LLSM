@@ -12,6 +12,7 @@ from llsm.scia.builder import (
     _unwrap,
     action_type_for,
     case_duration,
+    case_load_type,
     check_action_type,
 )
 
@@ -211,6 +212,27 @@ class _StoringBuilder:
     def add_load_case(self, name, group, kind="Standard", action_type=None, duration=None):
         self.asked = (action_type, duration)
         return self.case
+
+
+def test_variable_and_accidental_cases_get_scias_static_type():
+    # SCIA refuses a variable case of type Standard ("statische belastingsgevallen: NIET OK")
+    assert case_load_type("Standard", "Variable") == "Static"
+    assert case_load_type("Standard", "Accidental") == "Static"
+    assert case_load_type("Static", "Variable") == "Static"
+
+
+def test_permanent_cases_keep_standard_and_self_weight():
+    assert case_load_type("Standard", "Permanent") == "Standard"
+    assert case_load_type("Static", "Permanent") == "Standard"
+    assert case_load_type("SelfWeight", "Permanent") == "SelfWeight"
+    assert case_load_type("Prestress", "Permanent") == "Prestress"
+
+
+def test_load_case_tool_reports_the_stored_load_type():
+    b = _StoringBuilder("Variable", "Short")
+    b.case.LoadType = "Static"
+    out = tools.add_load_case(_ctx(b), "LC1", "LG")
+    assert out["kind"] == "Static"
 
 
 def test_load_case_tool_reports_what_was_stored():

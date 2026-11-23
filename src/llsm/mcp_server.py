@@ -267,6 +267,7 @@ def _register_common_tools(mcp: FastMCP) -> None:
                       duration: str | None = None) -> dict:
         """Add a load case inside a group. kind: Standard or SelfWeight (permanent cases only).
 
+        A variable or accidental Standard case is stored as SCIA's Static type (the result's kind says so).
         action_type follows the group (Permanent/Variable/...) unless given (Permanent, Variable or Accidental).
         duration (Long, Medium, Short, Instantaneous) is for a variable case only; Short when not given."""
         return scia_tools.add_load_case(_ctx, name=name, group=group, kind=kind, action_type=action_type,
@@ -337,7 +338,10 @@ def _register_common_tools(mcp: FastMCP) -> None:
         return scia_tools.push_model(_ctx)
 
     def run_analysis() -> dict:
-        """Generate FE mesh (only when needed) and run linear analysis."""
+        """Generate FE mesh (only when needed), run linear analysis, and check results exist.
+
+        ok is true only when SCIA returned results. ok false with calculated false: SCIA did not calculate;
+        tell the engineer the error text, do not call the result tools, and do not retry."""
         return scia_tools.run_analysis(_ctx)
 
     # --- Results ---

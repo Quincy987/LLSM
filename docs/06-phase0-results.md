@@ -86,6 +86,14 @@ Findings (all reflection + live spikes against v24.0):
 
 ## Update 2026-04-25: Result-extraction root cause identified
 
+> **Superseded 2026-11-23** (`docs/verify/calc-run.md`). The cause below is wrong: SCIA's lookup turns
+> the ApiGuid back into a Guid (`op_Implicit`) and finds the right case (Veld1 → 1, load case → 2); the
+> type name only appears in the error text. `LoadResult` is None because nothing was calculated: the
+> OpenAPI's `RunCalculation` sends SCIA's hidden linear calculation, which SCIA's configuration allows
+> for SCIA's internal use only. A variable load case was also written with the wrong load type
+> (Standard instead of Static), which SCIA's solver refuses. The C# shim below would not help. The
+> text is kept as it was.
+
 After extensive probing, the cause of `RAPI.LoadResult` returning None on v24 is now understood:
 
 **SCIA.OpenAPI.ApiGuid has no `ToString()` override.** It inherits the default `System.Object.ToString()` which returns the type name (`"SCIA.OpenAPI.ApiGuid"`). SCIA's internal `GetDsId` lookup (called inside `LoadResult`) keys the mapping table by `apiGuid.ToString()`, so the lookup never matches the actual GUID — every result query returns None.

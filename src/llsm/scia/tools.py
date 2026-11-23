@@ -28,6 +28,7 @@ class LlsmContext:
         self.builder: ModelBuilder | None = None
         self.project_opened: bool = False
         self.last_calc_ok: bool = False
+        self.calc_checked: bool = False  # run_analysis looked for results (found or not)
         self.rapi: Any = None
         self.mesh_dirty: bool = False
         self.model_name: str | None = None
@@ -163,7 +164,8 @@ def add_load_case(ctx: LlsmContext, name: str, group: str, kind: str = "Standard
     except ValueError as exc:
         return _refused(name, exc)
     # Read back from the stored case, so the result says what landed, not what was asked for.
-    out = {"ok": True, "name": name, "group": group, "kind": kind, "action_type": str(case.ActionType)}
+    out = {"ok": True, "name": name, "group": group, "kind": str(getattr(case, "LoadType", kind)),
+           "action_type": str(case.ActionType)}
     if out["action_type"] == "Variable":
         out["duration"] = str(case.Duration)
     return out
@@ -229,39 +231,82 @@ def push_model(ctx: LlsmContext) -> dict:
         return {"ok": False, "error": str(e), "wedged": True}
     ctx.project_opened = True
     ctx.mesh_dirty = True
+    ctx.calc_checked, ctx.last_calc_ok, ctx.rapi = False, False, None  # a new project has no results yet
     return {"ok": not errors, "errors": errors, "items_pushed": ctx.builder.item_count(),
             "mesh_dirty": ctx.mesh_dirty}
 
 
-def run_analysis(ctx: LlsmContext) -> dict:
-    """Generate FE mesh (if dirty) and run linear analysis.
+# Said by run_analysis and both result tools when SCIA made no results. Measured 2026-11-23 on SCIA 24.0.3015.64
+# (docs/verify/calc-run.md): the OpenAPI's RunCalculation sends SCIA's "hidden linear calculation", which
+# SCIA's own configuration allows for SCIA's internal use only; it returns at once and calculates nothing.
+NOT_CALCULATED = (
+    "The model is in SCIA with a mesh, but SCIA did not calculate it, so there are no results to read. "
+    "The calculation command LLSM can send is not allowed by this SCIA licence. "
+    "Calculate it in SCIA itself to see the results there; LLSM cannot read them back yet."
+)
+RESULTS_WAIT_S = 20.0  # how long run_analysis looks for results after the calculation command
 
-    Skips re-meshing when mesh_dirty is False — fast path for repeated result
-    queries on an unchanged model. Edit tools always set mesh_dirty=True.
+
+def _first_beam_and_case(ctx: LlsmContext) -> tuple[str | None, str | None]:
+    snap = ctx.builder.snapshot() if ctx.builder is not None else {}
+    beams, cases = snap.get("beams") or [], snap.get("load_cases") or []
+    return (beams[0]["name"] if beams else None), (cases[0]["name"] if cases else None)
+
+
+def _results_exist(ctx: LlsmContext, rapi: Any, beam: str, case: str) -> bool:
+    """True when SCIA returns inner forces for ``beam`` in ``case``: the only proof that it calculated."""
+    if rapi is None:
+        return False
+    key = _result_key(ctx, beam, case, "inner_forces")
+    result = ctx.session.submit(lambda: rapi.LoadResult(key), timeout_s=120)
+    return result is not None
+
+
+def run_analysis(ctx: LlsmContext) -> dict:
+    """Generate the FE mesh (if dirty), send SCIA's linear calculation, and check that results exist.
+
+    ok is True only when SCIA returns inner forces for the first beam and load case: the calculation
+    command and the results API both report success also when SCIA calculated nothing. Skips
+    re-meshing when mesh_dirty is False. Edit tools always set mesh_dirty=True.
     """
     if not ctx.project_opened:
         return {"ok": False, "error": "no project open — call push_model first"}
     sess = ctx.session
     needs_mesh = ctx.mesh_dirty
+    beam, case = _first_beam_and_case(ctx)
+    ctx.rapi, ctx.last_calc_ok = None, False
 
     def _mesh_and_calc():
         if needs_mesh:
             sess.project.CreateMesh()
         sess.project.RunCalculation()
-        time.sleep(5)  # small grace period for result files
-        rapi = sess.project.Model.InitializeResultsAPI()
-        return rapi
 
     try:
-        rapi = sess.submit(_mesh_and_calc, timeout_s=600)
+        sess.submit(_mesh_and_calc, timeout_s=600)
     except TimeoutError as e:
         return {"ok": False, "error": str(e), "wedged": True}
-    ctx.rapi = rapi
-    ctx.last_calc_ok = rapi is not None
-    if ctx.last_calc_ok:
-        ctx.mesh_dirty = False
-    return {"ok": ctx.last_calc_ok, "rapi_initialized": ctx.last_calc_ok,
-            "remeshed": needs_mesh, "mesh_dirty": ctx.mesh_dirty}
+    ctx.mesh_dirty = False  # the mesh is fresh whether or not SCIA calculated
+    ctx.calc_checked = True
+    if beam is None or case is None:
+        return {"ok": False, "calculated": False, "remeshed": needs_mesh, "mesh_dirty": ctx.mesh_dirty,
+                "error": "The model has no beam or no load case, so there is nothing to check results on."}
+
+    deadline = time.time() + RESULTS_WAIT_S
+    rapi = None
+    while True:
+        try:
+            rapi = sess.submit(lambda: sess.project.Model.InitializeResultsAPI(), timeout_s=120)
+            if _results_exist(ctx, rapi, beam, case):
+                ctx.rapi, ctx.last_calc_ok = rapi, True
+                return {"ok": True, "calculated": True, "remeshed": needs_mesh, "mesh_dirty": ctx.mesh_dirty,
+                        "checked": {"beam": beam, "load_case": case}}
+        except TimeoutError as e:
+            return {"ok": False, "error": str(e), "wedged": True}
+        if time.time() >= deadline:
+            break
+        time.sleep(2.0)
+    return {"ok": False, "calculated": False, "remeshed": needs_mesh, "mesh_dirty": ctx.mesh_dirty,
+            "error": NOT_CALCULATED, "checked": {"beam": beam, "load_case": case}}
 
 
 def close_scia(ctx: LlsmContext) -> dict:
@@ -485,64 +530,63 @@ def set_member_endpoints(ctx: LlsmContext, name: str, node_a: str, node_b: str) 
 # Tools: result extraction (RAPI queries, run after run_analysis)
 # ===================================================================
 
+RESULT_KINDS = ("inner_forces", "deformation")
+
+
+def _result_key(ctx, beam_name: str, load_case: str, result_kind: str) -> Any:
+    """SCIA's ResultKey for one beam, one load case, one result kind (local axes)."""
+    import SCIA.OpenAPI.Results as SciaResults
+    from SCIA.OpenAPI import ApiGuid as SciaApiGuid
+    import Results64Enums as RE
+
+    rt = {"inner_forces": RE.eResultType.eFemBeamInnerForces,
+          "deformation": RE.eResultType.eFemBeamDeformation}[result_kind]
+    rk = SciaResults.ResultKey()
+    rk.CaseType = RE.eDsElementType.eDsElementType_LoadCase
+    # pythonnet does not apply the implicit Guid -> ApiGuid conversion on assignment, so wrap it.
+    # SCIA turns it back into the Guid (op_Implicit) to find its own case number; that lookup works
+    # (checked 2026-11-23, docs/verify/calc-run.md). The docs/06 "ApiGuid.ToString" cause was wrong.
+    rk.CaseId = SciaApiGuid(ctx.builder.get(load_case).Id)
+    rk.EntityType = RE.eDsElementType.eDsElementType_Beam
+    rk.EntityName = beam_name
+    rk.Dimension = RE.eDimension.eDim_1D
+    rk.ResultType = rt
+    rk.CoordSystem = RE.eCoordSystem.eCoordSys_Local
+    return rk
+
+
 def _load_beam_result(ctx, beam_name: str, load_case: str, result_kind: str) -> dict:
     """Internal: build a ResultKey, call RAPI.LoadResult, extract data.
 
     result_kind: 'inner_forces' or 'deformation'.
     Returns dict with sections (positions in m) + per-magnitude value lists.
     """
+    if result_kind not in RESULT_KINDS:
+        return {"ok": False, "error": f"unknown result_kind {result_kind!r}; use 'inner_forces' or 'deformation'"}
     if not ctx.last_calc_ok or ctx.rapi is None:
+        if ctx.project_opened and ctx.calc_checked:  # run_analysis looked and SCIA had no results
+            return {"ok": False, "calculated": False, "error": NOT_CALCULATED}
         return {"ok": False, "error": "no analysis results available — call run_analysis first"}
     if ctx.builder is None:
         return {"ok": False, "error": "no model builder"}
 
     sess = ctx.session
-    builder = ctx.builder
-
-    # find ADM Guid for the load case (still on Python side; the ApiGuid wrapper is created via SCIA marshalling)
     try:
-        case_obj = builder.get(load_case)
+        key = _result_key(ctx, beam_name, load_case, result_kind)
     except KeyError:
         return {"ok": False, "error": f"unknown load case {load_case!r}"}
 
-    import SCIA.OpenAPI.Results as SciaResults
-    from SCIA.OpenAPI import ApiGuid as SciaApiGuid
-    import Results64Enums as RE
-
-    if result_kind == "inner_forces":
-        rt = RE.eResultType.eFemBeamInnerForces
-    elif result_kind == "deformation":
-        rt = RE.eResultType.eFemBeamDeformation
-    else:
-        return {"ok": False, "error": f"unknown result_kind {result_kind!r}; use 'inner_forces' or 'deformation'"}
-
-    # pythonnet does not invoke implicit Guid->ApiGuid conversion on property
-    # assignment, so wrap explicitly. NOTE: this restores the assignment but
-    # does not address the v24 GetDsId lookup miss (ApiGuid.ToString() returns
-    # the type name, not the GUID) — see docs/06-phase0-results.md. LoadResult
-    # may still return None on v24; that is the deferred Layer-2 bug.
-    case_id_wrapped = SciaApiGuid(case_obj.Id)
-
-    def _query():
-        rk = SciaResults.ResultKey()
-        rk.CaseType = RE.eDsElementType.eDsElementType_LoadCase
-        rk.CaseId = case_id_wrapped
-        rk.EntityType = RE.eDsElementType.eDsElementType_Beam
-        rk.EntityName = beam_name
-        rk.Dimension = RE.eDimension.eDim_1D
-        rk.ResultType = rt
-        rk.CoordSystem = RE.eCoordSystem.eCoordSys_Local
-        return ctx.rapi.LoadResult(rk)
-
     try:
-        result = sess.submit(_query)
+        result = sess.submit(lambda: ctx.rapi.LoadResult(key))
     except Exception as e:
         return {"ok": False, "error": f"LoadResult failed: {type(e).__name__}: {e}"}
 
     if result is None:
+        # run_analysis saw results for its check beam and case, so the model was calculated
         return {
             "ok": False,
-            "error": "LoadResult returned None — common causes: beam name mismatch (check model_summary), wrong load_case, or no result of this type was generated",
+            "error": f"SCIA has no {result_kind.replace('_', ' ')} for beam {beam_name!r} in load case {load_case!r}; "
+                     "the model was calculated, so check the names with model_summary.",
             "tried": {"beam": beam_name, "case": load_case, "kind": result_kind},
         }
 
