@@ -43,20 +43,22 @@ def log(*parts) -> None:
 
 
 VARIANTS = {
-    # name: (cases to add, group of the UDL case, fixed support at A)
+    # name: (cases to add, group of the UDL case, fixed support at A, load type SCIA stores for Verkeer-UDL)
+    # The builder now writes a variable Standard case as Static (case_load_type). To reproduce what the tries
+    # measured before that fix, build_variant sets the stored load type of Verkeer-UDL itself.
     "base": (("EG", "Verkeer-UDL"), "LG-Verkeer", False, "Standard"),
-    "eg_only": (("EG",), None, False, "Standard"),
+    "eg_only": (("EG",), None, False, None),
     "udl_only": (("Verkeer-UDL",), "LG-Verkeer", False, "Standard"),
     "udl_permanent": (("Verkeer-UDL",), "LG-Permanent", False, "Standard"),
     "udl_static": (("Verkeer-UDL",), "LG-Verkeer", False, "Static"),
     "base_static": (("EG", "Verkeer-UDL"), "LG-Verkeer", False, "Static"),
-    "fixed_a": (("EG", "Verkeer-UDL"), "LG-Verkeer", True, "Standard"),
+    "fixed_a": (("EG", "Verkeer-UDL"), "LG-Verkeer", True, "Static"),
 }
 
 
 def build_variant(ctx: LlsmContext, variant: str) -> None:
-    """The test model with only some load cases, or another support at A."""
-    cases, udl_group, fixed, udl_kind = VARIANTS[variant]
+    """The test model with only some load cases, another support at A, or another stored load type."""
+    cases, udl_group, fixed, udl_type = VARIANTS[variant]
     t.new_model(ctx, name=f"Brugligger_{variant}")
     t.add_material(ctx, "C30/37", kind="Concrete")
     t.add_rectangular_section(ctx, "R1000x600", material="C30/37", width_mm=1000, height_mm=600)
@@ -73,51 +75,17 @@ def build_variant(ctx: LlsmContext, variant: str) -> None:
     if "EG" in cases:
         t.add_load_case(ctx, "EG", group="LG-Permanent", kind="SelfWeight")
     if "Verkeer-UDL" in cases:
-        t.add_load_case(ctx, "Verkeer-UDL", group=udl_group, kind=udl_kind)
+        t.add_load_case(ctx, "Verkeer-UDL", group=udl_group)
+        case = ctx.builder.get("Verkeer-UDL")
+        case.LoadType = getattr(ctx.builder._adm.Enums.LoadCaseType, udl_type)  # before the push: what SCIA gets
         t.add_line_load(ctx, "q-verkeer-1", beam="Veld1", load_case="Verkeer-UDL", magnitude_kn_per_m=-9, direction="Z")
         t.add_line_load(ctx, "q-verkeer-2", beam="Veld2", load_case="Verkeer-UDL", magnitude_kn_per_m=-9, direction="Z")
-    log("variant", variant, t.model_summary(ctx).get("counts"))
+    log("variant", variant, "| Verkeer-UDL stored as", udl_type, "|", t.model_summary(ctx).get("items"), "items")
 
 
-def build(ctx: LlsmContext, *, fixed_a: bool = False, combination: bool = False, name: str = "Brugligger_2x12m") -> None:
-    t.new_model(ctx, name=name)
-    t.add_material(ctx, "C30/37", kind="Concrete")
-    t.add_rectangular_section(ctx, "R1000x600", material="C30/37", width_mm=1000, height_mm=600)
-    for n, x in (("A", 0), ("B", 12000), ("C", 24000)):
-        t.add_node(ctx, n, x_mm=x, y_mm=0, z_mm=0)
-    t.add_beam(ctx, "Veld1", node_a="A", node_b="B", cross_section="R1000x600")
-    t.add_beam(ctx, "Veld2", node_a="B", node_b="C", cross_section="R1000x600")
-    if fixed_a:
-        t.add_fixed_support(ctx, "Sup-A", node="A")
-    else:
-        t.add_pinned_support(ctx, "Sup-A", node="A")
-    t.add_roller_support(ctx, "Sup-B", node="B", direction="Z")
-    t.add_roller_support(ctx, "Sup-C", node="C", direction="Z")
-    t.add_load_group(ctx, "LG-Permanent", kind="Permanent")
-    t.add_load_group(ctx, "LG-Verkeer", kind="Variable")
-    t.add_load_case(ctx, "EG", group="LG-Permanent", kind="SelfWeight")
-    t.add_load_case(ctx, "Verkeer-UDL", group="LG-Verkeer")
-    t.add_line_load(ctx, "q-verkeer-1", beam="Veld1", load_case="Verkeer-UDL", magnitude_kn_per_m=-9, direction="Z")
-    t.add_line_load(ctx, "q-verkeer-2", beam="Veld2", load_case="Verkeer-UDL", magnitude_kn_per_m=-9, direction="Z")
-    if combination:
-        add_combination(ctx)
-
-
-def add_combination(ctx: LlsmContext) -> None:
-    """One linear ULS combination EG + Verkeer-UDL, straight on the ADM model (no builder tool for it)."""
-    import ModelExchanger.AnalysisDataModel.Loads as L  # noqa: F401
-    from ModelExchanger.AnalysisDataModel.Enums import LoadCaseCombinationCategory, LoadCaseCombinationType
-    from ModelExchanger.AnalysisDataModel.Loads import LoadCaseCombination, LoadCaseFactor
-    import System
-    b = ctx.builder
-    eg, vk = b.get("EG"), b.get("Verkeer-UDL")
-    factors = System.Collections.Generic.List[LoadCaseFactor]()
-    factors.Add(LoadCaseFactor(eg, 1.0))
-    factors.Add(LoadCaseFactor(vk, 1.0))
-    combi = LoadCaseCombination(System.Guid.NewGuid(), "CO1", LoadCaseCombinationCategory.AccordingNationalStandard, factors)
-    combi.Type = LoadCaseCombinationType.EnUlsSetB
-    b.model.Add(combi)
-    log("combination CO1 added to the ADM model")
+def build(ctx: LlsmContext) -> None:
+    """The test model as LLSM wrote it before the load-type fix (Verkeer-UDL variable, type Standard)."""
+    build_variant(ctx, "base")
 
 
 LICENCE_EVENTS: list[dict] = []

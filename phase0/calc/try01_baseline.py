@@ -5,7 +5,7 @@ Try 2 rides along: the boolean of SCIA's calculation command (CommandESA), and w
 import sys
 import time
 
-from common import VARIANTS, build_variant, build, diff, forces, launch, log, log_mark, log_since, run, snap, solver_link_sizes, t, verdict
+from common import VARIANTS, build_variant, diff, forces, launch, log, log_mark, log_since, run, snap, solver_link_sizes, t, verdict
 
 CALC_CMD = "{C35839BF-E775-454D-BC39-723076881E06}"
 VARIANT = next((a for a in sys.argv[1:] if a in VARIANTS), "base")

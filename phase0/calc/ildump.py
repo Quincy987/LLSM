@@ -5,7 +5,7 @@ Appended sections print ResultsAPI, Structure, CalculationRunner, UniqueIdMappin
 import sys; from pathlib import Path; sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
 from llsm.scia.loader import load
 load()
-import clr, System
+import clr
 from System.Reflection import BindingFlags as BF
 from System.Reflection.Emit import OpCodes, OperandType
 FULL = False
@@ -18,7 +18,7 @@ def dis(m):
     body = m.GetMethodBody()
     if body is None: print('   <no body>'); return
     il = bytes(body.GetILAsByteArray()); mod = m.Module; i = 0
-    targs = m.DeclaringType.GetGenericArguments() if m.DeclaringType.IsGenericType else None
+    m.DeclaringType.GetGenericArguments() if m.DeclaringType.IsGenericType else None
     while i < len(il):
         b = il[i]; i += 1
         if b == 0xFE: oc = two[il[i]]; i += 1
@@ -40,8 +40,6 @@ def dis(m):
             except Exception as e: s = f'tok {tok:x} ({type(e).__name__})'
         if FULL or (s and oc.Name not in ("br.s","brtrue.s","brfalse.s","br","brtrue","brfalse","leave.s","leave","ldc.i4.s","ldc.i4","ldloc.s","stloc.s","ldloca.s","ldarg.s")): print('   ', oc.Name, s)
 import SCIA.OpenAPI as O, SCIA.OpenAPI.Results as R
-for T, names in ((R.ResultsAPI, sys.argv[1].split(',')),) if len(sys.argv) > 1 and '.' not in sys.argv[1] else ():
-    pass
 def run(T, names):
     t = clr.GetClrType(T)
     for m in list(t.GetMethods(flags)) + list(t.GetConstructors(flags)):

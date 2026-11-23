@@ -53,11 +53,14 @@ def _quick(monkeypatch):
 
 class _Api:
     def __init__(self, result):
-        self.result, self.keys = result, []
+        self.result, self.keys, self.disposed = result, [], 0
 
     def LoadResult(self, key):
         self.keys.append(key)
         return self.result
+
+    def Dispose(self):
+        self.disposed += 1
 
 
 def test_calculated_when_scia_returns_forces():
@@ -112,6 +115,22 @@ def test_a_hanging_scia_is_reported_as_wedged():
 
 def test_result_tools_before_run_analysis_ask_for_it():
     ctx = _ctx(_Session(_Api(object())))
+    assert tools.get_beam_inner_forces(ctx, "Veld1", "Verkeer-UDL")["error"].startswith("no analysis results available")
+
+
+def test_a_results_api_that_saw_nothing_is_freed():
+    api = _Api(None)
+    tools.run_analysis(_ctx(_Session(api)))
+    assert api.disposed == 1
+
+
+def test_an_edit_makes_earlier_results_unreadable():
+    api = _Api(object())
+    ctx = _ctx(_Session(api))
+    assert tools.run_analysis(ctx)["ok"]
+    ctx.project_opened = False  # keep the edit from syncing to a SCIA; only the bookkeeping is tested
+    tools._propagate_edit(ctx)
+    assert ctx.last_calc_ok is False and ctx.rapi is None and api.disposed == 1
     assert tools.get_beam_inner_forces(ctx, "Veld1", "Verkeer-UDL")["error"].startswith("no analysis results available")
 
 

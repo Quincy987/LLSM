@@ -4,12 +4,10 @@ Build + push the corrected test model (base_static), save it (SaveToFile, conver
 close SCIA, ESA_XML LIN on a copy (esa_xml.run_on_copy), start SCIA again, open the calculated file
 and read back: (1) results API + LoadResult with the ADM ids of the build, (2) SCIA's result-table request.
 """
-import os
 import queue
 import threading
 import time
 import traceback
-import uuid
 
 from common import WORK, build_variant, launch, log, run, t
 
@@ -87,7 +85,7 @@ def body(ctx, result):
     log("close SCIA", t.close_scia(ctx))
     time.sleep(5)
 
-    t1 = time.time()
+    time.time()
     run_ = esa_xml.run_on_copy(saved, calc_dir, "LIN", ["-tESA", f"-o{calc}"], 600)
     result["lin"] = {"succeeded": run_.succeeded, "message": run_.message, "seconds": round(run_.seconds, 1),
                      "log": run_.log[-1500:], "output_size": calc.stat().st_size if calc.exists() else None}

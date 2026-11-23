@@ -61,7 +61,7 @@ and C, EG (self weight) and Verkeer-UDL (-9 kN/m on both spans). Hand value for 
 | 7 | Same, LLSM presses Bereken (`BM_CLICK`) and reads SCIA's Qt message through UI Automation | "Voorbereiding voor genereren van net: OK / Voorbereiding van statische belastingsgevallen: NIET OK". |
 | 7 | Variants, same route | Only EG: no message. Only Verkeer-UDL (variable, *Standard*): NIET OK. Verkeer-UDL as permanent *Standard*: no message. Verkeer-UDL variable *Static*: no message. Both cases with Static: no message. |
 | 1 | Corrected model (Static), LLSM's calculation command | Still True in 0.0 s, 0 files: the gate, not the model. |
-| 8 | After SCIA's Calculate: results API | `InitializeResultsAPI` returns None ("ResultsApi.Init failed"). SCIA's result-table request answers a table with headers and no rows. |
+| 8 | After SCIA's Calculate: results API | `InitializeResultsAPI` returns None. SCIA's result-table request answers a table with headers and no rows. |
 | 9 | After Calculate: refresh from SCIA, `SynchronizeDS`, `SaveToFile` + reopen | No results API in any. The project folder the results API reads gets no new files. |
 | 10 | Batch: `SaveToFile` (answer "Gegevens converteren?" Ja), close SCIA, `ESA_XML LIN` on a copy (Succeeded, 23.5 s), open it, `LoadResult` with the build's ids | API starts; `LoadResult` None for both beams and cases. |
 | 11 | Same file, native key with SCIA's own numbers (beam 1/2, case 1/2) | None for all four. |
@@ -69,7 +69,7 @@ and C, EG (self weight) and Verkeer-UDL (-9 kN/m on both spans). Hand value for 
 | 12 | After Calculate: SCIA's own "1D internal forces" and "Reactions" commands, picture | No values drawn (picture of the main window only; the properties panel was not visible). |
 | 13 | Control: kademuur.esa, `SaveToFile` | 32 result sets kept. |
 | 13 | Same project, SCIA's Calculate (7.3 s), `SaveToFile` | 0 result sets: the calculation removed the results and made none. |
-| ctrl | `ESA_XML LIN -tESA` on `kademuur_kaal.esa` (53 s, Succeeded) | 32 → 0 result sets: the output file keeps no results. |
+| ctrl | `ESA_XML LIN -tESA` on `kademuur_kaal.esa` (53 s, Succeeded) | 32 → 0 result sets. With the control below (LIN plus a print in one run gives full tables) the reading is that the output file keeps no results. |
 | ctrl | brugdek with traffic: `llsm report write --calculate --cases-group "LLSM-ML TS L1A" --format xlsx` (1004 s) | OK: 112 of 112 results tables with rows; L1A 14 reaction resultant R_z 202.5 kN = the preview's total. |
 | 14 | The owner's route: the test beam pushed into a copy of brugdek.esa (it has Report_1), saved, same report command with a group "LLSM-ML CB" | **OK, 226 s** (LIN + XLSX print). Class *LLSM-ML CB 01*, 1D internal forces: CB_Veld1 at x = 12 m and CB_Veld2 at 0: My = −161.19 kNm, Vz = ∓67.43 kN; CB_Veld1 at 4.667 m: My = 91.31 kNm. Hand: 162 kNm (−0.5 %), 5qL/8 = 67.5 kN, 9qL²/128 = 91.1 kNm. The report's member table lists CB_Veld1/2 next to the deck's columns. |
 
@@ -91,17 +91,23 @@ At every start: the Qt notice "Professional Edition EN" not available (in use by
 with Return (`LLSM_ANSWER_LICENCE_NOTICES=1`), and the Win32 question "Uw huidige licentie is
 onvoldoende … Overzichtstekeningen … verder met gereduceerde functionaliteit?", answered Ja by LLSM.
 Licence selection unchanged all day (selected: SEN.ED.FEM_002, SEN.ED.PR.EN_007 and others; not
-selected: SEN.ED.FUN.EN_002, SEN.ED.STA.EN_003). Two starts failed because the licence check took
-over 3 minutes (HubServer limit).
+selected: SEN.ED.FUN.EN_002, SEN.ED.STA.EN_003). Three starts failed because the licence check took
+over 3 minutes (HubServer limit); each worked on the next try.
 
 ## What changed in LLSM
 
 - `run_analysis` is ok only when SCIA returns inner forces for the first beam and load case (it
-  looks for 20 s). Otherwise ok false, `calculated: false`, and a plain message: the model is in SCIA
-  with a mesh, SCIA did not calculate it, the command LLSM can send is not allowed by this licence,
-  calculate in SCIA itself. The two result tools give the same message. The fixed 5 s wait is gone.
+  looks for 20 s, a fresh results API each time, the unused ones freed). Otherwise ok false,
+  `calculated: false`, and a plain message: the model is in SCIA with a mesh, SCIA made no results,
+  the command LLSM can send is reserved for SCIA's internal use and did nothing on this licence,
+  calculate in SCIA itself. The two result tools give the same message once `run_analysis` has looked.
+  The fixed 5 s wait is gone.
+- Results are dropped on a new push and on every edit, so the result tools never answer from a
+  calculation of an earlier model.
 - A variable or accidental *Standard* case is written as *Static*; the tool result names the stored
-  type.
+  type. Measured for a variable case (try 7); for an accidental case it follows SCIA's rule that only
+  permanent cases are Standard, and ADM accepts it (live builder test), but no accidental case was
+  calculated. An unknown kind is refused by name instead of raising.
 - The result key is built in one place; its comment no longer repeats the docs/06 cause.
 
 ## Open, and a proposal
@@ -129,8 +135,8 @@ over 3 minutes (HubServer limit).
 
 | Check | Result |
 |---|---|
-| Unit suite (`tests/unit`, incl. new `test_run_analysis.py` and load-type tests) | 500 passed, 2 skipped |
-| Live `tests/live/test_calc_live.py` (test beam through the tool functions the MCP server calls) | passed, 75 s: `run_analysis` → `ok: false, calculated: false`, the plain message; `get_beam_inner_forces` → the same message; the case is stored as Static |
+| Unit suite (`tests/unit`, incl. new `test_run_analysis.py` and load-type tests) | 504 passed, 2 skipped |
+| Live `tests/live/test_calc_live.py` (test beam through the tool functions the MCP server calls) | passed (run twice, last after the review fixes): `run_analysis` → `ok: false, calculated: false`, the plain message; `get_beam_inner_forces` → the same message; the case is stored as Static |
 | Live `tests/live/test_builder_rules_live.py` | passed (now accepts "ok only with results") |
 | Traffic preview on brugdek.esa with the changed code | 42 cases, 138 loads, no problems (unchanged) |
 | Report route (control and try 14) with the changed code | OK, see the table above |

@@ -3,17 +3,13 @@
 After the calculation: SCIA's own commands "1D internal forces" (7EEE0CEC...) and "Reactions"
 (08CF2495...) through ExecuteCommandClsid, then a PrintWindow picture of the main window
 (no focus taken). Hand values for Verkeer-UDL: |My| at B = 162 kNm; reactions 40.5 / 135 / 40.5 kN.
-Also the project's 'Calculation protocol' command is tried, and the table request of try 8 again.
+Also SCIA's 'Calculation protocol' command is tried.
 """
 import time
 
 from common import WORK, build_variant, launch, log, run, t
 from try07_gui_calculate import com_app
 from try08_readback import gui_calculate
-
-COMMANDS = {
-    "1D internal forces": "{7EEE0CEC-A4AC-0000-0000-000000000000}",  # replaced by the full id below
-}
 
 
 def full_ids() -> dict:
@@ -27,7 +23,7 @@ def full_ids() -> dict:
 
 
 def main_window_picture(name: str) -> str | None:
-    from llsm.scia.autoclick import Window, _capture, visible_windows
+    from llsm.scia.autoclick import _capture, visible_windows
     from llsm.scia.session import our_scia_processes
     pids = {p.pid for p in our_scia_processes()}
     mains = [w for w in visible_windows(pids) if w.cls.startswith("Qt") and "OwnDC" in w.cls and w.width >= 1000 and w.rect[0] > -1000]

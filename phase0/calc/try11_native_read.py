@@ -7,14 +7,13 @@ itself: beam (eDsElementType_Beam) id 1 or 2, load case (eDsElementType_LoadCase
 
 Run: python try11_native_read.py <file.esa> [label]
 """
-import queue
 import sys
 import threading
 import time
 import traceback
 from pathlib import Path
 
-from common import launch, log, run, t
+from common import launch, log, run
 from try10_batch import bypass, convert_hand
 
 FILE = Path(sys.argv[1]).resolve()

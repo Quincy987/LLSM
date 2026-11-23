@@ -319,7 +319,10 @@ class ModelBuilder:
         """
         resolved = self.resolve_action_type(group, action_type)
         duration = case_duration(kind, resolved, duration)
-        lc_type = getattr(self._adm.Enums.LoadCaseType, case_load_type(kind, resolved))
+        load_type = case_load_type(kind, resolved)
+        lc_type = getattr(self._adm.Enums.LoadCaseType, load_type, None)
+        if lc_type is None:
+            raise ValueError(f"unknown load case kind {kind!r}; use Standard or SelfWeight")
         lc = self._adm.Loads.StructuralLoadCase(
             self._System.Guid.NewGuid(), name,
             getattr(self._adm.Enums.ActionType, resolved),

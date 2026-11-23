@@ -91,7 +91,6 @@ def press(dialog_hwnd: int, button_hwnd: int, how: str) -> None:
 
 def dialog_hand(stop: threading.Event, seen: list) -> None:
     """Press "Bereken" in "EE berekening" (escalating), record every window of our SCIA as it changes."""
-    import win32gui
     from llsm.scia.autoclick import _capture, visible_windows
     from llsm.scia.session import our_scia_processes
     recorded, pressed, last_state = set(), {}, None

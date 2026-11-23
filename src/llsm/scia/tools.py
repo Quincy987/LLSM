@@ -231,18 +231,34 @@ def push_model(ctx: LlsmContext) -> dict:
         return {"ok": False, "error": str(e), "wedged": True}
     ctx.project_opened = True
     ctx.mesh_dirty = True
-    ctx.calc_checked, ctx.last_calc_ok, ctx.rapi = False, False, None  # a new project has no results yet
+    _forget_results(ctx)  # a new project has no results yet
     return {"ok": not errors, "errors": errors, "items_pushed": ctx.builder.item_count(),
             "mesh_dirty": ctx.mesh_dirty}
+
+
+def _dispose_results_api(ctx: LlsmContext, api: Any) -> None:
+    """Free a results API object (it holds a native results reader); best effort."""
+    if api is None or ctx.session is None:
+        return
+    try:
+        ctx.session.submit(lambda: api.Dispose(), timeout_s=30)
+    except Exception:
+        pass
+
+
+def _forget_results(ctx: LlsmContext) -> None:
+    """Results no longer apply (new project, an edit, a new calculation): drop them and free SCIA's reader."""
+    _dispose_results_api(ctx, ctx.rapi)
+    ctx.rapi, ctx.last_calc_ok, ctx.calc_checked = None, False, False
 
 
 # Said by run_analysis and both result tools when SCIA made no results. Measured 2026-11-23 on SCIA 24.0.3015.64
 # (docs/verify/calc-run.md): the OpenAPI's RunCalculation sends SCIA's "hidden linear calculation", which
 # SCIA's own configuration allows for SCIA's internal use only; it returns at once and calculates nothing.
 NOT_CALCULATED = (
-    "The model is in SCIA with a mesh, but SCIA did not calculate it, so there are no results to read. "
-    "The calculation command LLSM can send is not allowed by this SCIA licence. "
-    "Calculate it in SCIA itself to see the results there; LLSM cannot read them back yet."
+    "The model is in SCIA with a mesh, but SCIA made no results, so there is nothing to read. "
+    "The calculation command LLSM can send is reserved for SCIA's own internal use and did nothing "
+    "on this licence. Calculate the model in SCIA itself to see the results there; LLSM cannot read them back yet."
 )
 RESULTS_WAIT_S = 20.0  # how long run_analysis looks for results after the calculation command
 
@@ -274,7 +290,7 @@ def run_analysis(ctx: LlsmContext) -> dict:
     sess = ctx.session
     needs_mesh = ctx.mesh_dirty
     beam, case = _first_beam_and_case(ctx)
-    ctx.rapi, ctx.last_calc_ok = None, False
+    _forget_results(ctx)
 
     def _mesh_and_calc():
         if needs_mesh:
@@ -292,7 +308,6 @@ def run_analysis(ctx: LlsmContext) -> dict:
                 "error": "The model has no beam or no load case, so there is nothing to check results on."}
 
     deadline = time.time() + RESULTS_WAIT_S
-    rapi = None
     while True:
         try:
             rapi = sess.submit(lambda: sess.project.Model.InitializeResultsAPI(), timeout_s=120)
@@ -300,6 +315,7 @@ def run_analysis(ctx: LlsmContext) -> dict:
                 ctx.rapi, ctx.last_calc_ok = rapi, True
                 return {"ok": True, "calculated": True, "remeshed": needs_mesh, "mesh_dirty": ctx.mesh_dirty,
                         "checked": {"beam": beam, "load_case": case}}
+            _dispose_results_api(ctx, rapi)  # this one saw nothing; the next try opens a fresh one
         except TimeoutError as e:
             return {"ok": False, "error": str(e), "wedged": True}
         if time.time() >= deadline:
@@ -341,6 +357,7 @@ def _propagate_edit(ctx: LlsmContext) -> str | None:
     called as a belt-and-suspenders flush after.
     """
     ctx.mesh_dirty = True
+    _forget_results(ctx)  # the model changed: earlier results no longer describe it
     if not ctx.project_opened or ctx.session is None:
         return None
     sess = ctx.session

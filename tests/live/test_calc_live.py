@@ -49,7 +49,7 @@ def test_two_span_beam_calculates_or_says_it_did_not(ctx):
     assert tools.push_model(ctx)["ok"]
     calc = tools.run_analysis(ctx)
     print("run_analysis:", calc)
-    assert calc["ok"] is calc["calculated"], calc
+    assert calc["ok"] is calc.get("calculated"), calc
     forces = tools.get_beam_inner_forces(ctx, "Veld1", "Verkeer-UDL")
     if not calc["ok"]:
         assert calc["error"] == tools.NOT_CALCULATED, calc

@@ -9,7 +9,6 @@ the XLSX and compared with the hand value |My| at B = 162 kNm.
 
 Run: python try14_report_readback.py [push|report|read]   (default: all three)
 """
-import json
 import shutil
 import sys
 import threading
@@ -78,12 +77,9 @@ def push(ctx, result):
 
 def report(result):
     from llsm.report.apply import ReportRequest, write_report
-    import inspect
-    log("write_report signature", inspect.signature(write_report))
     OUT.mkdir(parents=True, exist_ok=True)
     t1 = time.time()
-    req = ReportRequest(formats=["xlsx"], calculate=True, cases_group=GROUP)
-    res = write_report(PUSHED, req, out_dir=OUT) if "out_dir" in inspect.signature(write_report).parameters else write_report(PUSHED, req)
+    res = write_report(PUSHED, ReportRequest(formats=["xlsx"], calculate=True, cases_group=GROUP), out_dir=OUT)
     result["report"] = {k: res.get(k) for k in ("ok", "problems", "warnings", "outputs", "chapters")}
     log("report", res.get("ok"), round(time.time() - t1), "s", res.get("problems"), res.get("outputs"))
 
