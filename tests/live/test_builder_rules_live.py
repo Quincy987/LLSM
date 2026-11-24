@@ -56,12 +56,20 @@ def test_action_type_and_duplicates_on_the_live_route(ctx):
     assert after["items"] == before["items"] and after["names"].count("N1") == 1
 
     assert ctx.builder.get("LC_q").ActionType.ToString() == "Variable"
-    assert tools.launch_scia(ctx, visible=False)["ok"]
+    for attempt in range(3):  # SCIA's licence check sometimes takes over its 3-minute start limit
+        try:
+            assert tools.launch_scia(ctx, visible=False)["ok"]
+            break
+        except RuntimeError:
+            if attempt == 2:
+                raise
     pushed = tools.push_model(ctx)
     assert pushed["ok"], pushed
-    calc = tools.run_analysis(ctx)
-    # ok only with results; on a licence without SCIA's hidden calculation the answer must say so plainly
-    # (docs/verify/calc-run.md), never ok without results
+    calc = tools.run_analysis(ctx, confirm=True)
+    while calc.get("status") == "running":
+        calc = tools.run_analysis(ctx, confirm=True)
+    # ok only with results, never ok without (docs/verify/calc-run.md). This model is steel, which SCIA does
+    # not calculate from LLSM's materials yet; without a start model nothing is calculated at all.
     assert calc["ok"] is calc.get("calculated"), calc
     if not calc["ok"]:
-        assert calc["error"] == tools.NOT_CALCULATED, calc
+        assert calc["error"] in (tools.NOT_CALCULATED, tools.NO_ROWS), calc

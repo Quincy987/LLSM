@@ -113,6 +113,26 @@ def _running() -> list[Check]:
     return [Check("SCIA running now", OK, "none")]
 
 
+def _start_model() -> list[Check]:
+    """The SCIA project a chat-built model is pushed into so it can be calculated (scia/start_model.py)."""
+    try:
+        from .scia import start_model
+        from .scia.esa_file import saved_by_version
+
+        found = start_model.find()
+    except Exception as exc:
+        return [Check("LLSM start model", WARN, f"could not check ({type(exc).__name__})")]
+    if found is None:
+        return [Check("LLSM start model", WARN, "missing: chat models are built but not calculated; "
+                      "run `llsm start-model <template.esa>` once")]
+    try:
+        version = saved_by_version(found) or "unknown version"
+    except Exception:
+        version = "unreadable"
+    status = OK if "24.0" in version else WARN
+    return [Check("LLSM start model", status, f"{found} (saved by {version})")]
+
+
 def _writable(name: str, folder: Path) -> Check:
     try:
         folder.mkdir(parents=True, exist_ok=True)
@@ -124,7 +144,8 @@ def _writable(name: str, folder: Path) -> Check:
 
 
 def run_checks(folder: Path | None = None) -> list[Check]:
-    checks = [*_python(), *_packages(), *_scia(), *_licence(), *_claude(), *_running(), _writable("LLSM state folder", _LLSM_HOME)]
+    checks = [*_python(), *_packages(), *_scia(), *_licence(), *_claude(), *_running(), *_start_model(),
+              _writable("LLSM state folder", _LLSM_HOME)]
     if folder is not None:
         checks.append(_writable("Model folder", folder))
     return checks

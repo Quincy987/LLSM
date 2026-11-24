@@ -160,6 +160,11 @@ INSTRUCTIONS_BASE = (
     "(path_mm and step_mm, no rule) is only for an explicit step or a custom axle list.\n\n"
     "For a results report of an existing saved model: report_preview, then report_write, "
     "then report_status until it is done.\n\n"
+    "Calculating a model built in the chat: push_model gives calc_estimate_s. Before run_analysis tell the "
+    "engineer in their language that you calculate it and roughly how long it takes (e.g. 'ik reken het door, dat duurt ongeveer 40 s'). run_analysis may answer needs_confirmation (a long calculation): ask the engineer "
+    "once, then call run_analysis(confirm=true). status running: call run_analysis again. With the results, say "
+    "they come from a calculated copy and the SCIA window itself is not calculated. Deflections and support "
+    "reactions are not available. A name refused as reserved belongs to LLSM's start model: pick another.\n\n"
     + ANSWER_RULES
 )
 
@@ -333,31 +338,33 @@ def _register_common_tools(mcp: FastMCP) -> None:
         return scia_tools.launch_scia(_ctx, visible=visible)
 
     def push_model() -> dict:
-        """Open an empty SCIA project and push the current in-memory ADM model.
+        """Open a copy of LLSM's start model in SCIA and push the current in-memory ADM model into it.
+
+        Returns calc_estimate_s: tell the engineer roughly how long run_analysis takes. Without a start model
+        on this computer the model goes into SCIA's empty file and cannot be calculated (warning says how).
         After edits, do NOT call this again — the edit tools auto-propagate; just call run_analysis."""
         return scia_tools.push_model(_ctx)
 
-    def run_analysis() -> dict:
-        """Generate FE mesh (only when needed), run linear analysis, and check results exist.
+    def run_analysis(confirm: bool = False) -> dict:
+        """Calculate the pushed model: SCIA meshes it and its batch program calculates a saved copy.
 
-        ok is true only when SCIA returned results. ok false with calculated false: SCIA did not calculate;
-        tell the engineer the error text, do not call the result tools, and do not retry."""
-        return scia_tools.run_analysis(_ctx)
+        ok is true only when SCIA's results came back. status "running" (ok null): call run_analysis again,
+        each call waits up to 4 minutes. needs_confirmation: the calculation is long; ask the engineer, then
+        call again with confirm=true. ok false with calculated false: tell the engineer the error text and do
+        not call the result tools. stale: the model changed meanwhile; call run_analysis again."""
+        return scia_tools.run_analysis(_ctx, confirm=confirm)
 
     # --- Results ---
     def get_beam_inner_forces(beam: str, load_case: str) -> dict:
-        """Read beam internal forces (N, Vy, Vz, Mx, My, Mz) per section for a load case.
+        """Internal forces (N, Vy, Vz, Mx, My, Mz) of a member for a load case, from the last run_analysis.
 
-        Forces in N, moments in N·m. Returns positions in metres + per-magnitude lists +
-        min/max/abs_max summary.
+        values_kN_kNm: per magnitude in kN / kNm at positions_m (metres along the member). The sections are
+        those SCIA exports: the member ends and the extremes, not every section. Show them as a table.
         """
         return scia_tools.get_beam_inner_forces(_ctx, beam=beam, load_case=load_case)
 
     def get_beam_deflection(beam: str, load_case: str) -> dict:
-        """Read beam deformation (Ux, Uy, Uz, Fix, Fiy, Fiz) per section for a load case.
-
-        Translations in metres (multiply by 1000 for mm), rotations in radians.
-        """
+        """Deflections of a member: not given yet (LLSM's materials carry no stiffness); the answer says why."""
         return scia_tools.get_beam_deflection(_ctx, beam=beam, load_case=load_case)
 
     # --- Beddings on a saved model ---

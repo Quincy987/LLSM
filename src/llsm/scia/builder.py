@@ -35,6 +35,10 @@ class DuplicateNameError(ValueError):
     """An object with this name is already in the model."""
 
 
+class ReservedNameError(DuplicateNameError):
+    """The name belongs to an object of LLSM's start model (scia/start_model.py)."""
+
+
 class AdmRefusedError(ValueError):
     """ADM's AddItemToModel returned False: the object did not land in the model."""
 
@@ -120,11 +124,20 @@ class ModelBuilder:
 
         self._objects_by_name: dict[str, Any] = {}
         self._group_kinds: dict[str, str] = {}
+        # Names the project this model is pushed into already uses (the start model's material
+        # library, sections, LG1, BG1): SCIA refuses some and silently fails to calculate others.
+        self.reserved: frozenset[str] = frozenset()
 
     # --- Name bookkeeping ----------------------------------------------------
 
     def _check_free(self, name: str) -> None:
         """Refuse a name that is already taken. Runs BEFORE AddItemToModel, so nothing half-lands."""
+        if name in getattr(self, "reserved", ()):
+            raise ReservedNameError(
+                f"{name!r} is already used in LLSM's start model (SCIA's material library, its cross-sections, "
+                f"load group LG1 and load case BG1); SCIA would refuse it or not calculate the model. "
+                f"Choose another name, e.g. {name + ' (model)'!r}"
+            )
         existing = self._objects_by_name.get(name)
         if existing is None:
             existing = self._find(name)

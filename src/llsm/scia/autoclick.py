@@ -299,3 +299,62 @@ class AutoClicker:
     def _log(self, message: str) -> None:
         if self._verbose:
             print(f"[autoclick] {message}", file=sys.stderr)
+
+
+# SCIA's own questions LLSM may answer, and only while it does the one thing that raises them:
+# saving a project made in an older SCIA (the start model of a VIKTOR app, saved by 21.1) asks
+# "Gegevens converteren?" and saves nothing on "Nee"; opening a model with old cross-section data
+# asks to update it. Both seen in docs/verify/calc-run.md.
+CONVERT_QUESTION = (re.compile(r"converteren|convert", re.I), ("ja", "yes"))
+OLD_SECTIONS_QUESTION = (re.compile(r"^Verouderde doorsnedegegevens$|^Obsolete cross-section", re.I), ("ok",))
+
+
+class ScopedAnswer:
+    """While active, press one button on SCIA questions that match: by a static text, or by the title.
+
+    For a step LLSM takes on its own copy and that SCIA always asks about (``with ScopedAnswer(...)``).
+    Never answers anything else, and only in the SCIA this process started.
+    """
+
+    def __init__(self, owned_pids: Callable[[], set[int]], *questions: tuple[re.Pattern, tuple[str, ...]],
+                 windows: Callable[[set[int]], list[Window]] = visible_windows, interval: float = 0.2) -> None:
+        self._owned_pids = owned_pids
+        self._questions = questions
+        self._windows = windows
+        self._interval = interval
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._done: set[int] = set()
+        self.answered: list[str] = []
+
+    def sweep(self) -> None:
+        pids = self._owned_pids()
+        for window in self._windows(pids) if pids else []:
+            if window.cls != "#32770":
+                continue
+            for pattern, labels in self._questions:
+                if not (pattern.search(window.title) or any(pattern.search(t) for t in window.texts)):
+                    continue
+                button = next((h for h, label in window.buttons if label.replace("&", "").strip().lower() in labels), None)
+                if button is not None and window.hwnd not in self._done:
+                    win32gui.PostMessage(button, _BM_CLICK, 0, 0)
+                    self._done.add(window.hwnd)
+                    self.answered.append(f"{window.title}: {next(iter(window.texts), '')[:80]}")
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                self.sweep()
+            except Exception as exc:  # must never take the caller down
+                print(f"[autoclick] scoped answer error: {exc}", file=sys.stderr)
+            self._stop.wait(self._interval)
+
+    def __enter__(self) -> "ScopedAnswer":
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=2.0)

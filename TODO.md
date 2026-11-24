@@ -51,7 +51,11 @@ Plan: `docs/09-plan-v0.4-existing-models.md` (order) + `docs/08-plan-v0.4-vibemo
 - [x] run_analysis ok only with results; plain message otherwise
 - [ ] Rerun phase0/calc try07 and try13 when "Professional Edition EN" is free: does SCIA's own Calculate then make results?
 - [ ] Ask SCIA whether the hidden linear calculation can be enabled for the gemeente licence
-- [ ] Numbers back in the chat: report or XML IO export on a saved file (needs a document made once in SCIA 24)
+- [x] Numbers back in the chat: start model with an XML export, batch LIN + -x on a saved copy, SCIA stays open
+- [ ] Materials with their own stiffness and weight: every way tried stopped SCIA's calculation (calc-run.md, try 17); then deflections and steel
+- [ ] Support reactions: not in the kademuren start model's export; a start model made in SCIA 24 with reactions in its XML IO document
+- [ ] A small purpose-made start model (36 MB now, with SCIA's whole material library), made once in SCIA's GUI
+- [ ] The builder checks every name against the whole model: 117 s to build 200 members x 10 cases
 
 ## Housekeeping
 - [x] Rebase branch on main (mcp<2 pin, install fixes)
