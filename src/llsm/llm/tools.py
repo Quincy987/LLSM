@@ -180,7 +180,7 @@ TOOL_DEFS = [
     },
     {
         "name": "run_analysis",
-        "description": "Generate the FE mesh and run linear analysis. Returns whether the Results API is ready.",
+        "description": "Generate the FE mesh, run linear analysis and check that SCIA made results. ok is true only when results exist; with calculated false, tell the engineer the error text and do not call the result tools.",
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {

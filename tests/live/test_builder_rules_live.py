@@ -60,4 +60,8 @@ def test_action_type_and_duplicates_on_the_live_route(ctx):
     pushed = tools.push_model(ctx)
     assert pushed["ok"], pushed
     calc = tools.run_analysis(ctx)
-    assert calc["ok"], calc
+    # ok only with results; on a licence without SCIA's hidden calculation the answer must say so plainly
+    # (docs/verify/calc-run.md), never ok without results
+    assert calc["ok"] is calc.get("calculated"), calc
+    if not calc["ok"]:
+        assert calc["error"] == tools.NOT_CALCULATED, calc

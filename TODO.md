@@ -46,6 +46,13 @@ Plan: `docs/09-plan-v0.4-existing-models.md` (order) + `docs/08-plan-v0.4-vibemo
 - [ ] Remind the other engineers; mail the one not yet asked
 - [ ] Geotechnical colleague for layer rule + units
 
+## Calculation from the chat (verify: docs/verify/calc-run.md)
+- [x] Find why results stay empty: hidden calculation is SCIA-internal only; variable case had load type Standard (now Static)
+- [x] run_analysis ok only with results; plain message otherwise
+- [ ] Rerun phase0/calc try07 and try13 when "Professional Edition EN" is free: does SCIA's own Calculate then make results?
+- [ ] Ask SCIA whether the hidden linear calculation can be enabled for the gemeente licence
+- [ ] Numbers back in the chat: report or XML IO export on a saved file (needs a document made once in SCIA 24)
+
 ## Housekeeping
 - [x] Rebase branch on main (mcp<2 pin, install fixes)
 - [x] Known bugs: load cases always `ActionType.Permanent`; duplicate names overwrite (fixed, unit + in-memory ADM check; live SCIA run still open: docs/verify/builder-rules.md)

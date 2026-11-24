@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.18 — Honest calculation answer from the chat (2026-11-23)
+
+### Fixed
+- **"Berekening gelukt" zonder resultaten is weg.** `run_analysis` meldde ok terwijl SCIA niets had berekend; nu is het alleen ok als SCIA echt krachten teruggeeft voor de eerste staaf en het eerste belastinggeval. Anders zegt het, net als beide resultaattools, in gewone taal dat het model met net in SCIA staat maar niet berekend is, en dat je in SCIA zelf rekent. De rekenopdracht die LLSM kan sturen is SCIA's "verborgen lineaire berekening", die SCIA's eigen configuratie alleen voor intern gebruik bij SCIA toestaat. docs/verify/calc-run.md
+- **Een veranderlijk of buitengewoon belastinggeval krijgt het type Statisch.** Het werd als Standaard geschreven; bij een veranderlijk geval weigert SCIA's rekenkern dat ("Voorbereiding van statische belastingsgevallen: NIET OK"), ook als je in SCIA zelf op Berekenen drukt. Permanente gevallen blijven Standaard of Eigen gewicht. Een onbekend type wordt met naam geweigerd in plaats van een fout te geven.
+- **Na een wijziging aan het model gelden oude resultaten niet meer.** Na een nieuwe push of een bewerking geven de resultaattools geen antwoord meer uit de vorige berekening; eerst opnieuw `run_analysis`.
+
+### Added
+- **Proef: krachten van een chatmodel via SCIA's eigen rapport.** De testligger, in een kopie van een model met rapport gezet en via de bestaande rapportroute doorgerekend en geprint, geeft het steunpuntsmoment −161,19 kNm (handberekening 162). De proefscripts staan in `phase0/calc/`, de uitkomsten in docs/verify/calc-run.md; in de chat zit deze route nog niet.
+
+### Changed
+- **De oorzaak in docs/06 is gecorrigeerd.** Lege resultaten kwamen niet door een fout in het opzoeken van het belastinggeval; dat opzoeken klopt. De voorgestelde C#-hulp is geschrapt.
+
 ## v0.3.16 — README up to date (2026-11-16)
 
 ### Changed

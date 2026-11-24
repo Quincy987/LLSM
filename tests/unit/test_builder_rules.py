@@ -12,6 +12,7 @@ from llsm.scia.builder import (
     _unwrap,
     action_type_for,
     case_duration,
+    case_load_type,
     check_action_type,
 )
 
@@ -211,6 +212,63 @@ class _StoringBuilder:
     def add_load_case(self, name, group, kind="Standard", action_type=None, duration=None):
         self.asked = (action_type, duration)
         return self.case
+
+
+def test_variable_and_accidental_cases_get_scias_static_type():
+    # SCIA refuses a variable case of type Standard ("statische belastingsgevallen: NIET OK")
+    assert case_load_type("Standard", "Variable") == "Static"
+    assert case_load_type("Standard", "Accidental") == "Static"
+    assert case_load_type("Static", "Variable") == "Static"
+
+
+def test_permanent_cases_keep_standard_and_self_weight():
+    assert case_load_type("Standard", "Permanent") == "Standard"
+    assert case_load_type("Static", "Permanent") == "Standard"
+    assert case_load_type("SelfWeight", "Permanent") == "SelfWeight"
+    assert case_load_type("Prestress", "Permanent") == "Prestress"
+
+
+def _case_builder():
+    """A bare builder with just enough ADM to build a load case; records what the case was made with."""
+    b = _bare_builder()
+    b._svc = SimpleNamespace(AddItemToModel=lambda model, obj: model.append(obj) or True)
+    b._System = SimpleNamespace(Guid=SimpleNamespace(NewGuid=lambda: "guid"))
+    made = []
+
+    def case(guid, name, action, group, load_type):
+        made.append({"action": action, "load_type": load_type})
+        return _obj(name, "StructuralLoadCase", ActionType=action, LoadType=load_type)
+
+    enums = SimpleNamespace(
+        LoadCaseType=SimpleNamespace(Standard="Standard", Static="Static", SelfWeight="SelfWeight"),
+        ActionType=SimpleNamespace(Permanent="Permanent", Variable="Variable", Accidental="Accidental"),
+        Duration=SimpleNamespace(Short="Short", Long="Long"),
+    )
+    b._adm = SimpleNamespace(Enums=enums, Loads=SimpleNamespace(StructuralLoadCase=case))
+    b._register("LG-V", _obj("LG-V", "StructuralLoadGroup"), group_kind="Variable")
+    b._register("LG-P", _obj("LG-P", "StructuralLoadGroup"), group_kind="Permanent")
+    return b, made
+
+
+def test_builder_writes_a_variable_standard_case_as_static():
+    b, made = _case_builder()
+    b.add_load_case("Q", "LG-V")
+    b.add_load_case("G", "LG-P")
+    assert made == [{"action": "Variable", "load_type": "Static"}, {"action": "Permanent", "load_type": "Standard"}]
+
+
+def test_unknown_case_kind_is_refused_by_name():
+    b, made = _case_builder()
+    with pytest.raises(ValueError, match="unknown load case kind 'Bogus'"):
+        b.add_load_case("Q", "LG-V", kind="Bogus")
+    assert made == [] and "Q" not in b._objects_by_name
+
+
+def test_load_case_tool_reports_the_stored_load_type():
+    b = _StoringBuilder("Variable", "Short")
+    b.case.LoadType = "Static"
+    out = tools.add_load_case(_ctx(b), "LC1", "LG")
+    assert out["kind"] == "Static"
 
 
 def test_load_case_tool_reports_what_was_stored():

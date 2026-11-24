@@ -69,6 +69,19 @@ def case_duration(kind: str, action_type: str, duration: str | None) -> str | No
     return duration
 
 
+def case_load_type(kind: str, action_type: str) -> str:
+    """SCIA's load type (LoadCaseType) for a case of ``kind`` with ``action_type``.
+
+    SCIA calculates a permanent case as Standard or SelfWeight, and a variable or accidental case as
+    Static. A variable case stored as Standard is refused by SCIA's solver ("Voorbereiding van
+    statische belastingsgevallen: NIET OK", docs/verify/calc-run.md), so Standard and Static both
+    become the type that fits the action type. Other kinds are kept as given.
+    """
+    if kind in ("Standard", "Static"):
+        return "Standard" if action_type == "Permanent" else "Static"
+    return kind
+
+
 def _unwrap(obj: Any) -> Any:
     """Objects read back from the ADM model come as IAnalysisObject; this is the concrete object."""
     return getattr(obj, "__implementation__", obj)
@@ -302,10 +315,14 @@ class ModelBuilder:
         """kind: Standard, SelfWeight. action_type follows the group (Permanent/Variable/...) unless given.
 
         duration (Long, Medium, Short, Instantaneous) is for a variable case only; Short when not given.
+        A variable or accidental Standard case is stored with SCIA's Static load type (case_load_type).
         """
-        lc_type = getattr(self._adm.Enums.LoadCaseType, kind)
         resolved = self.resolve_action_type(group, action_type)
         duration = case_duration(kind, resolved, duration)
+        load_type = case_load_type(kind, resolved)
+        lc_type = getattr(self._adm.Enums.LoadCaseType, load_type, None)
+        if lc_type is None:
+            raise ValueError(f"unknown load case kind {kind!r}; use Standard or SelfWeight")
         lc = self._adm.Loads.StructuralLoadCase(
             self._System.Guid.NewGuid(), name,
             getattr(self._adm.Enums.ActionType, resolved),
