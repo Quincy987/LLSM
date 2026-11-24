@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.19 — Calculate a chat-built model and read the forces (2026-11-24)
+
 ### Added
 - **De chat rekent een model door en leest de krachten terug.** Een model uit de chat komt in een kopie van het LLSM-startmodel; `run_analysis` laat SCIA's batchprogramma een opgeslagen kopie doorrekenen terwijl SCIA open blijft, op de manier van de VIKTOR-apps. Daarna geeft `get_beam_inner_forces` de krachten per staaf (uiteinden en extremen) in kN en kNm. De testligger van 2 x 12 m geeft 161,19 kNm boven de middensteun (handberekening 162), en na een wijziging naar 12 kN/m 214,93 kNm (hand 216). docs/verify/calc-run.md
 - **De chat zegt vooraf hoe lang het rekenen duurt.** `push_model` geeft een schatting uit de modelgrootte (gemeten: 35 s voor 2 staven, 150 s voor 200 staven met 10 belastinggevallen); boven 2 minuten vraagt `run_analysis` eerst om bevestiging. Duurt het langer dan één aanroep, dan rekent SCIA door en wacht een volgende `run_analysis` erop.
