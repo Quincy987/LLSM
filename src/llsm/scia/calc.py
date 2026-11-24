@@ -68,7 +68,10 @@ def _rows(table: Table, columns: dict[str, str]) -> dict[str, list[dict]]:
     names = table.column("Naam")
     for i, row in enumerate(table.rows):
         cells = dict(zip(table.columns, row))
-        entry = {"dx_m": float(cells["dx"])}
+        try:
+            entry = {"dx_m": float(cells["dx"])}
+        except (KeyError, ValueError):  # a row without a position cannot be placed on the member
+            continue
         for col, name in columns.items():
             if col in cells and cells[col] != "":
                 entry[name] = float(cells[col])

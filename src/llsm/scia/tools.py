@@ -51,6 +51,7 @@ class LlsmContext:
         self.results: dict | None = None  # {"version": int, "cases": {case: {member: {"forces", "deformations"}}}}
         self.start_copy: Path | None = None  # the start-model copy the open project is; None: SCIA's empty file
         self.pushed_items: int = 0
+        self.calc_job: str | None = None  # the last calculation job of this context
         self.lock = threading.Lock()  # results are stored from the calculation's thread
 
     def model_changed(self) -> None:
@@ -345,21 +346,23 @@ MATERIAL_NOTE = ("LLSM gives its materials no stiffness or weight yet; SCIA uses
 def _calc_status(job_id: str, wait_s: float | None = None) -> dict:
     status = calc_jobs.wait(job_id, MAX_WAIT_S if wait_s is None else wait_s)
     status.setdefault("calculated", None if status.get("status") == "running" else False)
+    if status.get("ok") is False and "error" not in status and status.get("problems"):
+        status["error"] = status["problems"][0]  # a crashed job: the same key every other failure uses
     return status
 
 
 def _store_results(ctx: LlsmContext, version: int, run: dict, members: list[str], cases: list[str]) -> dict:
     """Keep a finished calculation's results, if the model is still the one that was calculated."""
     base = {"seconds": run.get("seconds"), "esa_xml": run.get("esa_xml")}
+    without = sorted(m for m in members if not any(m in run["results"].get(c, {}) for c in cases))
     with ctx.lock:
         if ctx.model_version != version:
             return {**base, "ok": False, "calculated": False, "stale": True, "error": STALE}
-        if not run["ok"]:
+        if not run["ok"] or len(without) == len(members):  # rows, but none for this model's members, is no result
             error = run["problems"][0] if run["problems"] else NO_ROWS
             return {**base, "ok": False, "calculated": False, "error": error, "problems": run["problems"]}
         ctx.results = {"version": version, "cases": run["results"]}
         ctx.last_calc_ok = True
-    without = sorted(m for m in members if not any(m in run["results"].get(c, {}) for c in cases))
     out = {**base, "ok": True, "calculated": True, "load_cases": cases, "members": len(members),
            "note": FROM_A_COPY, "material_note": MATERIAL_NOTE}
     if without:
@@ -380,6 +383,11 @@ def run_analysis(ctx: LlsmContext, confirm: bool = False) -> dict:
     running = calc_jobs.running()
     if running is not None:
         return _calc_status(running.id)
+    with ctx.lock:
+        fresh = ctx.results is not None and ctx.results["version"] == ctx.model_version
+    if fresh and ctx.calc_job is not None and calc_jobs.get(ctx.calc_job) is not None:
+        # nothing changed since the last calculation (an edit or push drops results): give that one again
+        return {**_calc_status(ctx.calc_job, 0), "already_calculated": True}
     sess = ctx.session
     needs_mesh = ctx.mesh_dirty
 
@@ -432,6 +440,7 @@ def run_analysis(ctx: LlsmContext, confirm: bool = False) -> dict:
         return _store_results(ctx, version, run, members, cases)
 
     job = calc_jobs.start(ctx.model_name or "model", work)
+    ctx.calc_job = job.id
     return {**_calc_status(job.id), "calc_estimate_s": estimate, "remeshed": needs_mesh}
 
 

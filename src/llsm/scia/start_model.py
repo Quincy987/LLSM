@@ -122,6 +122,9 @@ def prepare(template: Path, target: Path | None = None) -> dict:
                 session.set_project(session.submit(lambda: session.env.OpenProject(str(copy)), timeout_s=300))
             if not session.save_project_as(saved):
                 result["problems"].append("SCIA did not save the copy.")
+        except Exception as exc:  # a licence question, a start over SCIA's 3-minute limit, a hang
+            result["problems"].append(f"SCIA could not open and save the template: {exc}. If SCIA asks about "
+                                      "licences, answer it (or set LLSM_ANSWER_LICENCE_NOTICES=1) and run this again.")
         finally:
             session.close()
         if saved.is_file():
@@ -129,7 +132,15 @@ def prepare(template: Path, target: Path | None = None) -> dict:
     result["saved_by"] = saved_by_version(target) if target.is_file() else None
     if result["problems"] or not target.is_file():
         return result
-    result["check"] = check(target)
+    for _ in range(30):  # SCIA takes a few seconds to quit; the export check needs it gone
+        if not esa_xml.running_scia():
+            break
+        time.sleep(1)
+    try:
+        result["check"] = check(target)
+    except esa_xml.SciaRunning as exc:
+        result["problems"].append(f"The start model is saved, but its export could not be checked: {exc}")
+        return result
     result["names_reserved"] = len(owned_names(target))
     result["seconds"] = round(time.time() - started, 1)
     result["ok"] = result["check"]["ok"]

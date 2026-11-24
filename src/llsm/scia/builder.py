@@ -134,8 +134,8 @@ class ModelBuilder:
         """Refuse a name that is already taken. Runs BEFORE AddItemToModel, so nothing half-lands."""
         if name in getattr(self, "reserved", ()):
             raise ReservedNameError(
-                f"{name!r} is already used in LLSM's start model (SCIA's material library, its cross-sections, "
-                f"load group LG1 and load case BG1); SCIA would refuse it or not calculate the model. "
+                f"{name!r} is already used in LLSM's start model (its material library, cross-sections, load "
+                f"groups or load cases); SCIA would refuse it or not calculate the model. "
                 f"Choose another name, e.g. {name + ' (model)'!r}"
             )
         existing = self._objects_by_name.get(name)

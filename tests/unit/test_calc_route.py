@@ -5,7 +5,6 @@ session and the batch run.
 """
 import struct
 import threading
-import time
 import zlib
 from pathlib import Path
 from types import SimpleNamespace
@@ -288,8 +287,10 @@ def test_calling_again_while_it_runs_waits_for_the_same_job(tools, tmp_path, mon
     assert second["job"] == first["job"] and second["status"] == "running"
     assert ctx.session.calls.count("save") == 1
     gate.set()
-    time.sleep(0.2)
-    assert tools.run_analysis(ctx)["calculated"] is True or ctx.results is not None
+    tools.calc_jobs.jobs[first["job"]].done.wait(5)
+    again = tools.run_analysis(ctx)  # finished meanwhile: the same result, not a new calculation
+    assert again["calculated"] is True and again["already_calculated"] is True and again["job"] == first["job"]
+    assert ctx.session.calls.count("save") == 1
 
 
 def test_a_long_calculation_asks_first(tools, tmp_path, monkeypatch):
@@ -339,3 +340,38 @@ def test_old_start_copies_are_removed_but_not_the_one_in_use(tools, tmp_path):
         f.write_bytes(b"x")
     tools._remove_old_start_copies(tmp_path, keep=current)
     assert current.exists() and other.exists() and not old.exists()
+
+
+def test_after_an_edit_run_analysis_calculates_again(tools, tmp_path, monkeypatch):
+    _fake_calculate(monkeypatch, tools)
+    ctx = _ctx(tools, tmp_path)
+    assert tools.run_analysis(ctx)["calculated"] is True
+    ctx.project_opened = False
+    tools._propagate_edit(ctx)
+    ctx.project_opened = True
+    again = tools.run_analysis(ctx)
+    assert again["calculated"] is True and "already_calculated" not in again
+    assert ctx.session.calls.count("save") == 2
+
+
+def test_a_crashed_calculation_reports_an_error(tools, tmp_path, monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("ESA_XML vanished")
+    monkeypatch.setattr(tools.calc, "calculate", boom)
+    out = tools.run_analysis(_ctx(tools, tmp_path))
+    assert out["ok"] is False and out["calculated"] is False and "ESA_XML vanished" in out["error"]
+
+
+def test_a_row_without_a_position_is_skipped():
+    from llsm.scia.xmlio import Table
+    table = Table("Resultaatklasses", "A", "Interne 1D-krachten", "", ["Naam", "dx", "M_y"],
+                  [["B1", "", "1"], ["B1", "2", "-5000"]])
+    rows = calc.results_per_case([table], ["A"])["A"]["B1"]["forces"]
+    assert rows == [{"dx_m": 2.0, "My": -5000.0}]
+
+
+def test_rows_for_other_members_only_are_not_a_result(tools, tmp_path, monkeypatch):
+    _fake_calculate(monkeypatch, tools)
+    ctx = _ctx(tools, tmp_path, _Builder(members=("Other",)))
+    out = tools.run_analysis(ctx)
+    assert out["ok"] is False and out["calculated"] is False and ctx.results is None

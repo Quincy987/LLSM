@@ -221,8 +221,10 @@ whole model, not per member. Reactions are not in this start model's export.
   one it pushes into SCIA's empty file as before and says the model cannot be calculated.
 - `run_analysis(confirm=False)`: mesh, save a copy, batch calculation in a job (`llsm.jobs`, shared
   with the report prints); a call waits up to 240 s, a calculation still running is polled by calling
-  `run_analysis` again; above 120 s estimated it returns `needs_confirmation` first. ok only when the
-  export holds rows; otherwise the known causes (a model free to move or twist, a steel material).
+  `run_analysis` again; above 120 s estimated it returns `needs_confirmation` first. A call after a
+  finished calculation of the same model version returns that result (`already_calculated`) instead of
+  calculating again. ok only when the export holds rows for this model's members; otherwise the known
+  causes (a model free to move or twist, a steel material).
   The OpenAPI calculation call and the results-API read path are gone.
 - Results belong to a model version: every push and edit raises it, so a calculation that finishes
   after an edit or a push is thrown away (`stale`), never shown.
@@ -240,7 +242,7 @@ whole model, not per member. Reactions are not in this start model's export.
 |---|---|
 | `llsm start-model` on the kademuren template | OK: `~/.llsm/start_model.esa`, saved by 24.0.3015.64, results export checked (5.8 s), 563 names reserved |
 | `llsm diagnose` | "LLSM start model OK" with the path and version |
-| Unit suite (`tests/unit`, incl. `test_calc_route.py` on a captured export of the test beam) | 517 passed, 2 skipped |
+| Unit suite (`tests/unit`, incl. `test_calc_route.py` on a captured export of the test beam) | 521 passed, 2 skipped |
 | Live `tests/live/test_calc_live.py` | passed: C30/37 refused as reserved; case stored as Static; push with `calc_estimate_s` 30; `run_analysis` done in 30.4 s; My at B within 1 % of 162 kNm; deflection refused; after 12 kN/m the old result is gone, then within 1 % of 216 kNm |
 | Live `tests/live/test_builder_rules_live.py` (a steel model) | passed: `calculated: false` with the plain NO_ROWS answer, never ok without results |
 | Traffic preview on brugdek.esa | 42 cases, 138 loads, no problems (unchanged) |
