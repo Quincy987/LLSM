@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Resultaten horen bij één modelversie.** Elke push en elke wijziging maakt eerdere resultaten ongeldig, ook van een berekening die nog loopt: die wordt weggegooid en gemeld, nooit getoond.
 - **Namen uit het startmodel worden geweigerd** (de materiaalbibliotheek van SCIA, de doorsneden, LG1, BG1): SCIA weigert ze of rekent het model dan stilletjes niet.
 - **Doorbuigingen worden niet gegeven**, met de reden: LLSM geeft materialen nog geen stijfheid mee, en SCIA rekent dan met een eigen standaard.
+- **Nog een keer `run_analysis` zonder wijziging rekent niet opnieuw**: de chat krijgt de vorige uitkomst terug. De schatting is grof: dezelfde ligger deed er bij het testen 23 tot 64 s over (schatting 30 s).
 - De rapportroute en de berekening delen de rekenstap; het lezen van SCIA's XML-export staat nu in het pakket.
 
 ### Removed
