@@ -67,8 +67,8 @@ def _beam(ctx, tag, y, section, spans, case):
 
 def test_pin_and_roller_beams_with_graded_materials_match_the_hand_values(ctx):
     assert tools.new_model(ctx, name="calc_live")["ok"]
-    concrete = tools.add_material(ctx, "C30/37")  # a name that is a grade: renamed inside SCIA (try 20 P2)
-    assert concrete["ok"] and concrete["grade"] == "C30/37" and concrete["scia_name"] == "C30/37 (LLSM)", concrete
+    concrete = tools.add_material(ctx, "C30/37")  # a name that is a grade is that grade (try 20 P2)
+    assert concrete["ok"] and concrete["grade"] == "C30/37" and concrete["kind"] == "Concrete", concrete
     steel = tools.add_material(ctx, "Staal ligger", grade="S235")
     assert steel["ok"] and steel["grade"] == "S 235" and steel["kind"] == "Steel", steel
     assert tools.add_material(ctx, "Fout", kind="Steel", grade="C30/37")["ok"] is False  # SCIA would use steel

@@ -140,7 +140,6 @@ class ModelBuilder:
         # Per material: the SCIA library grade it carries (None: ungraded) and whether it was checked
         # against the library.
         self.grades: dict[str, dict] = {}
-        self._aliases: dict[str, str] = {}  # engineer's material name -> its name in SCIA (LIBRARY_ALIAS)
         # Names the project this model is pushed into already uses (the start model's material
         # library, sections, LG1, BG1): SCIA refuses some and silently fails to calculate others.
         self.reserved: frozenset[str] = frozenset()
@@ -152,9 +151,9 @@ class ModelBuilder:
 
     # --- Name bookkeeping ----------------------------------------------------
 
-    def _check_free(self, name: str) -> None:
+    def _check_free(self, name: str, allow_reserved: bool = False) -> None:
         """Refuse a name that is already taken. Runs BEFORE AddItemToModel, so nothing half-lands."""
-        reserved = getattr(self, "reserved", ())
+        reserved = () if allow_reserved else getattr(self, "reserved", ())
         if name in reserved or (reserved and _normal(name) in _normals(reserved)):
             raise ReservedNameError(
                 f"{name!r} is already used in LLSM's start model (its material library, cross-sections, load "
@@ -190,9 +189,9 @@ class ModelBuilder:
         if group_kind is not None:
             self._group_kinds[name] = group_kind
 
-    def _add(self, name: str, obj: Any, group_kind: str | None = None) -> None:
+    def _add(self, name: str, obj: Any, group_kind: str | None = None, allow_reserved: bool = False) -> None:
         """The one way an add_* puts an object in the model: name check, add, record."""
-        self._check_free(name)
+        self._check_free(name, allow_reserved)
         if self._svc.AddItemToModel(self._model, obj) is False:
             raise AdmRefusedError(f"SCIA's model refused {_kind_of(obj)} {name!r}; nothing was added")
         self._register(name, obj, group_kind)
@@ -207,37 +206,23 @@ class ModelBuilder:
 
     # --- Materials ---------------------------------------------------------
 
-    # A material named like a library grade ("C30/37") gets this suffix inside SCIA: the same name as a
-    # library material makes SCIA drop the pushed model silently (docs/verify/calc-run.md, try 20 P2).
-    LIBRARY_ALIAS = " (LLSM)"
-
     def add_material(self, name: str, kind: str | None = None, grade: str | None = None) -> Any:
         """kind: Steel, Concrete, Timber, Aluminium. grade: a name of SCIA's material library ("C30/37",
-        "S235" finds "S 235"); a name that is a grade is its own grade. The grade is the ADM Quality, from
-        which SCIA takes the stiffness and weight (docs/verify/calc-run.md, try 19). Without a grade SCIA
-        uses its default concrete.
+        "S235" finds "S 235"); a name that is or holds a grade has that grade. The grade is the ADM Quality,
+        from which SCIA takes the stiffness and weight (docs/verify/calc-run.md, try 19). Without a grade
+        SCIA uses its default concrete.
 
-        A name that is a library name is kept for the engineer (sections refer to it) but is called
-        ``<name> (LLSM)`` in SCIA (scia_name).
+        The start model's library names are reserved, but not for a material that is that grade: a material
+        named "C30/37" with grade C30/37 calculates (try 20 P2).
         """
         library = getattr(self, "library", ())
         kind, quality, validated = resolve(name, kind, grade, library)
         mt = getattr(self._adm.Enums.MaterialType, kind)
-        scia_name = name
-        if quality and library and library_name(name, library) == quality:  # the name is its own grade
-            scia_name = name + self.LIBRARY_ALIAS
-            if name in self._objects_by_name:  # the engineer's name is taken: the usual duplicate refusal
-                raise DuplicateNameError(f"an object named {name!r} already exists (StructuralMaterial); "
-                                         "choose another name or delete it first")
-            self._check_free(scia_name)
-        else:
-            self._check_free(name)  # before anything is made: a refused name changes nothing
-        m = self._adm.Libraries.StructuralMaterial(self._System.Guid.NewGuid(), scia_name, mt, quality or name)
-        self._add(scia_name, m)
-        if scia_name != name:
-            self._objects_by_name[name] = m
-            self._aliases[name] = scia_name
-        self.grades[name] = {"kind": kind, "grade": quality, "validated": validated, "scia_name": scia_name}
+        own_grade = bool(quality and library and library_name(name, library) == quality)
+        self._check_free(name, allow_reserved=own_grade)  # before anything is made: a refusal changes nothing
+        m = self._adm.Libraries.StructuralMaterial(self._System.Guid.NewGuid(), name, mt, quality or name)
+        self._add(name, m, allow_reserved=own_grade)
+        self.grades[name] = {"kind": kind, "grade": quality, "validated": validated}
         return m
 
     # --- Cross-sections ----------------------------------------------------
@@ -315,13 +300,6 @@ class ModelBuilder:
             kind = "Rigid" if dof in held else "Free"
             c = self._constraint_rot(kind) if dof.startswith("R") else self._constraint_trans(kind)
             setattr(support, prop, c)
-
-    def _engineer_name(self, scia_name: str) -> str:
-        """The name the engineer uses for an object SCIA knows as ``scia_name`` (LIBRARY_ALIAS)."""
-        for name, alias in self._aliases.items():
-            if alias == scia_name:
-                return name
-        return scia_name
 
     def _add_support(self, name: str, node: str, kind: str, held: frozenset[str], direction: str | None = None) -> Any:
         s = self._adm.StructuralElements.StructuralPointSupport(self._System.Guid.NewGuid(), name, self.get(node))
@@ -560,7 +538,7 @@ class ModelBuilder:
         `obj.CrossSection is target` is unreliable. Names are unique within the
         builder's bookkeeping, so name-equality is the safest stable comparison.
         """
-        target_name = self._aliases.get(name, name)  # a material is referenced by its name in SCIA
+        target_name = name
         deps: list[str] = []
 
         def _name_of(x: Any) -> str | None:
@@ -576,7 +554,6 @@ class ModelBuilder:
             obj_name = _name_of(obj)
             if obj_name is None or obj_name == target_name:
                 continue
-            obj_name = self._engineer_name(obj_name)
             try:
                 if _name_of(getattr(obj, "CrossSection", None)) == target_name:
                     deps.append(obj_name); continue
@@ -631,7 +608,6 @@ class ModelBuilder:
         dependents). With cascade=False, raises ValueError(blockers_list) if
         dependents exist. With cascade=True, recursively deletes dependents first.
         """
-        name = self._engineer_name(name)  # "C30/37 (LLSM)" is the material "C30/37"
         target = self.get(name)
         deps = self.find_dependents(name)
         if deps and not cascade:
@@ -675,9 +651,6 @@ class ModelBuilder:
         self.grades.pop(name, None)
         self._section_material.pop(name, None)
         self._member_section.pop(name, None)
-        alias = self._aliases.pop(name, None)
-        if alias is not None:
-            self._objects_by_name.pop(alias, None)
         deleted.append(name)
         return deleted
 
@@ -775,7 +748,7 @@ class ModelBuilder:
                 continue
             try:
                 if t == "StructuralMaterial":
-                    out["materials"].append(self._engineer_name(_name(obj)))
+                    out["materials"].append(_name(obj))
                 elif t == "StructuralParametricCrossSection":
                     out["sections"].append(_name(obj))
                 elif t == "StructuralPointConnection":

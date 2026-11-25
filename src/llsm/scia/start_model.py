@@ -17,13 +17,12 @@ named C30/37 made the calculation give no results at all (try 16). They are read
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import tempfile
 import time
 from pathlib import Path
 
-from .esa_file import _table_of, iter_tables, names_in, saved_by_version
+from .esa_file import names_by_table, saved_by_version
 
 ENV = "LLSM_START_MODEL"
 DEFAULT = Path.home() / ".llsm" / "start_model.esa"
@@ -37,7 +36,6 @@ OWNED_TABLES = (
     "DataSetScia.EP_LoadCase.1",
     "EP_DSG_Elements.EP_DataLayer.1",
 )
-_VERSION_STAMP = re.compile(r"^\+D_\d+_")
 _names_cache: dict[tuple[str, float], dict[str, tuple[str, ...]]] = {}
 
 
@@ -49,25 +47,11 @@ def find() -> Path | None:
 
 
 def _names_by_table(path: Path) -> dict[str, tuple[str, ...]]:
-    """The names in each OWNED_TABLES table of the start model, in file order, read once per file version."""
+    """The names in each OWNED_TABLES table of the start model, read once per file version."""
     path = Path(path)
     key = (str(path.resolve()), path.stat().st_mtime)
-    if key in _names_cache:
-        return _names_cache[key]
-    names: dict[str, list[str]] = {t: [] for t in OWNED_TABLES}
-    current = None
-    for chunk in iter_tables(path.read_bytes()):
-        table = _table_of(chunk)
-        if table:
-            current = table
-        if current not in OWNED_TABLES:
-            continue
-        for _, text in names_in(chunk)[(1 if table else 0):]:  # the first string of a header block is the header
-            text = text.strip()
-            if text and "<" not in text and ">" not in text and not _VERSION_STAMP.match(text):
-                if text not in names[current]:
-                    names[current].append(text)
-    _names_cache[key] = {t: tuple(v) for t, v in names.items()}
+    if key not in _names_cache:
+        _names_cache[key] = names_by_table(path.read_bytes(), OWNED_TABLES)
     return _names_cache[key]
 
 

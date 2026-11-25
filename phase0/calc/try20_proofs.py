@@ -179,6 +179,7 @@ def _stable_single(ctx, tag, y, section, case):
 def p2(ctx, result):
     start(ctx, "proef_p2")
     ctx.builder.reserved = frozenset()  # the test: may a material carry a library name?
+    ctx.builder.library = ()  # no "(LLSM)" alias: the ADM material is named "C30/37" itself
     material(ctx, "C30/37", "Concrete", "C30/37")
     assert t.add_rectangular_section(ctx, "Q_R", material="C30/37", width_mm=1000, height_mm=600)["ok"]
     members = _stable_single(ctx, "N", 0, "Q_R", "LC-p2")

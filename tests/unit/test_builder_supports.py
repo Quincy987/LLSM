@@ -68,7 +68,7 @@ def test_a_material_gets_its_grade_from_the_library():
     m = b.add_material("Beton ligger", grade="C30/37")
     assert m.Quality == "C30/37" and m.MaterialType == "Concrete"
     assert b.add_material("S235").Quality == "S 235"
-    assert b.grades["S235"] == {"kind": "Steel", "grade": "S 235", "validated": True, "scia_name": "S235 (LLSM)"}
+    assert b.grades["S235"] == {"kind": "Steel", "grade": "S 235", "validated": True}
     ungraded = b.add_material("Iets", kind="Concrete")
     assert ungraded.Quality == "Iets" and b.grades["Iets"]["grade"] is None
     with pytest.raises(GradeError):
@@ -76,21 +76,21 @@ def test_a_material_gets_its_grade_from_the_library():
     assert "Staal" not in b._objects_by_name
 
 
-def test_a_material_named_like_a_library_grade_is_renamed_inside_scia():
-    """try 20 P2: a material with a library name makes SCIA drop the whole pushed model."""
+def test_a_material_may_carry_its_own_grades_library_name():
+    """try 20 P2: a material named "C30/37" with grade C30/37 calculates; other objects keep the rule."""
     b = _builder()
     b.library = ("C30/37", "S 235")
     b.reserved = frozenset(b.library)
     m = b.add_material("C30/37")
-    assert m.Name == "C30/37 (LLSM)" and m.Quality == "C30/37"
-    assert b.get("C30/37") is m and b.grades["C30/37"]["scia_name"] == "C30/37 (LLSM)"
+    assert m.Name == "C30/37" and m.Quality == "C30/37" and b.get("C30/37") is m
     with pytest.raises(ValueError, match="already exists"):
         b.add_material("C30/37")
     with pytest.raises(ReservedNameError):
         b.add_material("S 235", kind="Concrete", grade="C30/37")  # a library name that is not its grade
-    snap = b.snapshot()
-    assert snap["materials"] == ["C30/37"]
-    assert b.delete_object("C30/37") == ["C30/37"] and "C30/37 (LLSM)" not in b._objects_by_name
+    with pytest.raises(ReservedNameError):
+        b._check_free("S 235")  # e.g. a node named like a library material
+    assert b.snapshot()["materials"] == ["C30/37"]
+    assert b.delete_object("C30/37") == ["C30/37"] and "C30/37" not in b.grades
 
 
 def test_a_reserved_name_is_refused_ignoring_case_and_spaces():

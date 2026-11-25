@@ -297,7 +297,7 @@ deflection 0.00542 q L^4 / (E I). E: C30/37 32.8, C45/55 36.3, S 355 and S 235 2
 | P1 | two spans C30/37 | M_B -161.71 kNm (hand 162); 1.734 mm at 4.8 m (hand max 1.711) |
 | P1 | single span at 30 degrees in plan, C30/37 | 162.0 kNm; 4.14 mm |
 | P1 | single span S 355 / C45/55 | 0.647 mm (hand 0.643) / 3.74 mm (hand 3.72); both 162.0 kNm |
-| P2 | a material NAMED "C30/37" (name = quality), stable beam | SCIA dropped the pushed model silently (`LoadAnalysisModelFromDiscInReceiver FAIL`, then the batch run did not know the load case): the reserved names stay |
+| P2 | a material NAMED "C30/37" (name = quality), stable beam | first run: SCIA dropped the pushed model silently (`LoadAnalysisModelFromDiscInReceiver FAIL`, then the batch run did not know the load case). Two reruns (one through the "(LLSM)" rename the build first had, one with the plain name "C30/37"): 162.0 kNm, 4.14 mm. The first run was SCIA's receiver hiccup (below), not the name: a material may carry its grade's name |
 | P3 | kind Steel with quality C30/37; kind Concrete with quality S 235 | both calculated, but SCIA ignored the quality: 0.647 mm (steel's E) and 5.01 mm (default concrete) |
 | P4 | after the first calculation, the pin's rotation about Y freed through the edit sync (TrySynchronizeModel), then held again | A fixed: -92.76 / -138.64 kNm; A pinned: 0 / -161.71 kNm; held again: -92.76 / -138.64 kNm. A support change reaches SCIA through the normal edit sync |
 
@@ -311,8 +311,8 @@ two-span beam the second span had only its end).
   material library (case and spaces ignored: "S235" finds "S 235"; also inside a name, "Beton C30/37"); an
   unknown grade is refused with the closest names; only concrete and steel grades count as validated (the
   measured cases; a timber class such as "C24 (EN 338)" is found but gives no deflections); the kind follows from the grade and a contradicting kind is
-  refused (P3). A name that is a grade is its own grade; because of P2 it is called "C30/37 (LLSM)" inside
-  SCIA, while the chat keeps using "C30/37". Without a grade a material is ungraded: forces only when all
+  refused (P3). A name that is or holds a grade has that grade ("C30/37", "Beton C30/37"); the library's
+  names stay reserved for other objects, but a material may carry its own grade's name (P2). Without a grade a material is ungraded: forces only when all
   members share it, no deflections.
 - Free motions (`llsm/scia/stability.py`): before every push, edit sync and calculation LLSM finds the
   rigid-body motions the supports leave free, per group of connected members. A free motion no load acts
@@ -328,6 +328,22 @@ two-span beam the second span had only its end).
 | Check | Result |
 |---|---|
 | Unit suite (`tests/unit`, new: `test_stability.py`, `test_grades.py`, `test_builder_supports.py`) | 622 passed, 2 skipped |
-| Live `tests/live/test_calc_live.py` | passed in 144 s: "C30/37" becomes "C30/37 (LLSM)" with grade C30/37, "S235" finds S 235, steel + C30/37 refused; push reports the roller held in Y and the pin about X; one calculation of three pin + roller beams in 34 s (estimate 35 s); 162 kNm within 1 % for the single span (C30/37 and S 235) and at the middle support of the two-span beam; the model's largest deflection within 3 % of 4.11 / 0.64 / 1.71 mm; after 12 kN/m the old result is gone, then 216 kNm within 1 % |
+| Live `tests/live/test_calc_live.py` | passed in 144 s (first run, with the rename the build first had; rerun without it below): material "C30/37" gets grade C30/37, "S235" finds S 235, steel + C30/37 refused; push reports the roller held in Y and the pin about X; one calculation of three pin + roller beams in 34 s (estimate 35 s); 162 kNm within 1 % for the single span (C30/37 and S 235) and at the middle support of the two-span beam; the model's largest deflection within 3 % of 4.11 / 0.64 / 1.71 mm; after 12 kN/m the old result is gone, then 216 kNm within 1 % |
 | Live `tests/live/test_builder_rules_live.py` (steel S235, pin + roller, 6 m, 5 kN/m) | passed: calculated, 22.5 kNm at mid-span (hand 22.5); S2 held in Y, S1 about X |
 | Left behind | no SCIA process (SCIA's RPC finaliser noise at close, as before) |
+
+### SCIA's receiver hiccup, and the landing check (2026-11-25, verify step)
+
+Driving LLSM through Claude Code with a plain Dutch question ("Maak een ligger van 12 m op twee
+steunpunten, beton C30/37, 1000 x 600 mm, met 9 kN/m naar beneden. Reken hem door ...") the first
+push answered ok, but SCIA's OpenAPI log shows `SaveAnalysisModelOnDiscInReceiver BEGIN` without an
+END: the receiver never took the model in. The batch run then refused the case classes ("q9 ...
+Dit object is nog niet aanwezig"). The chat restarted SCIA, built the model again, and got 162.0 kNm
+and 4.14 mm. The same hiccup explains the first P2 run. Names were not the cause: none of the chat's
+names is in the start model, and the plain name "C30/37" calculated on a rerun.
+
+So `push_model` now saves a probe copy after the push and looks for the model's load cases in it
+(`esa_file.names_by_table`, table `DataSetScia.EP_LoadCase.1`); `run_analysis` checks its saved copy
+the same way. A missing case gives `not_landed: true`, a plain error, and LLSM closes its own SCIA but
+keeps the model, so `launch_scia` + `push_model` is the way back (a hub left by a failed push refuses
+the same names again).

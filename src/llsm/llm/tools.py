@@ -176,7 +176,7 @@ TOOL_DEFS = [
     },
     {
         "name": "push_model",
-        "description": "Open a copy of LLSM's start model in SCIA and push the in-memory ADM model into it. Call AFTER all add_* tools. Returns calc_estimate_s: tell the engineer how long run_analysis takes. stability_note: LLSM holds a support in more directions so the model cannot twist or swing; say it in one sentence. cannot_calculate: the model is a mechanism; say what can move.",
+        "description": "Open a copy of LLSM's start model in SCIA and push the in-memory ADM model into it. Call AFTER all add_* tools. Returns calc_estimate_s: tell the engineer how long run_analysis takes. stability_note: LLSM holds a support in more directions so the model cannot twist or swing; say it in one sentence. cannot_calculate: the model is a mechanism; say what can move. not_landed: SCIA did not take the model in; call launch_scia, then push_model again (the model is kept).",
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {

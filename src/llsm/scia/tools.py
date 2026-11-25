@@ -13,7 +13,7 @@ import tempfile
 import threading
 import time
 
-from . import calc, stability, start_model
+from . import calc, esa_file, stability, start_model
 from .builder import DuplicateNameError, ModelBuilder, ReservedNameError
 from .grades import GradeError
 from .autoclick import OLD_SECTIONS_QUESTION, ScopedAnswer, SciaDialogPending
@@ -84,18 +84,22 @@ class LlsmContext:
             self.model_name = name
         return self.builder
 
-    def close(self) -> None:
+    def close_session(self) -> None:
+        """Close LLSM's SCIA and forget its project; the model being built stays."""
         self.model_changed()  # a calculation still running must not store into a closed context
         self.project_opened, self.calc_checked = False, False
-        if self.builder is not None:
-            self.builder.dispose()
-            self.builder = None
         if self.session is not None:
             self.session.close()
             self.session = None
         if self.start_copy is not None:
             self.start_copy.unlink(missing_ok=True)
             self.start_copy = None
+
+    def close(self) -> None:
+        if self.builder is not None:
+            self.builder.dispose()
+            self.builder = None
+        self.close_session()
 
 
 def _new_builder(name: str) -> ModelBuilder:
@@ -153,10 +157,6 @@ def add_material(ctx: LlsmContext, name: str, kind: str | None = None, grade: st
         return _refused(name, exc)
     info = ctx.builder.grades[name]
     out = {"ok": True, "name": name, "kind": info["kind"], "grade": info["grade"]}
-    if info.get("scia_name", name) != name:
-        out["scia_name"] = info["scia_name"]
-        out["note"] = (f"In SCIA it is called {info['scia_name']!r}: SCIA's library already has a material "
-                       f"{name!r}, and the same name makes SCIA drop the model. Keep using {name!r} here.")
     if info["grade"] is None:
         out["warning"] = UNGRADED
     elif not info["validated"]:
@@ -296,6 +296,33 @@ def _stability_fields(report: stability.Stability) -> dict:
     return out
 
 
+NOT_LANDED = (
+    "SCIA did not take the model in: load case(s) {missing} are not in its project. SCIA's receiver started the "
+    "push and did not finish it (seen now and then; docs/verify/calc-run.md). LLSM closed its SCIA and kept the "
+    "model: call launch_scia, then push_model again."
+)
+
+
+def _missing_cases(path: Path, cases: list[str]) -> list[str]:
+    """The model's load cases that a saved SCIA project does not have: the push did not land."""
+    found = esa_file.names_by_table(Path(path).read_bytes(), (esa_file.CASE_TABLE,))[esa_file.CASE_TABLE]
+    return [c for c in cases if c not in found]
+
+
+def _check_landed(ctx: LlsmContext, cases: list[str]) -> list[str]:
+    """Save a probe copy of SCIA's project and look for the model's load cases. [] when they are all there
+    (or there is nothing to look for, or the probe could not be saved: then run_analysis checks again)."""
+    if not cases:
+        return []
+    probe = ctx.session.temp_folder / f"llsm-probe-{time.time_ns()}.esa"
+    try:
+        if not ctx.session.save_project_as(probe, timeout_s=300) or not probe.is_file():
+            return []
+        return _missing_cases(probe, cases)
+    finally:
+        probe.unlink(missing_ok=True)
+
+
 def push_model(ctx: LlsmContext) -> dict:
     """Open a copy of the start model (or SCIA's empty file without one) and push the ADM model into it."""
     if ctx.builder is None:
@@ -349,6 +376,13 @@ def push_model(ctx: LlsmContext) -> dict:
     ctx.synced_extras = ctx.builder.extras
     ctx.model_changed()
     members, cases = _members_and_cases(ctx)
+    try:
+        missing = _check_landed(ctx, cases) if not errors else []
+    except TimeoutError as e:
+        return {"ok": False, "error": str(e), "wedged": True}
+    if missing:  # SCIA's hub is left unable to take these objects again: a fresh SCIA is needed
+        ctx.close_session()
+        return {"ok": False, "not_landed": True, "error": NOT_LANDED.format(missing=", ".join(missing))}
     out = {"ok": not errors, "errors": errors, "items_pushed": ctx.pushed_items, "mesh_dirty": ctx.mesh_dirty,
            "start_model": start is not None}
     if start is not None:
@@ -496,6 +530,12 @@ def run_analysis(ctx: LlsmContext, confirm: bool = False) -> dict:
     except TimeoutError as e:
         shutil.rmtree(folder, ignore_errors=True)
         return {"ok": False, "error": str(e), "wedged": True}
+    missing = _missing_cases(saved, cases)
+    if missing:  # an edit or the push did not reach SCIA: the batch run would refuse the case classes
+        shutil.rmtree(folder, ignore_errors=True)
+        ctx.close_session()
+        return {"ok": False, "calculated": False, "not_landed": True,
+                "error": NOT_LANDED.format(missing=", ".join(missing))}
     allow = sess.own_pids
 
     def work(progress) -> dict:

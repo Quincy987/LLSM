@@ -355,6 +355,8 @@ def _register_common_tools(mcp: FastMCP) -> None:
         on this computer the model goes into SCIA's empty file and cannot be calculated (warning says how).
         stability_note: LLSM holds a support in more directions so the model cannot twist or swing (no load
         acts there, the forces do not change); say it in one sentence. cannot_calculate: a mechanism.
+        not_landed: SCIA did not take the model in; LLSM closed its SCIA and kept the model: call launch_scia,
+        then push_model again (also from run_analysis).
         After edits, do NOT call this again — the edit tools auto-propagate; just call run_analysis."""
         return scia_tools.push_model(_ctx)
 

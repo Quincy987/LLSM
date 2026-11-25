@@ -163,18 +163,25 @@ def test_scoped_answer_presses_only_the_convert_question(monkeypatch):
 # --- run_analysis and the result tools ---------------------------------------------------------
 
 class _Session:
-    def __init__(self):
+    """Saves a project that holds ``cases`` (SCIA's load-case table), as a push that landed does."""
+
+    def __init__(self, cases=tuple(CASES)):
         self.calls = []
         self.project = SimpleNamespace(CreateMesh=lambda: self.calls.append("mesh"))
         self.own_pids = frozenset({42})
+        self.cases = list(cases)
+        self.closed = False
 
     def submit(self, fn, timeout_s=None):
         return fn()
 
     def save_project_as(self, target, timeout_s=None):
         self.calls.append("save")
-        Path(target).write_bytes(b"esa")
+        Path(target).write_bytes(b"\x00" * 64 + _block("DataSetScia.EP_LoadCase.1", ["BG1", *self.cases]))
         return True
+
+    def close(self):
+        self.closed = True
 
 
 class _Builder:
@@ -292,6 +299,28 @@ def test_no_rows_is_not_a_calculation(tools, tmp_path, monkeypatch):
     out = tools.run_analysis(ctx)
     assert out["ok"] is False and out["calculated"] is False and "no results" in out["error"]
     assert tools.get_beam_inner_forces(ctx, "CB_Veld1", "CB BG 01")["ok"] is False
+
+
+def test_a_push_scia_did_not_take_in_is_not_calculated(tools, tmp_path, monkeypatch):
+    """The receiver started the push and never finished: the saved copy lacks the model's cases."""
+    _fake_calculate(monkeypatch, tools)
+    ctx = _ctx(tools, tmp_path)
+    session = ctx.session
+    session.cases = ["CB BG 01"]  # CB BG 02 did not land
+    out = tools.run_analysis(ctx)
+    assert out["ok"] is False and out["not_landed"] is True and "CB BG 02" in out["error"], out
+    assert "launch_scia" in out["error"] and session.closed and ctx.session is None
+    assert ctx.builder is not None and not ctx.project_opened  # the model is kept for a new push
+
+
+def test_the_landing_check_reads_the_case_table(tools, tmp_path):
+    ctx = _ctx(tools, tmp_path)
+    ctx.session.temp_folder = tmp_path
+    assert tools._check_landed(ctx, list(CASES)) == []
+    ctx.session.cases = []
+    assert tools._check_landed(ctx, list(CASES)) == list(CASES)
+    assert not list(tmp_path.glob("llsm-probe-*"))  # the probe copy is removed
+    assert tools._check_landed(ctx, []) == []
 
 
 def test_a_mechanism_is_refused_before_calculating(tools, tmp_path, monkeypatch):
