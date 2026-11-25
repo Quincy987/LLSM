@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.21 — Calculate a chat-built model with real materials (2026-11-25)
+
+### Added
+- **Materialen met hun echte stijfheid en gewicht.** Zeg de kwaliteit ("C30/37", "C20/25", "S235", "S355"), ook in een naam als "Beton C30/37", en LLSM zoekt hem op in SCIA's materiaalbibliotheek (hoofdletters en spaties maken niet uit); SCIA rekent dan met de E en het gewicht van die kwaliteit, voor beton en staal. Houtklassen (C24) en wapeningsstaal worden wel gevonden maar zijn niet gemeten: daarvoor geen doorbuigingen. Een onbekende kwaliteit wordt geweigerd met de dichtstbijzijnde namen; een soort die niet bij de kwaliteit past (staal met C30/37) ook, want SCIA negeert de kwaliteit dan stilletjes. Een materiaal mag gewoon "C30/37" heten. Gemeten op een ligger van 12 m, 1000 x 600 mm, 9 kN/m: 4,14 mm doorbuiging in C30/37 (hand 4,11), 0,647 mm in S 355 (hand 0,643), 3,74 mm in C45/55 (hand 3,72). docs/verify/calc-run.md
+- **Doorbuigingen in de chat.** `get_beam_deflection` geeft de doorbuiging (mm) en hoekverdraaiing (mrad) op de doorsneden die SCIA exporteert, plus de grootste doorbuiging van het model in dat belastinggeval. Alleen als elk gebruikt materiaal een kwaliteit heeft; anders noemt het antwoord het materiaal zonder.
+- **Een ligger op scharnier en rol rekent nu gewoon.** Zo'n ligger kan nog om zijn as draaien en zijwaarts om het scharnier zwaaien; SCIA gaf dan soms geen resultaten. LLSM zoekt voor elke push, wijziging en berekening welke bewegingen de opleggingen vrijlaten. Werkt er geen last op, dan houdt LLSM een oplegging in een extra richting vast (precies één per vrije beweging, dus de krachten veranderen niet) en zegt dat in één zin. Werkt er wel last op, dan is het een mechanisme en weigert `run_analysis` vóór het rekenen, met wat er kan bewegen. Gemeten: enkele ligger 162,0 kNm (hand 162), doorgaande ligger 161,71 kNm boven de steun (hand 162), ook schuin in het vlak. De zijbalk toont het type oplegging dat je vroeg.
+- **De chat rekent een model door en leest de krachten terug.** Een model uit de chat komt in een kopie van het LLSM-startmodel; `run_analysis` laat SCIA's batchprogramma een opgeslagen kopie doorrekenen terwijl SCIA open blijft, op de manier van de VIKTOR-apps. Daarna geeft `get_beam_inner_forces` de krachten per staaf (uiteinden en extremen) in kN en kNm. De testligger van 2 x 12 m geeft 161,19 kNm boven de middensteun (handberekening 162), en na een wijziging naar 12 kN/m 214,93 kNm (hand 216). docs/verify/calc-run.md
+- **De chat zegt vooraf hoe lang het rekenen duurt.** `push_model` geeft een schatting uit de modelgrootte (gemeten: 35 s voor 2 staven, 150 s voor 200 staven met 10 belastinggevallen); boven 2 minuten vraagt `run_analysis` eerst om bevestiging. Duurt het langer dan één aanroep, dan rekent SCIA door en wacht een volgende `run_analysis` erop.
+- **`llsm start-model <template.esa>`** zet het startmodel eenmalig klaar (een SCIA-24-kopie van het model van de kademuren-app, met een gecontroleerde resultatenexport); `llsm diagnose` meldt of het er is.
+
+### Fixed
+- **Een push die SCIA niet binnenkreeg, heette toch gelukt.** SCIA's ontvanger begint soms aan een push en maakt hem niet af; `push_model` zei dan ok en de berekening faalde later met een raadselachtige melding. Nu kijkt LLSM na de push in een kopie van SCIA's project of de belastinggevallen er zijn (en `run_analysis` nog eens in zijn eigen kopie). Zo niet, dan zegt het dat, sluit het zijn eigen SCIA en houdt het model: opnieuw `launch_scia` en `push_model`. Gezien bij het testen via de chat; docs/verify/calc-run.md
+- **Doorsneden stonden een kwartslag gedraaid.** SCIA wil eerst de hoogte en dan de breedte; LLSM gaf breedte en hoogte. Een ligger van 1000 x 600 mm stond er als 600 breed en 1000 hoog, met een 2,8 keer te kleine doorbuiging. De tools blijven breedte x hoogte zeggen. Het proefscript van de lokale modellen vergelijkt de maten nu in volgorde.
+
+### Changed
+- **Resultaten horen bij één modelversie.** Elke push en elke wijziging maakt eerdere resultaten ongeldig, ook van een berekening die nog loopt: die wordt weggegooid en gemeld, nooit getoond.
+- **Namen uit het startmodel worden geweigerd** (SCIA's materiaalbibliotheek, de doorsneden, LG1, BG1, de lagen): SCIA weigert ze of rekent het model dan stilletjes niet. Een materiaal dat naar zijn eigen kwaliteit heet ("C30/37") mag wel.
+- **Nog een keer `run_analysis` zonder wijziging rekent niet opnieuw**: de chat krijgt de vorige uitkomst terug. De schatting is grof: dezelfde ligger deed er bij het testen 23 tot 64 s over (schatting 30 s).
+- De rapportroute en de berekening delen de rekenstap; het lezen van SCIA's XML-export staat nu in het pakket.
+
+### Removed
+- De rekenopdracht via SCIA's koppeling en het uitlezen via de resultatenkoppeling: die doen op deze licentie niets (v0.3.18).
+
 ## v0.3.20 — Wishes in one register (2026-11-25)
 
 ### Documentation

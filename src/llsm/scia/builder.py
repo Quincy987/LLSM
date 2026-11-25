@@ -4,7 +4,11 @@ Everything here runs off-SCIA-thread (pure model-in-memory construction),
 then gets pushed into SCIA via SciaSession.push_model().
 """
 from __future__ import annotations
+
+import functools
 from typing import Any
+
+from .grades import library_name, normal as _normal, resolve
 
 # A load case's ADM ActionType follows its load group's LoadGroupType. Checked with pythonnet on the
 # SCIA 24 SDK (2026-11-16): LoadGroupType has Accidental, Fire, Moving, Permanent, Seismic, Tensioning,
@@ -33,6 +37,10 @@ DEFAULT_VARIABLE_DURATION = "Short"
 
 class DuplicateNameError(ValueError):
     """An object with this name is already in the model."""
+
+
+class ReservedNameError(DuplicateNameError):
+    """The name belongs to an object of LLSM's start model (scia/start_model.py)."""
 
 
 class AdmRefusedError(ValueError):
@@ -82,6 +90,11 @@ def case_load_type(kind: str, action_type: str) -> str:
     return kind
 
 
+@functools.lru_cache(maxsize=4)
+def _normals(names: frozenset[str]) -> frozenset[str]:
+    return frozenset(_normal(n) for n in names)
+
+
 def _unwrap(obj: Any) -> Any:
     """Objects read back from the ADM model come as IAnalysisObject; this is the concrete object."""
     return getattr(obj, "__implementation__", obj)
@@ -120,11 +133,33 @@ class ModelBuilder:
 
         self._objects_by_name: dict[str, Any] = {}
         self._group_kinds: dict[str, str] = {}
+        # What the engineer asked for per support (the ADM constraints may hold more: apply_extras).
+        self._supports: dict[str, dict] = {}
+        self._extras: dict[str, frozenset[str]] = {}
+        self._self_weight_cases: set[str] = set()
+        # Per material: the SCIA library grade it carries (None: ungraded) and whether it was checked
+        # against the library.
+        self.grades: dict[str, dict] = {}
+        # Names the project this model is pushed into already uses (the start model's material
+        # library, sections, LG1, BG1): SCIA refuses some and silently fails to calculate others.
+        self.reserved: frozenset[str] = frozenset()
+        # SCIA's material library names (start_model.material_grades): a grade is matched against them.
+        # Empty: no start model, a grade is kept as typed and not validated.
+        self.library: tuple[str, ...] = ()
+        self._section_material: dict[str, str] = {}
+        self._member_section: dict[str, str] = {}  # kept here: read from the calculation's thread, no .NET
 
     # --- Name bookkeeping ----------------------------------------------------
 
-    def _check_free(self, name: str) -> None:
+    def _check_free(self, name: str, allow_reserved: bool = False) -> None:
         """Refuse a name that is already taken. Runs BEFORE AddItemToModel, so nothing half-lands."""
+        reserved = () if allow_reserved else getattr(self, "reserved", ())
+        if name in reserved or (reserved and _normal(name) in _normals(reserved)):
+            raise ReservedNameError(
+                f"{name!r} is already used in LLSM's start model (its material library, cross-sections, load "
+                f"groups or load cases); SCIA would refuse it or not calculate the model. "
+                f"Choose another name, e.g. {name + ' (model)'!r}"
+            )
         existing = self._objects_by_name.get(name)
         if existing is None:
             existing = self._find(name)
@@ -154,9 +189,9 @@ class ModelBuilder:
         if group_kind is not None:
             self._group_kinds[name] = group_kind
 
-    def _add(self, name: str, obj: Any, group_kind: str | None = None) -> None:
+    def _add(self, name: str, obj: Any, group_kind: str | None = None, allow_reserved: bool = False) -> None:
         """The one way an add_* puts an object in the model: name check, add, record."""
-        self._check_free(name)
+        self._check_free(name, allow_reserved)
         if self._svc.AddItemToModel(self._model, obj) is False:
             raise AdmRefusedError(f"SCIA's model refused {_kind_of(obj)} {name!r}; nothing was added")
         self._register(name, obj, group_kind)
@@ -171,27 +206,44 @@ class ModelBuilder:
 
     # --- Materials ---------------------------------------------------------
 
-    def add_material(self, name: str, kind: str = "Steel") -> Any:
-        """kind: Steel, Concrete, Timber, Aluminium."""
+    def add_material(self, name: str, kind: str | None = None, grade: str | None = None) -> Any:
+        """kind: Steel, Concrete, Timber, Aluminium. grade: a name of SCIA's material library ("C30/37",
+        "S235" finds "S 235"); a name that is or holds a grade has that grade. The grade is the ADM Quality,
+        from which SCIA takes the stiffness and weight (docs/verify/calc-run.md, try 19). Without a grade
+        SCIA uses its default concrete.
+
+        The start model's library names are reserved, but not for a material that is that grade: a material
+        named "C30/37" with grade C30/37 calculates (try 20 P2).
+        """
+        library = getattr(self, "library", ())
+        kind, quality, validated = resolve(name, kind, grade, library)
         mt = getattr(self._adm.Enums.MaterialType, kind)
-        m = self._adm.Libraries.StructuralMaterial(
-            self._System.Guid.NewGuid(), name, mt, name
-        )
-        self._add(name, m)
+        own_grade = bool(quality and library and library_name(name, library) == quality)
+        self._check_free(name, allow_reserved=own_grade)  # before anything is made: a refusal changes nothing
+        m = self._adm.Libraries.StructuralMaterial(self._System.Guid.NewGuid(), name, mt, quality or name)
+        self._add(name, m, allow_reserved=own_grade)
+        self.grades[name] = {"kind": kind, "grade": quality, "validated": validated}
         return m
 
     # --- Cross-sections ----------------------------------------------------
 
     def add_rectangular_section(self, name: str, material: str, width_mm: float, height_mm: float) -> Any:
+        """A solid rectangle: ``height_mm`` along the section's local z (vertical for a horizontal beam).
+
+        SCIA's ADM rectangle takes its parameters as [height, width] (SCIA's OpenAPI example,
+        Program.cs:582). Passing [width, height] turned every section by 90 degrees: a 1000 x 600 mm
+        beam got I = 0.05 instead of 0.018 m4 (docs/verify/calc-run.md, try 19).
+        """
         mat = self.get(material)
         params = self._System.Collections.Generic.List[self._un.Length]()
-        params.Add(self._un.Length(width_mm, self._un.Units.LengthUnit.Millimeter))
         params.Add(self._un.Length(height_mm, self._un.Units.LengthUnit.Millimeter))
+        params.Add(self._un.Length(width_mm, self._un.Units.LengthUnit.Millimeter))
         xs = self._adm.Libraries.StructuralParametricCrossSection(
             self._System.Guid.NewGuid(), name, mat,
             self._adm.Enums.ProfileLibraryId.Rectangle, params
         )
         self._add(name, xs)
+        self._section_material[name] = material
         return xs
 
     # --- Geometry ----------------------------------------------------------
@@ -224,6 +276,7 @@ class ModelBuilder:
         )
         beam.Layer = "LayerADM"
         self._add(name, beam)
+        self._member_section[name] = cross_section
         return beam
 
     # --- Supports ----------------------------------------------------------
@@ -238,44 +291,83 @@ class ModelBuilder:
         c.Type = getattr(self._adm.Enums.ConstraintType, kind)
         return c
 
+    _DOF_PROPS = {"X": "TranslationX", "Y": "TranslationY", "Z": "TranslationZ",
+                  "RX": "RotationX", "RY": "RotationY", "RZ": "RotationZ"}
+
+    def _set_held(self, support: Any, held: frozenset[str]) -> None:
+        """Every DOF of ``support``: Rigid when held, Free otherwise (a fresh constraint per DOF)."""
+        for dof, prop in self._DOF_PROPS.items():
+            kind = "Rigid" if dof in held else "Free"
+            c = self._constraint_rot(kind) if dof.startswith("R") else self._constraint_trans(kind)
+            setattr(support, prop, c)
+
+    def _add_support(self, name: str, node: str, kind: str, held: frozenset[str], direction: str | None = None) -> Any:
+        s = self._adm.StructuralElements.StructuralPointSupport(self._System.Guid.NewGuid(), name, self.get(node))
+        self._set_held(s, held)
+        self._add(name, s)
+        self._supports[name] = {"node": node, "kind": kind, "direction": direction, "held": held}
+        return s
+
     def add_fixed_support(self, name: str, node: str) -> Any:
         """Fully restrained 3D support on a node."""
-        s = self._adm.StructuralElements.StructuralPointSupport(
-            self._System.Guid.NewGuid(), name, self.get(node)
-        )
-        tr = self._constraint_trans("Rigid")
-        ro = self._constraint_rot("Rigid")
-        s.TranslationX = tr; s.TranslationY = tr; s.TranslationZ = tr
-        s.RotationX = ro;    s.RotationY = ro;    s.RotationZ = ro
-        self._add(name, s)
-        return s
+        return self._add_support(name, node, "fixed", frozenset(self._DOF_PROPS))
 
     def add_pinned_support(self, name: str, node: str) -> Any:
-        """Pinned support — translations rigid, rotations free."""
-        s = self._adm.StructuralElements.StructuralPointSupport(
-            self._System.Guid.NewGuid(), name, self.get(node)
-        )
-        tr = self._constraint_trans("Rigid")
-        ro = self._constraint_rot("Free")
-        s.TranslationX = tr; s.TranslationY = tr; s.TranslationZ = tr
-        s.RotationX = ro;    s.RotationY = ro;    s.RotationZ = ro
-        self._add(name, s)
-        return s
+        """Pinned support: translations rigid, rotations free (LLSM may hold more: apply_extras)."""
+        return self._add_support(name, node, "pinned", frozenset({"X", "Y", "Z"}))
 
     def add_roller_support(self, name: str, node: str, direction: str = "Z") -> Any:
-        """Roller — rigid only in `direction`, free in others."""
-        s = self._adm.StructuralElements.StructuralPointSupport(
-            self._System.Guid.NewGuid(), name, self.get(node)
-        )
-        tr_r = self._constraint_trans("Rigid")
-        tr_f = self._constraint_trans("Free")
-        ro_f = self._constraint_rot("Free")
-        s.TranslationX = tr_r if direction == "X" else tr_f
-        s.TranslationY = tr_r if direction == "Y" else tr_f
-        s.TranslationZ = tr_r if direction == "Z" else tr_f
-        s.RotationX = ro_f; s.RotationY = ro_f; s.RotationZ = ro_f
-        self._add(name, s)
-        return s
+        """Roller: rigid only in `direction`, free in others (LLSM may hold more: apply_extras)."""
+        if direction not in ("X", "Y", "Z"):
+            raise ValueError(f"unknown roller direction {direction!r}; use X, Y or Z")
+        return self._add_support(name, node, "roller", frozenset({direction}), direction)
+
+    def member_names(self) -> list[str]:
+        return list(self._member_section)
+
+    def materials_in_use(self) -> list[str]:
+        """The materials of the sections the members have now (builder bookkeeping, no .NET call)."""
+        used = set(self._member_section.values())
+        return sorted({self._section_material[x] for x in used if x in self._section_material})
+
+    def ungraded_in_use(self) -> list[str]:
+        """Materials used by a member without a validated grade (none, unchecked, or of an unclear kind)."""
+        return [m for m in self.materials_in_use() if not self.grades.get(m, {}).get("validated")]
+
+    def requested_supports(self) -> dict[str, dict]:
+        """Per support: node, kind (fixed / pinned / roller), direction, held DOFs as asked for."""
+        return {k: dict(v) for k, v in self._supports.items()}
+
+    @property
+    def extras(self) -> dict[str, frozenset[str]]:
+        return dict(self._extras)
+
+    def apply_extras(self, extras: dict[str, list[str] | frozenset[str]]) -> bool:
+        """Hold every support in what was asked for plus ``extras`` (stability.check). True when it changed."""
+        new = {k: frozenset(v) for k, v in extras.items() if v and k in self._supports}
+        if new == self._extras:
+            return False
+        for name, info in self._supports.items():
+            if new.get(name, frozenset()) != self._extras.get(name, frozenset()):
+                self._set_held(self.get(name), info["held"] | new.get(name, frozenset()))
+        self._extras = new
+        return True
+
+    def stability_input(self) -> dict:
+        """What stability.check needs, from the model as it is now (nodes in mm, global directions)."""
+        from .stability import Load, Support
+        snap = self.snapshot()
+        nodes = {n["name"]: (n["x_mm"], n["y_mm"], n["z_mm"]) for n in snap["nodes"]}
+        members = {b["name"]: (b["n1"], b["n2"]) for b in snap["beams"]}
+        supports = [Support(name, info["node"], info["held"]) for name, info in self._supports.items()]
+        axes = {"X": (1.0, 0.0, 0.0), "Y": (0.0, 1.0, 0.0), "Z": (0.0, 0.0, 1.0)}
+        loads = []
+        for ld in snap["loads"]:  # line loads are in global axes (ADM's default CoordinateSystem Global)
+            axis = axes.get(str(ld["direction"]).split(".")[-1])
+            # a direction LLSM cannot read counts as acting in every direction
+            loads += [Load(ld["name"], ld["target"], d) for d in ([axis] if axis else axes.values())]
+        return {"nodes": nodes, "members": members, "supports": supports, "loads": loads,
+                "self_weight": bool(self._self_weight_cases)}
 
     # --- Loads -------------------------------------------------------------
 
@@ -331,6 +423,8 @@ class ModelBuilder:
         if duration is not None:
             lc.Duration = getattr(self._adm.Enums.Duration, duration)
         self._add(name, lc)
+        if kind == "SelfWeight":
+            self._self_weight_cases.add(name)
         return lc
 
     def add_line_load(
@@ -400,6 +494,7 @@ class ModelBuilder:
         beam = self.get(name)
         xs = self.get(cross_section)
         beam.CrossSection = xs
+        self._member_section[name] = cross_section
         return beam
 
     def set_member_endpoints(self, name: str, node_a: str, node_b: str) -> Any:
@@ -550,6 +645,12 @@ class ModelBuilder:
 
         self._objects_by_name.pop(name, None)
         self._group_kinds.pop(name, None)
+        self._supports.pop(name, None)
+        self._extras.pop(name, None)
+        self._self_weight_cases.discard(name)
+        self.grades.pop(name, None)
+        self._section_material.pop(name, None)
+        self._member_section.pop(name, None)
         deleted.append(name)
         return deleted
 
@@ -679,9 +780,15 @@ class ModelBuilder:
                         node_name = _name(obj.Node)
                     except Exception:
                         pass
-                    out["supports"].append({
-                        "name": _name(obj), "node": node_name, "kind": _support_kind(obj),
-                    })
+                    asked = self._supports.get(_name(obj))
+                    entry = {"name": _name(obj), "node": node_name,
+                             "kind": asked["kind"] if asked else _support_kind(obj)}
+                    if asked and asked.get("direction"):
+                        entry["direction"] = asked["direction"]
+                    extra = self._extras.get(_name(obj))
+                    if extra:
+                        entry["also_held"] = sorted(extra)
+                    out["supports"].append(entry)
                 elif t == "StructuralLoadGroup":
                     out["load_groups"].append(_name(obj))
                 elif t == "StructuralLoadCase":

@@ -160,6 +160,14 @@ INSTRUCTIONS_BASE = (
     "(path_mm and step_mm, no rule) is only for an explicit step or a custom axle list.\n\n"
     "For a results report of an existing saved model: report_preview, then report_write, "
     "then report_status until it is done.\n\n"
+    "Calculating a model built in the chat: push_model gives calc_estimate_s. Before run_analysis tell the "
+    "engineer in their language that you calculate it and roughly how long it takes (e.g. 'ik reken het door, dat duurt ongeveer 40 s'). run_analysis may answer needs_confirmation (a long calculation): ask the engineer "
+    "once, then call run_analysis(confirm=true). status running: call run_analysis again. With the results, say "
+    "they come from a calculated copy and the SCIA window itself is not calculated. Support reactions are not "
+    "available. Give every material the grade the engineer names (add_material grade, or name 'C30/37', 'S235'); "
+    "without a grade deflections are not given. push_model may say LLSM holds a support in more directions "
+    "(stability_note): tell the engineer in one sentence. When run_analysis is refused as a mechanism, say what "
+    "can move and ask which support to add. A name refused as reserved belongs to LLSM's start model: pick another.\n\n"
     + ANSWER_RULES
 )
 
@@ -206,9 +214,9 @@ def _teardown(reason: str = "exit") -> None:
         stopped = esa_xml.stop_all()  # a report print must not outlive the server that started it
         if stopped:
             print(f"[mcp] teardown ({reason}): stopped {stopped} ESA_XML run(s) of this server", file=sys.stderr)
-            job = report_tools.jobs.running()
-            if job is not None:  # let it delete its working copy (tens of MB) before the hard exit
-                job.done.wait(10)
+            for job in (report_tools.jobs.running(), scia_tools.calc_jobs.running()):
+                if job is not None:  # let it delete its working copy (tens of MB) before the hard exit
+                    job.done.wait(10)
     except Exception as e:
         print(f"[mcp] teardown error stopping ESA_XML ({reason}): {e}", file=sys.stderr)
 
@@ -230,12 +238,20 @@ def _register_common_tools(mcp: FastMCP) -> None:
         """Start a fresh in-memory ADM model. Call this FIRST before adding anything."""
         return scia_tools.new_model(_ctx, name=name)
 
-    def add_material(name: str, kind: str = "Steel") -> dict:
-        """Add a material. kind: Steel, Concrete, Timber, or Aluminium."""
-        return scia_tools.add_material(_ctx, name=name, kind=kind)
+    def add_material(name: str, grade: str | None = None, kind: str | None = None) -> dict:
+        """Add a material with the grade the engineer gives (C30/37, C20/25, S235, S355).
+
+        SCIA then calculates with that grade's stiffness and weight from its library. A name that is a grade
+        is its own grade (name='C30/37' is fine). kind (Steel, Concrete, Timber, Aluminium) follows from the
+        grade; give it only for a material without a grade (then SCIA uses its default concrete).
+        """
+        return scia_tools.add_material(_ctx, name=name, kind=kind, grade=grade)
 
     def add_rectangular_section(name: str, material: str, width_mm: float, height_mm: float) -> dict:
-        """Add a rectangular cross-section (width x height, mm)."""
+        """Add a rectangular cross-section, width x height in mm ('300 x 500' = width 300, height 500).
+
+        height is along the section's local z: vertical for a horizontal beam.
+        """
         return scia_tools.add_rectangular_section(_ctx, name=name, material=material,
                                                   width_mm=width_mm, height_mm=height_mm)
 
@@ -333,30 +349,42 @@ def _register_common_tools(mcp: FastMCP) -> None:
         return scia_tools.launch_scia(_ctx, visible=visible)
 
     def push_model() -> dict:
-        """Open an empty SCIA project and push the current in-memory ADM model.
+        """Open a copy of LLSM's start model in SCIA and push the current in-memory ADM model into it.
+
+        Returns calc_estimate_s: tell the engineer roughly how long run_analysis takes. Without a start model
+        on this computer the model goes into SCIA's empty file and cannot be calculated (warning says how).
+        stability_note: LLSM holds a support in more directions so the model cannot twist or swing (no load
+        acts there, the forces do not change); say it in one sentence. cannot_calculate: a mechanism.
+        not_landed: SCIA did not take the model in; LLSM closed its SCIA and kept the model: call launch_scia,
+        then push_model again (also from run_analysis).
         After edits, do NOT call this again — the edit tools auto-propagate; just call run_analysis."""
         return scia_tools.push_model(_ctx)
 
-    def run_analysis() -> dict:
-        """Generate FE mesh (only when needed), run linear analysis, and check results exist.
+    def run_analysis(confirm: bool = False) -> dict:
+        """Calculate the pushed model: SCIA meshes it and its batch program calculates a saved copy.
 
-        ok is true only when SCIA returned results. ok false with calculated false: SCIA did not calculate;
-        tell the engineer the error text, do not call the result tools, and do not retry."""
-        return scia_tools.run_analysis(_ctx)
+        ok is true only when SCIA's results came back. status "running" (ok null): call run_analysis again,
+        each call waits up to 4 minutes. needs_confirmation: the calculation is long; ask the engineer, then
+        call again with confirm=true. ok false with calculated false: tell the engineer the error text and do
+        not call the result tools. unstable: the model can move (a mechanism); say what can move and ask which
+        support to add. stale: the model changed meanwhile; call run_analysis again."""
+        return scia_tools.run_analysis(_ctx, confirm=confirm)
 
     # --- Results ---
     def get_beam_inner_forces(beam: str, load_case: str) -> dict:
-        """Read beam internal forces (N, Vy, Vz, Mx, My, Mz) per section for a load case.
+        """Internal forces (N, Vy, Vz, Mx, My, Mz) of a member for a load case, from the last run_analysis.
 
-        Forces in N, moments in N·m. Returns positions in metres + per-magnitude lists +
-        min/max/abs_max summary.
+        values_kN_kNm: per magnitude in kN / kNm at positions_m (metres along the member). The sections are
+        those SCIA exports: the member ends and the extremes, not every section. Show them as a table.
         """
         return scia_tools.get_beam_inner_forces(_ctx, beam=beam, load_case=load_case)
 
     def get_beam_deflection(beam: str, load_case: str) -> dict:
-        """Read beam deformation (Ux, Uy, Uz, Fix, Fiy, Fiz) per section for a load case.
+        """Deflections of a member for a load case, from the last run_analysis.
 
-        Translations in metres (multiply by 1000 for mm), rotations in radians.
+        uz_mm (global Z, up positive) and rotations_mrad at positions_m, the sections SCIA exports; model_extreme
+        is the largest vertical deflection in the model for that case. Given only when every material has a
+        grade; otherwise the answer names the material without one.
         """
         return scia_tools.get_beam_deflection(_ctx, beam=beam, load_case=load_case)
 

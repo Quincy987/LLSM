@@ -22,6 +22,9 @@ def _bare_builder() -> ModelBuilder:
     b._objects_by_name = {}
     b._group_kinds = {}
     b._model = []  # stands in for the ADM model: _check_free only iterates it and reads .Name
+    b._supports, b._extras, b._self_weight_cases, b.grades, b._section_material = {}, {}, set(), {}, {}
+    b._member_section = {}
+    b.reserved, b.library = frozenset(), ()
     return b
 
 

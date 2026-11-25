@@ -1,60 +1,114 @@
-"""The calculation answer on the live route. Needs SCIA, a licence and LLSM_LIVE=1.
+"""The calculation of a chat-built model on the live route. Needs SCIA, a start model and LLSM_LIVE=1.
 
-docs/verify/calc-run.md: the test beam (2 x 12 m, -9 kN/m variable) is pushed and calculated. Either SCIA
-calculated, and the moment at the middle support is the hand value q L^2 / 8 = 162 kNm within 1 %, or it
-did not, and run_analysis and both result tools say so with the same plain message. Never ok without
-results. The variable case is stored with SCIA's Static load type.
+docs/verify/calc-run.md: beams on a pin and Z rollers, materials with a library grade, pushed into a copy of
+LLSM's start model and calculated by SCIA's batch program while LLSM's SCIA stays open. LLSM holds the
+supports in the directions no load acts in (stability.py), so the beams cannot twist or swing.
+
+Hand values, 9 kN/m down, 1000 x 600 mm (I = 0.018 m4): single span 12 m M = q L^2 / 8 = 162 kNm,
+deflection 5 q L^4 / (384 E I) = 4.11 mm for C30/37 (E 32.8 GPa) and 0.64 mm for S 235 (210 GPa); two spans
+2 x 12 m M_B = 162 kNm, largest deflection 0.00542 q L^4 / (E I) = 1.71 mm for C30/37. Moments within 1 %,
+deflections within 3 % (SCIA includes shear deformation; measured 4.14 / 0.647 / 1.734 mm in try 20).
+Then the load goes to 12 kN/m: the old result is gone, the new two-span moment is 216 kNm.
 """
 import os
+import time
 
 import pytest
 
-from llsm.scia import tools
+from llsm.scia import start_model, tools
 from llsm.scia.esa_xml import running_scia
 from llsm.scia.loader import load as load_scia
 
 pytestmark = pytest.mark.skipif(os.environ.get("LLSM_LIVE") != "1", reason="set LLSM_LIVE=1 to run against SCIA")
-
-HAND_MY_B_KNM = 9 * 12 ** 2 / 8
+E = {"C30/37": 32.837e9, "S 235": 210e9}
+I = 1.0 * 0.6 ** 3 / 12
 
 
 @pytest.fixture
 def ctx():
     if running_scia():
         pytest.skip("a SCIA is running; never touch someone's session")
+    if start_model.find() is None:
+        pytest.skip("no LLSM start model on this computer (llsm start-model <template.esa>)")
     load_scia()
     context = tools.LlsmContext()
     yield context
     tools.close_scia(context)
 
 
-def test_two_span_beam_calculates_or_says_it_did_not(ctx):
-    steps = [
-        tools.new_model(ctx, name="calc_live"),
-        tools.add_material(ctx, "C30/37", kind="Concrete"),
-        tools.add_rectangular_section(ctx, "R1000x600", material="C30/37", width_mm=1000, height_mm=600),
-        tools.add_node(ctx, "A", 0, 0, 0), tools.add_node(ctx, "B", 12000, 0, 0), tools.add_node(ctx, "C", 24000, 0, 0),
-        tools.add_beam(ctx, "Veld1", "A", "B", "R1000x600"), tools.add_beam(ctx, "Veld2", "B", "C", "R1000x600"),
-        tools.add_pinned_support(ctx, "Sup-A", "A"),
-        tools.add_roller_support(ctx, "Sup-B", "B", "Z"), tools.add_roller_support(ctx, "Sup-C", "C", "Z"),
-        tools.add_load_group(ctx, "LG-Verkeer", kind="Variable"),
-    ]
-    assert all(s["ok"] for s in steps), steps
-    case = tools.add_load_case(ctx, "Verkeer-UDL", group="LG-Verkeer")
-    assert case["ok"] and case["kind"] == "Static" and case["action_type"] == "Variable", case
-    for beam in ("Veld1", "Veld2"):
-        assert tools.add_line_load(ctx, f"q-{beam}", beam=beam, load_case="Verkeer-UDL", magnitude_kn_per_m=-9)["ok"]
+def _calculate(ctx) -> dict:
+    out = tools.run_analysis(ctx, confirm=True)
+    deadline = time.time() + 900
+    while out.get("status") == "running" and time.time() < deadline:
+        out = tools.run_analysis(ctx, confirm=True)
+    return out
 
-    assert tools.launch_scia(ctx, visible=False)["ok"]
-    assert tools.push_model(ctx)["ok"]
-    calc = tools.run_analysis(ctx)
-    print("run_analysis:", calc)
-    assert calc["ok"] is calc.get("calculated"), calc
-    forces = tools.get_beam_inner_forces(ctx, "Veld1", "Verkeer-UDL")
-    if not calc["ok"]:
-        assert calc["error"] == tools.NOT_CALCULATED, calc
-        assert forces == {"ok": False, "calculated": False, "error": tools.NOT_CALCULATED}, forces
-        return
+
+def _my(ctx, beam, case, at_m) -> float:
+    forces = tools.get_beam_inner_forces(ctx, beam, case)
     assert forces["ok"], forces
-    my_b_knm = abs(forces["magnitudes"]["My"][-1]) / 1000
-    assert abs(my_b_knm - HAND_MY_B_KNM) <= 0.01 * HAND_MY_B_KNM, my_b_knm
+    return abs(forces["values_kN_kNm"]["My (kNm)"][forces["positions_m"].index(at_m)])
+
+
+def _beam(ctx, tag, y, section, spans, case):
+    nodes = [f"{tag}{i}" for i in range(spans + 1)]
+    for i, n in enumerate(nodes):
+        assert tools.add_node(ctx, n, 12000 * i, y, 0)["ok"]
+    for i in range(spans):
+        assert tools.add_beam(ctx, f"{tag}-V{i + 1}", nodes[i], nodes[i + 1], section)["ok"]
+    assert tools.add_pinned_support(ctx, f"{tag}-S0", nodes[0])["ok"]
+    for n in nodes[1:]:
+        assert tools.add_roller_support(ctx, f"{tag}-S{n[-1]}", n, "Z")["ok"]
+    assert tools.add_load_case(ctx, case, group="LG-Verkeer")["ok"]
+    for i in range(spans):
+        assert tools.add_line_load(ctx, f"q-{tag}-{i + 1}", beam=f"{tag}-V{i + 1}", load_case=case,
+                                   magnitude_kn_per_m=-9)["ok"]
+
+
+def test_pin_and_roller_beams_with_graded_materials_match_the_hand_values(ctx):
+    assert tools.new_model(ctx, name="calc_live")["ok"]
+    concrete = tools.add_material(ctx, "C30/37")  # a name that is a grade is that grade (try 20 P2)
+    assert concrete["ok"] and concrete["grade"] == "C30/37" and concrete["kind"] == "Concrete", concrete
+    steel = tools.add_material(ctx, "Staal ligger", grade="S235")
+    assert steel["ok"] and steel["grade"] == "S 235" and steel["kind"] == "Steel", steel
+    assert tools.add_material(ctx, "Fout", kind="Steel", grade="C30/37")["ok"] is False  # SCIA would use steel
+    assert tools.add_rectangular_section(ctx, "R-beton", material="C30/37", width_mm=1000, height_mm=600)["ok"]
+    assert tools.add_rectangular_section(ctx, "R-staal", material="Staal ligger", width_mm=1000, height_mm=600)["ok"]
+    assert tools.add_load_group(ctx, "LG-Verkeer", kind="Variable")["ok"]
+    _beam(ctx, "E", 0, "R-beton", 1, "BG-enkel")
+    _beam(ctx, "T", 30000, "R-beton", 2, "BG-twee")
+    _beam(ctx, "S", 60000, "R-staal", 1, "BG-staal")
+    case = ctx.builder.get("BG-twee")
+    assert str(case.LoadType) == "Static" and str(case.ActionType) == "Variable"
+
+    for attempt in range(3):  # SCIA's licence check sometimes takes over its 3-minute start limit
+        try:
+            assert tools.launch_scia(ctx, visible=False)["ok"]
+            break
+        except RuntimeError:
+            if attempt == 2:
+                raise
+    pushed = tools.push_model(ctx)
+    assert pushed["ok"] and pushed["start_model"] is True, pushed
+    assert pushed["also_held"]["E-S1"] == ["Y"] and pushed["also_held"]["E-S0"] == ["RX"], pushed
+    assert "forces do not change" in pushed["stability_note"]
+
+    calc = _calculate(ctx)
+    print("run_analysis:", calc)
+    assert calc["ok"] is True and calc["calculated"] is True and "material_note" not in calc, calc
+    assert _my(ctx, "E-V1", "BG-enkel", 6.0) == pytest.approx(162, rel=0.01)
+    assert _my(ctx, "T-V1", "BG-twee", 12.0) == pytest.approx(162, rel=0.01)
+    assert _my(ctx, "S-V1", "BG-staal", 6.0) == pytest.approx(162, rel=0.01)
+    for beam, case, grade, hand in (("E-V1", "BG-enkel", "C30/37", 5 / 384), ("S-V1", "BG-staal", "S 235", 5 / 384),
+                                    ("T-V1", "BG-twee", "C30/37", 0.00542)):
+        defl = tools.get_beam_deflection(ctx, beam, case)
+        assert defl["ok"] and defl["reliable"], defl
+        expected = hand * 9e3 * 12 ** 4 / (E[grade] * I) * 1e3
+        assert abs(defl["model_extreme"]["uz_mm"]) == pytest.approx(expected, rel=0.03), (beam, defl)
+
+    for i in (1, 2):
+        assert tools.set_line_load_magnitude(ctx, f"q-T-{i}", -12)["ok"]
+    assert tools.get_beam_inner_forces(ctx, "T-V1", "BG-twee")["ok"] is False  # the old result is gone
+    again = _calculate(ctx)
+    assert again["ok"] is True, again
+    assert _my(ctx, "T-V1", "BG-twee", 12.0) == pytest.approx(216, rel=0.01)

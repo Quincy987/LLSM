@@ -124,8 +124,15 @@ def licence_selection() -> dict:
 
 def launch(ctx: LlsmContext, visible: bool = False) -> None:
     watch_licence()
-    for _ in range(6):
-        r = t.launch_scia(ctx, visible=visible)
+    for attempt in range(6):
+        try:
+            r = t.launch_scia(ctx, visible=visible)
+        except RuntimeError as e:  # a licence check over 3 minutes: HubServer too late; try once more
+            log("launch failed:", e)
+            if attempt >= 2:
+                raise
+            time.sleep(10)
+            continue
         log("launch", json.dumps(r)[:200])
         if r.get("ok"):
             return

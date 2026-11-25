@@ -255,7 +255,7 @@ CASE_GUID = uuid.UUID("0908D21F-481F-11D4-AB84-00C06C452330").bytes_le
 _NODE_TABLE = "EP_DSG_Elements.EP_StructNode.1"
 _PLATE_TABLE = "EP_DSG_Elements.EP_Plane.1"
 _GROUP_TABLE = "DataSetScia.EP_LoadGroup.1"
-_CASE_TABLE = "DataSetScia.EP_LoadCase.1"
+_CASE_TABLE = CASE_TABLE = "DataSetScia.EP_LoadCase.1"
 _FREE_FORCE_TABLE = "DataAddLoad.EP_PointForceFree.1"
 _BEAM_FORCE_TABLE = "DataAddLoad.EP_PointForceLine.1"
 _FREE_SURFACE_TABLE = "DataAddLoad.EP_SurfaceForceFree.1"
@@ -486,6 +486,27 @@ def _table_of(chunk: bytes) -> str | None:
         if header:
             return header.group(1)
     return None
+
+
+_STAMP = re.compile(r"^\+D_\d+_")
+
+
+def names_by_table(data: bytes, tables: tuple[str, ...]) -> dict[str, tuple[str, ...]]:
+    """The object names in each of ``tables``, in file order, once each (a table continues in the blocks
+    after its header; the header's first string is the header itself)."""
+    names: dict[str, list[str]] = {t: [] for t in tables}
+    current = None
+    for chunk in iter_tables(data):
+        table = _table_of(chunk)
+        if table:
+            current = table
+        if current not in names:
+            continue
+        for _, text in names_in(chunk)[(1 if table else 0):]:
+            text = text.strip()
+            if text and "<" not in text and ">" not in text and not _STAMP.match(text) and text not in names[current]:
+                names[current].append(text)
+    return {t: tuple(v) for t, v in names.items()}
 
 
 def read_loads(path: Path) -> LoadModel:

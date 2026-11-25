@@ -1,5 +1,13 @@
 # Spike: does a chat-built model calculate, and can LLSM read the forces back?
 
+> **Update 2026-11-24: yes, the way the VIKTOR apps do it.** A chat-built model is pushed into a copy
+> of LLSM's start model (a project that carries an XML results export), a copy is saved, and SCIA's
+> batch program calculates it and exports the results in one run, while LLSM's own SCIA stays open.
+> The 2 x 12 m beam gives My = -161.19 kNm at the middle support (hand 162 kNm), 214.93 after the load
+> went from 9 to 12 kN/m (hand 216). Deflections are not given: LLSM's materials carry no stiffness.
+> See "2026-11-24: the calculation, built" at the end. The sections in between are the 2026-11-23
+> spike that found why the OpenAPI calculation does nothing.
+
 Date: 2026-11-23. SCIA Engineer 24.0.3015.64. Scripts: `phase0/calc/` (one per try, shared harness
 `common.py`, IL reader `ildump.py`); results per try in the gitignored `phase0/calc/work/*.json`.
 
@@ -117,16 +125,8 @@ over 3 minutes (HubServer limit); each worked on the next try.
    driven: `ExecuteCommandString("CMD.TOOLS.CALCULATION")`, press Bereken, read SCIA's closing
    message (it says which step failed). That is GUI automation of SCIA's own dialog, so it needs the
    same care as the licence notices (only LLSM's own SCIA, only that dialog).
-2. **Numbers back in the chat, proposed design (not built):** keep the push as it is, then "calculate
-   and report": push into a copy of an LLSM start model that carries a standard report (items over all
-   result classes, selections *Alle*), save it with `SaveToFile` (answer "Gegevens converteren?" for
-   that file only), close SCIA, and run `write_report(calculate=True, cases_group=...)` with the chat's
-   cases in one group named `<group> NN`; read the per-case 1D internal forces table. Measured: 226 s
-   for the beam in the 36 MB brugdek copy. The start model is the one step that needs SCIA's GUI: an
-   empty project with the standard report, made once in SCIA 24 (the open TODO "standard LLSM report
-   template"). Try 14 also answers part of that TODO's gate 4.1: a report made for one model printed
-   members and a per-case class it never had. The table holds the extremes per member, which is what
-   an engineer asks in a chat (moment at the support, maximum span moment).
+2. **Numbers back in the chat: built on 2026-11-24**, with the XML export instead of the report
+   (about 30 s instead of 226 s, and SCIA may stay open); see "2026-11-24: the calculation, built".
 3. **Ask SCIA (Nemetschek)** whether the hidden linear calculation can be enabled for the
    gemeente's licence. It is the command their own OpenAPI uses; without it the OpenAPI cannot
    calculate on a customer licence at all.
@@ -145,3 +145,217 @@ over 3 minutes (HubServer limit); each worked on the next try.
 On every close SCIA's COM connection drops while it quits (`InvalidComObjectException` / pytest's
 "Windows fatal exception: code 0x800706be" in `kill_remembered`); the runs still pass and leave no
 process. That was so before this change too.
+
+
+## 2026-11-24: the calculation, built
+
+Scripts: `phase0/calc/try16_start_model.py` (make, repeat, clash, timing) and
+`phase0/calc/try17_stability_material.py`; results in the gitignored `phase0/calc/work/`.
+
+### The route (what the VIKTOR apps do)
+
+The plaatbruggen and kademuren apps never use SCIA's calculation command: VIKTOR's `SciaAnalysis`
+gives SCIA's batch program (ESA_XML) a start model with an XML IO document and reads the XML it
+exports. LLSM now does the same with a chat-built model:
+
+1. `push_model` opens a fresh copy of the start model (`~/.llsm/start_model.esa`, a SCIA-24 copy of the
+   kademuren app's `app/segment/scia_integration/scia/model.esa`, made once with `llsm start-model`)
+   and pushes the ADM model into it, as before into SCIA's empty file.
+2. `run_analysis` meshes it in SCIA (so the engineer sees the mesh), saves a copy
+   (`IEnvESAProject.SaveToFile`) and runs ONE `ESA_XML LIN <copy> classes.xml -x<out.xml>`, with a
+   linear combination and a result class per load case (`build_case_classes_update`). LLSM's own SCIA
+   stays open: the batch guard now lets only that session's processes run alongside.
+3. The export's tables ("Interne 1D-krachten" per result class) are read per case and member and kept
+   for that model version; `get_beam_inner_forces` answers from them.
+
+### Measurements
+
+| Try | What | Outcome |
+|---|---|---|
+| 15 | test beam into a copy of the kademuren start model, batch with SCIA closed / open | identical rows; -161.19 / -80.60 kNm (hand 162 / 81); 24.6 s closed, 38.2 s open |
+| 16 make | v24 copy of the start model | the first save asks "Gegevens converteren?" (answered Ja); a save of the v24 copy asks nothing |
+| 16 repeat | three batch runs with SCIA open | exit 0 three times, identical: -161.19 and -80.60 kNm; 30.9 / 20.6 / 21.3 s |
+| 16 repeat | edit after push (both spans 12 kN/m through `set_line_load_magnitude`), save, batch | -214.93 kNm (hand 216, the same -0.5 % as at 9 kN/m); the start model's export tables survive the edit |
+| 16 clash | names the start model owns | load group LG1 and load case BG1: SCIA refuses ("The name 'LG1' has already been used"), and every object that refers to them fails; with BG1 the export showed the start model's own BG1. Material C30/37: pushed without error, batch Succeeded, but the export has no rows at all. Material C20/25 (also in its library): calculated normally. |
+| 17 | two single 6 m beams, pin + roller Z | no rows at all: free to rotate about their own axis |
+| 17 | the same with a fixed support at one end | rows; My at the clamp -44.92 kNm (hand q L^2 / 8 = 45) |
+| 17 | self weight of the beam (1000 x 600) | My at B -263.55 kNm, i.e. SCIA weighs it with 2500 kg/m3 (264.9 by hand) |
+| 17 | deflection and end rotation of the beam (9 kN/m) | 0.776 mm at 0.4 L and 0.243 mrad at A, against 1.70 mm and 0.545 mrad by hand for E = 33 GPa: SCIA calculates with an unknown default stiffness |
+| 17 | LLSM material with E, G, nu, density (and alpha) set in ADM | the whole model did not reach SCIA (the receiver never finished); without alpha it landed but the export had no rows |
+| 17 | quality set to a library grade (C30/37, C45/55) | landed, no rows |
+| 17 | steel material (S-quality unknown to SCIA) | no rows |
+
+**Corrected 2026-11-25** (section "materials, sections and free motions" below): the cause was the pin + roller test beam, the turned section and the quality = name, not the material route. As written then: why the material cases fail is not known; what is known: LLSM's materials are made without stiffness
+or weight (E = 0, density 0), SCIA then uses a default concrete that gives right forces when every
+member has the same material, and every way tried to give a material its own properties stopped the
+calculation. So deflections are not given and steel models are not calculated (a NO_ROWS answer).
+
+### Time against model size
+
+Beam grids of 6 m beams (fixed + roller), each case loading every beam; push into the start model,
+mesh, save, batch, with SCIA open. "Calculation" is what `run_analysis` does (mesh + save + batch).
+
+| Members | Cases | Push | Mesh | Save | Batch | Calculation | Estimate |
+|---|---|---|---|---|---|---|---|
+| 2 | 2 | 10.8 s | 4.9 s | 1.1 s | 28.5 s | 34.5 s | 30 s |
+| 2 | 10 | 7.5 s | 4.3 s | 0.8 s | 42.0 s | 47.1 s | 55 s |
+| 50 | 2 | 10.6 s | 5.2 s | 0.8 s | 44.0 s | 50.0 s | 55 s |
+| 50 | 10 | 14.2 s | 6.0 s | 0.8 s | 77.7 s | 84.5 s | 75 s |
+| 200 | 2 | 22.8 s | 6.9 s | 0.9 s | 109.9 s | 117.7 s | 115 s |
+| 200 | 10 | 37.8 s | 10.3 s | 1.0 s | 139.1 s | 150.4 s | 150 s |
+
+Estimate = 26.4 + 0.41 members + 2.54 cases + 0.0093 members x cases seconds (least squares, within
+8 s of each run, rounded to 5 s). Above 120 s `run_analysis` asks once before it starts. Building the
+model with the add tools is slower than all of this for large models (117 s for 200 members x 10
+cases): the builder checks each name against the whole model.
+
+### What the tables hold
+
+Per result class (one per load case): "Interne 1D-krachten" with per member the two ends and the
+extreme sections (N, V_y, V_z, M_x, M_y, M_z, SI), and "1D-vervormingen" with the extremes over the
+whole model, not per member. Reactions are not in this start model's export.
+
+### What changed in LLSM
+
+- `push_model` uses the start model when there is one (`start_model: true`, `calc_estimate_s`); without
+  one it pushes into SCIA's empty file as before and says the model cannot be calculated.
+- `run_analysis(confirm=False)`: mesh, save a copy, batch calculation in a job (`llsm.jobs`, shared
+  with the report prints); a call waits up to 240 s, a calculation still running is polled by calling
+  `run_analysis` again; above 120 s estimated it returns `needs_confirmation` first. A call after a
+  finished calculation of the same model version returns that result (`already_calculated`) instead of
+  calculating again. ok only when the export holds rows for this model's members; otherwise the known
+  causes (a model free to move or twist, a steel material).
+  The OpenAPI calculation call and the results-API read path are gone.
+- Results belong to a model version: every push and edit raises it, so a calculation that finishes
+  after an edit or a push is thrown away (`stale`), never shown.
+- `get_beam_inner_forces` answers from the export (SI as before, plus kN/kNm); `get_beam_deflection`
+  says why deflections are not given.
+- The builder refuses the start model's names (563: SCIA's material library, its sections, LG1, BG1,
+  its layers), read from the start model's file.
+- `llsm start-model <template.esa>` makes the start model (SCIA-24 copy, export checked); `llsm
+  diagnose` reports it. The XML-export reader moved from the spike into `llsm/scia/xmlio.py`; the
+  report route and the calculation share `calc.lin_with_case_classes`.
+
+### Verification of the build (2026-11-24)
+
+| Check | Result |
+|---|---|
+| `llsm start-model` on the kademuren template | OK: `~/.llsm/start_model.esa`, saved by 24.0.3015.64, results export checked (5.8 s), 563 names reserved |
+| `llsm diagnose` | "LLSM start model OK" with the path and version |
+| Unit suite (`tests/unit`, incl. `test_calc_route.py` on a captured export of the test beam) | 521 passed, 2 skipped |
+| Live `tests/live/test_calc_live.py` | passed: C30/37 refused as reserved; case stored as Static; push with `calc_estimate_s` 30; `run_analysis` done in 30.4 s; My at B within 1 % of 162 kNm; deflection refused; after 12 kN/m the old result is gone, then within 1 % of 216 kNm |
+| Live `tests/live/test_builder_rules_live.py` (a steel model) | passed: `calculated: false` with the plain NO_ROWS answer, never ok without results |
+| Traffic preview on brugdek.esa | 42 cases, 138 loads, no problems (unchanged) |
+| Report route | unit tests unchanged and passing; it now calls the shared calculation step |
+| Left behind | no SCIA process, no start-model copy, no calculation folder |
+
+SCIA's start-up licence check took over 3 minutes four times today (the HubServer limit); the live
+tests try the start up to three times. That limit is older than this change.
+
+## 2026-11-25: materials, sections and free motions (try 19 and try 20)
+
+The try-17 conclusion above ("every way tried to give a material its own properties stopped the
+calculation") was wrong. All those variants were pin + roller test beams, and the cause was the beam,
+not the material. Three causes, each proved by numbers:
+
+1. **Sections were turned by 90 degrees.** SCIA's ADM rectangle takes its parameters as [height, width]
+   (SCIA's OpenAPI example, `Program.cs:582`); the builder passed [width, height]. A 1000 x 600 mm beam had
+   I = 0.05 instead of 0.018 m4: deflections 2.78 x too small.
+2. **No real material.** The builder used the material's name as its ADM `Quality`. SCIA does not know
+   such a name and uses a default concrete (E about 27 GPa). With `Quality` = a name of SCIA's library
+   ("C30/37", "C20/25", "S 235" with the space) SCIA uses that grade's E and weight, for steel too.
+3. **The test beam could move without deforming.** A pin holds three translations, a Z roller one: the
+   beam can still turn about its own axis and swing sideways about the pin. Whether SCIA's solver then
+   gives rows depends on the stiffnesses, hence the erratic "no rows" of tries 16 and 17.
+
+### Try 19 (spike scripts and results in `phase0/calc/work/try19/`, gitignored)
+
+Two spans 2 x 12 m, 9 kN/m, A FIXED (so nothing can move freely), rollers at B and C, 1000 x 600 mm,
+section order corrected, ADM Quality from the library, no XML. Hand values: M_A = -q L^2 / 14 = -92.57
+kNm, M_B = -3 q L^2 / 28 = -138.86 kNm, rotation at C = 370280 / (E I).
+
+| Quality | M_B (kNm) | rotation at C (mrad) | hand (mrad) |
+|---|---|---|---|
+| C30/37 | -138.64 | 0.630 | 0.627 |
+| C20/25 | -138.64 | 0.688 | 0.686 |
+| S 235 | -138.63 | 0.098 | 0.098 |
+
+The same numbers came from an XML cross-section update (catalogue item 2 = rectangle H, B; materials by
+library name), which also works but leaves the open SCIA window with the placeholder material.
+
+### Try 20: the proofs before the build (`phase0/calc/try20_proofs.py`)
+
+Each run is one SCIA session with one model, through LLSM's own route (push into the start-model copy,
+`run_analysis`). Hand values for 9 kN/m on 1000 x 600 mm: single span 12 m M = q L^2 / 8 = 162 kNm,
+deflection 5 q L^4 / (384 E I), end rotation q L^3 / (24 E I); two spans M_B = 162 kNm, largest
+deflection 0.00542 q L^4 / (E I). E: C30/37 32.8, C45/55 36.3, S 355 and S 235 210 GPa.
+
+| Proof | What | Result |
+|---|---|---|
+| P1 | pin + Z rollers, LLSM's extra restraints set by hand (roller held in Y, or X for the 30-degree beam; pin held about X), five beams in one model, 41 s | every beam calculated |
+| P1 | single span C30/37 | 162.0 kNm; 4.14 mm (hand 4.11); end rotation 1.098 mrad (hand 1.096) |
+| P1 | two spans C30/37 | M_B -161.71 kNm (hand 162); 1.734 mm at 4.8 m (hand max 1.711) |
+| P1 | single span at 30 degrees in plan, C30/37 | 162.0 kNm; 4.14 mm |
+| P1 | single span S 355 / C45/55 | 0.647 mm (hand 0.643) / 3.74 mm (hand 3.72); both 162.0 kNm |
+| P2 | a material NAMED "C30/37" (name = quality), stable beam | first run: SCIA dropped the pushed model silently (`LoadAnalysisModelFromDiscInReceiver FAIL`, then the batch run did not know the load case). Two reruns (one through the "(LLSM)" rename the build first had, one with the plain name "C30/37"): 162.0 kNm, 4.14 mm. The first run was SCIA's receiver hiccup (below), not the name: a material may carry its grade's name |
+| P3 | kind Steel with quality C30/37; kind Concrete with quality S 235 | both calculated, but SCIA ignored the quality: 0.647 mm (steel's E) and 5.01 mm (default concrete) |
+| P4 | after the first calculation, the pin's rotation about Y freed through the edit sync (TrySynchronizeModel), then held again | A fixed: -92.76 / -138.64 kNm; A pinned: 0 / -161.71 kNm; held again: -92.76 / -138.64 kNm. A support change reaches SCIA through the normal edit sync |
+
+The deformation rows: a few sections per member (its ends and extremes); a member can miss some (in the
+two-span beam the second span had only its end).
+
+### What changed in LLSM
+
+- Sections: [height, width] to SCIA; tools keep saying width x height.
+- Materials: `add_material(name, grade=..., kind=...)`. The grade is matched against the start model's
+  material library (case and spaces ignored: "S235" finds "S 235"; also inside a name, "Beton C30/37"); an
+  unknown grade is refused with the closest names; only concrete and steel grades count as validated (the
+  measured cases; a timber class such as "C24 (EN 338)" is found but gives no deflections); the kind follows from the grade and a contradicting kind is
+  refused (P3). A name that is or holds a grade has that grade ("C30/37", "Beton C30/37"); the library's
+  names stay reserved for other objects, but a material may carry its own grade's name (P2). Without a grade a material is ungraded: forces only when all
+  members share it, no deflections.
+- Free motions (`llsm/scia/stability.py`): before every push, edit sync and calculation LLSM finds the
+  rigid-body motions the supports leave free, per group of connected members. A free motion no load acts
+  on (at any point of a loaded member; self weight counts when there is a self-weight case) is held by
+  extra restraints at existing supports, exactly one per free motion, so their reactions are zero and the
+  forces do not change. A free motion a load acts on is a mechanism: `run_analysis` refuses before
+  calculating and says what can move. The sidebar keeps the support type the engineer asked for.
+- Deflections: `get_beam_deflection` gives uz (mm) and rotations (mrad) at the exported sections and the
+  model's largest deflection in that case, when every material in use has a grade.
+
+### Verification of the build (2026-11-25)
+
+| Check | Result |
+|---|---|
+| Unit suite (`tests/unit`, new: `test_stability.py`, `test_grades.py`, `test_builder_supports.py`) | 622 passed, 2 skipped |
+| Live `tests/live/test_calc_live.py` | passed in 144 s (first run, with the rename the build first had; rerun without it below): material "C30/37" gets grade C30/37, "S235" finds S 235, steel + C30/37 refused; push reports the roller held in Y and the pin about X; one calculation of three pin + roller beams in 34 s (estimate 35 s); 162 kNm within 1 % for the single span (C30/37 and S 235) and at the middle support of the two-span beam; the model's largest deflection within 3 % of 4.11 / 0.64 / 1.71 mm; after 12 kN/m the old result is gone, then 216 kNm within 1 % |
+| Live `tests/live/test_builder_rules_live.py` (steel S235, pin + roller, 6 m, 5 kN/m) | passed: calculated, 22.5 kNm at mid-span (hand 22.5); S2 held in Y, S1 about X |
+| Left behind | no SCIA process (SCIA's RPC finaliser noise at close, as before) |
+
+### SCIA's receiver hiccup, and the landing check (2026-11-25, verify step)
+
+Driving LLSM through Claude Code with a plain Dutch question ("Maak een ligger van 12 m op twee
+steunpunten, beton C30/37, 1000 x 600 mm, met 9 kN/m naar beneden. Reken hem door ...") the first
+push answered ok, but SCIA's OpenAPI log shows `SaveAnalysisModelOnDiscInReceiver BEGIN` without an
+END: the receiver never took the model in. The batch run then refused the case classes ("q9 ...
+Dit object is nog niet aanwezig"). The chat restarted SCIA, built the model again, and got 162.0 kNm
+and 4.14 mm. The same hiccup explains the first P2 run. Names were not the cause: none of the chat's
+names is in the start model, and the plain name "C30/37" calculated on a rerun.
+
+So `push_model` now saves a probe copy after the push and looks for the model's load cases in it
+(`esa_file.names_by_table`, table `DataSetScia.EP_LoadCase.1`); `run_analysis` checks its saved copy
+the same way. A missing case gives `not_landed: true`, a plain error, and LLSM closes its own SCIA but
+keeps the model, so `launch_scia` + `push_model` is the way back (a hub left by a failed push refuses
+the same names again).
+
+### Verification through the chat (2026-11-25)
+
+Claude Code (`claude -p`) with LLSM's MCP server from this branch, plain Dutch questions, no hints:
+
+| Question | What the chat did | Result |
+|---|---|---|
+| "Maak een ligger van 12 m op twee steunpunten, beton C30/37, 1000 x 600 mm, met 9 kN/m naar beneden. Reken hem door: wat zijn het grootste moment en de doorbuiging?" (before the landing check) | material "C30/37" with grade C30/37, pin + Z roller; first push did not land in SCIA, batch refused the case; the chat restarted and rebuilt | 162 kNm, -4.14 mm; led to the landing check above |
+| the same question (after the fix) | one push, roller held in Y and pin about X (said in the answer), one calculation in 32 s | 162 kNm at 6.0 m, -4.14 mm (hand 162 / 4.11); answer names the extra restraints and the calculated copy |
+| "Doorgaande stalen ligger S235 over drie steunpunten, twee velden van 12 m, doorsnede 1000 x 600 mm, 9 kN/m ..." | material "S235" found as S 235 (steel), one calculation in 29 s | -161.7 kNm over the middle support (hand 162), 90.8 kNm in the span (hand 91.1), -0.271 mm (hand 0.268) |
+
+No SCIA process was left afterwards.

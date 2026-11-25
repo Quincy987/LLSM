@@ -23,11 +23,12 @@ TOOL_DEFS = [
     },
     {
         "name": "add_material",
-        "description": "Add a structural material (Steel / Concrete / Timber / Aluminium). Use well-known grade names like S235, S355, C25/30.",
+        "description": "Add a structural material with the grade the engineer gives (C30/37, C20/25, S235, S355): SCIA then calculates with that grade's stiffness and weight from its library. A name that is a grade is its own grade (name='C30/37' is fine). kind follows from the grade; give it only for a material without a grade.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "name": {"type": "string"},
+                "grade": {"type": "string", "description": "Grade as the engineer says it, e.g. C30/37 or S235."},
                 "kind": {"type": "string", "enum": ["Steel", "Concrete", "Timber", "Aluminium"]},
             },
             "required": ["name"],
@@ -35,7 +36,7 @@ TOOL_DEFS = [
     },
     {
         "name": "add_rectangular_section",
-        "description": "Add a rectangular cross-section parameterised by width x height (in mm). Use for simple beams/columns when real IPE/HEA profiles are not needed.",
+        "description": "Add a rectangular cross-section: width x height in mm, height along the section's local z (vertical for a horizontal beam), so '300 x 500' is width 300, height 500. Use for simple beams/columns when real IPE/HEA profiles are not needed.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -175,13 +176,13 @@ TOOL_DEFS = [
     },
     {
         "name": "push_model",
-        "description": "Open an empty SCIA project and push the current in-memory ADM model into it. Call AFTER all add_* tools.",
+        "description": "Open a copy of LLSM's start model in SCIA and push the in-memory ADM model into it. Call AFTER all add_* tools. Returns calc_estimate_s: tell the engineer how long run_analysis takes. stability_note: LLSM holds a support in more directions so the model cannot twist or swing; say it in one sentence. cannot_calculate: the model is a mechanism; say what can move. not_landed: SCIA did not take the model in; call launch_scia, then push_model again (the model is kept).",
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
         "name": "run_analysis",
-        "description": "Generate the FE mesh, run linear analysis and check that SCIA made results. ok is true only when results exist; with calculated false, tell the engineer the error text and do not call the result tools.",
-        "input_schema": {"type": "object", "properties": {}, "required": []},
+        "description": "Calculate the pushed model (SCIA's batch program on a saved copy). ok is true only when results came back. status running: call again. needs_confirmation: ask the engineer, then call with confirm=true. With calculated false, tell the engineer the error text and do not call the result tools; unstable: the model can move, ask which support to add.",
+        "input_schema": {"type": "object", "properties": {"confirm": {"type": "boolean", "description": "true after the engineer agreed to a long calculation."}}, "required": []},
     },
     {
         "name": "close_scia",
@@ -197,7 +198,7 @@ TOOL_NAMES = [t["name"] for t in TOOL_DEFS]
 TOOL_DEFS.extend([
     {
         "name": "get_beam_inner_forces",
-        "description": "Read beam internal forces (N, Vy, Vz, Mx, My, Mz per section) for a given load case. Forces in N, moments in N*m. Call AFTER run_analysis.",
+        "description": "Internal forces (N, Vy, Vz, Mx, My, Mz) of a member for a load case, from the last run_analysis: values_kN_kNm at positions_m, the member ends and extremes SCIA exports. Call AFTER run_analysis.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -209,7 +210,7 @@ TOOL_DEFS.extend([
     },
     {
         "name": "get_beam_deflection",
-        "description": "Read beam deformation (Ux, Uy, Uz, Fix, Fiy, Fiz per section) for a given load case. Translations in metres (multiply by 1000 for mm). Call AFTER run_analysis.",
+        "description": "Deflections (uz_mm, global Z, up positive) and rotations of a member for a load case, from the last run_analysis, plus model_extreme: the largest vertical deflection in the model for that case. Given only when every material has a grade. Call AFTER run_analysis.",
         "input_schema": {
             "type": "object",
             "properties": {
