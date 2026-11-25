@@ -185,7 +185,7 @@ exports. LLSM now does the same with a chat-built model:
 | 17 | quality set to a library grade (C30/37, C45/55) | landed, no rows |
 | 17 | steel material (S-quality unknown to SCIA) | no rows |
 
-Why the material cases fail is not known; what is known: LLSM's materials are made without stiffness
+**Corrected 2026-11-25** (section "materials, sections and free motions" below): the cause was the pin + roller test beam, the turned section and the quality = name, not the material route. As written then: why the material cases fail is not known; what is known: LLSM's materials are made without stiffness
 or weight (E = 0, density 0), SCIA then uses a default concrete that gives right forces when every
 member has the same material, and every way tried to give a material its own properties stopped the
 calculation. So deflections are not given and steel models are not calculated (a NO_ROWS answer).
@@ -251,3 +251,73 @@ whole model, not per member. Reactions are not in this start model's export.
 
 SCIA's start-up licence check took over 3 minutes four times today (the HubServer limit); the live
 tests try the start up to three times. That limit is older than this change.
+
+## 2026-11-25: materials, sections and free motions (try 19 and try 20)
+
+The try-17 conclusion above ("every way tried to give a material its own properties stopped the
+calculation") was wrong. All those variants were pin + roller test beams, and the cause was the beam,
+not the material. Three causes, each proved by numbers:
+
+1. **Sections were turned by 90 degrees.** SCIA's ADM rectangle takes its parameters as [height, width]
+   (SCIA's OpenAPI example, `Program.cs:582`); the builder passed [width, height]. A 1000 x 600 mm beam had
+   I = 0.05 instead of 0.018 m4: deflections 2.78 x too small.
+2. **No real material.** The builder used the material's name as its ADM `Quality`. SCIA does not know
+   such a name and uses a default concrete (E about 27 GPa). With `Quality` = a name of SCIA's library
+   ("C30/37", "C20/25", "S 235" with the space) SCIA uses that grade's E and weight, for steel too.
+3. **The test beam could move without deforming.** A pin holds three translations, a Z roller one: the
+   beam can still turn about its own axis and swing sideways about the pin. Whether SCIA's solver then
+   gives rows depends on the stiffnesses, hence the erratic "no rows" of tries 16 and 17.
+
+### Try 19 (spike scripts and results in `phase0/calc/work/try19/`, gitignored)
+
+Two spans 2 x 12 m, 9 kN/m, A FIXED (so nothing can move freely), rollers at B and C, 1000 x 600 mm,
+section order corrected, ADM Quality from the library, no XML. Hand values: M_A = -q L^2 / 14 = -92.57
+kNm, M_B = -3 q L^2 / 28 = -138.86 kNm, rotation at C = 370280 / (E I).
+
+| Quality | M_B (kNm) | rotation at C (mrad) | hand (mrad) |
+|---|---|---|---|
+| C30/37 | -138.64 | 0.630 | 0.627 |
+| C20/25 | -138.64 | 0.688 | 0.686 |
+| S 235 | -138.63 | 0.098 | 0.098 |
+
+The same numbers came from an XML cross-section update (catalogue item 2 = rectangle H, B; materials by
+library name), which also works but leaves the open SCIA window with the placeholder material.
+
+### Try 20: the proofs before the build (`phase0/calc/try20_proofs.py`)
+
+Each run is one SCIA session with one model, through LLSM's own route (push into the start-model copy,
+`run_analysis`). Hand values for 9 kN/m on 1000 x 600 mm: single span 12 m M = q L^2 / 8 = 162 kNm,
+deflection 5 q L^4 / (384 E I), end rotation q L^3 / (24 E I); two spans M_B = 162 kNm, largest
+deflection 0.00542 q L^4 / (E I). E: C30/37 32.8, C45/55 36.3, S 355 and S 235 210 GPa.
+
+| Proof | What | Result |
+|---|---|---|
+| P1 | pin + Z rollers, LLSM's extra restraints set by hand (roller held in Y, or X for the 30-degree beam; pin held about X), five beams in one model, 41 s | every beam calculated |
+| P1 | single span C30/37 | 162.0 kNm; 4.14 mm (hand 4.11); end rotation 1.098 mrad (hand 1.096) |
+| P1 | two spans C30/37 | M_B -161.71 kNm (hand 162); 1.734 mm at 4.8 m (hand max 1.711) |
+| P1 | single span at 30 degrees in plan, C30/37 | 162.0 kNm; 4.14 mm |
+| P1 | single span S 355 / C45/55 | 0.647 mm (hand 0.643) / 3.74 mm (hand 3.72); both 162.0 kNm |
+| P2 | a material NAMED "C30/37" (name = quality), stable beam | SCIA dropped the pushed model silently (`LoadAnalysisModelFromDiscInReceiver FAIL`, then the batch run did not know the load case): the reserved names stay |
+| P3 | kind Steel with quality C30/37; kind Concrete with quality S 235 | both calculated, but SCIA ignored the quality: 0.647 mm (steel's E) and 5.01 mm (default concrete) |
+| P4 | after the first calculation, the pin's rotation about Y freed through the edit sync (TrySynchronizeModel), then held again | A fixed: -92.76 / -138.64 kNm; A pinned: 0 / -161.71 kNm; held again: -92.76 / -138.64 kNm. A support change reaches SCIA through the normal edit sync |
+
+The deformation rows: a few sections per member (its ends and extremes); a member can miss some (in the
+two-span beam the second span had only its end).
+
+### What changed in LLSM
+
+- Sections: [height, width] to SCIA; tools keep saying width x height.
+- Materials: `add_material(name, grade=..., kind=...)`. The grade is matched against the start model's
+  material library (case and spaces ignored: "S235" finds "S 235"; "C24" finds "C24 (EN 338)"); an unknown
+  grade is refused with the closest names; the kind follows from the grade and a contradicting kind is
+  refused (P3). A name that is a grade is its own grade; because of P2 it is called "C30/37 (LLSM)" inside
+  SCIA, while the chat keeps using "C30/37". Without a grade a material is ungraded: forces only when all
+  members share it, no deflections.
+- Free motions (`llsm/scia/stability.py`): before every push, edit sync and calculation LLSM finds the
+  rigid-body motions the supports leave free, per group of connected members. A free motion no load acts
+  on (at any point of a loaded member; self weight counts when there is a self-weight case) is held by
+  extra restraints at existing supports, exactly one per free motion, so their reactions are zero and the
+  forces do not change. A free motion a load acts on is a mechanism: `run_analysis` refuses before
+  calculating and says what can move. The sidebar keeps the support type the engineer asked for.
+- Deflections: `get_beam_deflection` gives uz (mm) and rotations (mrad) at the exported sections and the
+  model's largest deflection in that case, when every material in use has a grade.
