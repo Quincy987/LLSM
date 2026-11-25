@@ -31,6 +31,30 @@ def format_recent_label(c: Conversation, *, active: bool) -> str:
     return f"{bullet}{pin}{title}    [{c.model}]  {ts}"
 
 
+def live_status_label(status, kind: str) -> str:
+    """The disabled row shown while a live-only provider has no models."""
+    state = getattr(status, "state", "idle")
+    if state == "unreachable":
+        url = getattr(status, "base_url", "") or _stored_base_url(kind)
+        return f"(server not reachable at {url})" if url else "(server not reachable)"
+    if state == "empty":
+        return "(server has no models)"
+    if state == "error":
+        err = (getattr(status, "error", "") or "unknown error").splitlines()[0]
+        if len(err) > 70:
+            err = err[:69] + "…"
+        return f"(server error: {err})"
+    return "(loading models…)"
+
+
+def _stored_base_url(kind: str) -> str:
+    try:
+        from ..llm.credentials import get_credential
+        return get_credential(kind, "base_url") or ""
+    except Exception:
+        return ""
+
+
 class FileMenuBuilder:
     def __init__(
         self,
@@ -45,6 +69,7 @@ class FileMenuBuilder:
         on_switch_model: Callable[[str, str], None],  # (backend_kind, model_id)
         on_open_history: Callable[[], None],
         open_wizard_cb: Callable[[], None] | None = None,
+        live_models=None,
     ) -> None:
         self.root = root
         self.session = session
@@ -56,6 +81,11 @@ class FileMenuBuilder:
         self.on_switch_model = on_switch_model
         self.on_open_history = on_open_history
         self.open_wizard_cb = open_wizard_cb
+        # LiveModelFetcher for providers without a fixed model list
+        # (OpenAI-compatible servers). None = old behaviour (tests, CLI).
+        self.live_models = live_models
+        if live_models is not None:
+            live_models.add_listener(self._on_live_models_changed)
 
     def build(self, menubar: tk.Misc) -> tk.Menu:
         """The File menu, parented to `menubar` (a tk.Menu or a Menubutton)."""
@@ -98,7 +128,31 @@ class FileMenuBuilder:
             label = format_recent_label(c, active=(c.id == active_id))
             m.add_command(label=label, command=lambda cid=c.id: self.on_resume(cid))
 
-    def _populate_models(self) -> None:
+    def _on_live_models_changed(self, _kind: str) -> None:
+        """A background fetch landed: rebuild the cascade without asking again."""
+        try:
+            self._populate_models(refresh_live=False)
+        except Exception:
+            pass
+
+    def _live_rows(self, sub: tk.Menu, kind: str, *, active_kind, active_model,
+                   refresh: bool) -> None:
+        """Rows for a provider whose models only come from its server."""
+        if refresh:
+            self.live_models.refresh(kind)  # show what is known, re-ask behind it
+        models = self.catalog.for_backend(kind)
+        if models:
+            for r in models:
+                check = "● " if (kind == active_kind and r.model_id == active_model) else "  "
+                sub.add_command(
+                    label=f"{check}{r.display_name or r.model_id}",
+                    command=lambda kk=kind, mid=r.model_id: self.on_switch_model(kk, mid),
+                )
+            return
+        st = self.live_models.status(kind)
+        sub.add_command(label=live_status_label(st, kind), state="disabled")
+
+    def _populate_models(self, refresh_live: bool = True) -> None:
         """Cascade by provider; only show providers whose SDK + creds are present.
 
         Top-level layout:
@@ -189,6 +243,14 @@ class FileMenuBuilder:
                     sub.add_command(label="(set up credentials to use)", state="disabled")
                 else:
                     sub.add_command(label="(set up credentials first)", state="disabled")
+                m.add_cascade(label=spec.display_name, menu=sub)
+                any_shown = True
+                continue
+
+            # No fixed list: the server is asked in the background.
+            if self.live_models is not None and self.catalog.is_live_only(kind):
+                self._live_rows(sub, kind, active_kind=active_kind,
+                                active_model=active_model, refresh=refresh_live)
                 m.add_cascade(label=spec.display_name, menu=sub)
                 any_shown = True
                 continue

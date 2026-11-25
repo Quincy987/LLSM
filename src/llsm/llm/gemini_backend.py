@@ -22,10 +22,22 @@ from .tool_loop import (
     extract_gemini_tool_calls,
     format_gemini_tool_result,
     format_gemini_assistant_with_tool_calls,
+    resolve_turn_without_tools,
 )
 
 
 DEFAULT_MODEL = "gemini-2.5-pro"
+
+
+def _gemini_finish_reason(resp) -> str | None:
+    """The first candidate's finish reason as a plain name, e.g. "MAX_TOKENS"."""
+    try:
+        reason = resp.candidates[0].finish_reason
+    except Exception:
+        return None
+    if reason is None:
+        return None
+    return getattr(reason, "name", None) or str(reason)
 
 
 def available_models():
@@ -116,6 +128,7 @@ class GeminiBackend:
         return full
 
     def _chat_with_tools(self) -> str:
+        tool_calls_done = 0
         for _ in range(MAX_TOOL_ITERATIONS):
             if self._cancelled.is_set():
                 raise CancelledError()
@@ -144,10 +157,23 @@ class GeminiBackend:
             if not calls:
                 # Pull plain text out of the response.
                 try:
-                    return (resp.text or "").strip()
+                    text = resp.text or ""
                 except Exception:
-                    return ""
+                    text = ""
+                # No nudge here (max_nudges=0): a follow-up user turn after
+                # a model turn Gemini may have dropped (empty content) is a
+                # message shape this loop has never sent, and the stall was
+                # only seen on the OpenAI-compatible route. An empty turn
+                # still gets a clear message instead of a silent "".
+                return resolve_turn_without_tools(
+                    text,
+                    finish_reason=_gemini_finish_reason(resp),
+                    nudges_used=0,
+                    tool_calls_done=tool_calls_done,
+                    max_nudges=0,
+                ).answer or ""
 
+            tool_calls_done += len(calls)
             for tc in calls:
                 if self._cancelled.is_set():
                     raise CancelledError()

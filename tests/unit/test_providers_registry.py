@@ -16,9 +16,10 @@ def test_specs_have_lazy_paths():
         assert ":" in spec.static_models_path, f"{kind} static path missing module:attr split"
 
 
-def test_openai_compatible_defaults_tools_off():
-    """Local servers default to tools-off (small models misuse tool calls)."""
-    assert PROVIDERS["openai-compatible"].default_tools_enabled is False
+def test_openai_compatible_defaults_tools_on():
+    """A local chat picked from the menu must reach the tool route that was
+    measured (scripts/local_model_trial.py); the Tools toggle turns it off."""
+    assert PROVIDERS["openai-compatible"].default_tools_enabled is True
 
 
 def test_openai_and_gemini_have_install_hints():

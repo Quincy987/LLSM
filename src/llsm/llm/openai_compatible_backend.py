@@ -5,9 +5,10 @@ The user configures `base_url` (required) and an optional `api_key` (some
 local servers accept anything; cloud-hosted services like OpenRouter / Groq
 require a real key).
 
-Phase A scope: chat-only. Phase B will wire SCIA tools, defaulting to OFF
-for this backend because small local models often misuse tool calls
-(`ProviderSpec.default_tools_enabled = False`).
+SCIA tools are on by default (`ProviderSpec.default_tools_enabled`): a
+large local model (20-30 GB class) drives them correctly for simple beam
+models, small ones (5-8 GB) build wrong models. See docs/verify/local-models.md and
+scripts/local_model_trial.py. The Tools menu switches a chat to chat-only.
 """
 from __future__ import annotations
 
@@ -27,6 +28,7 @@ from .tool_loop import (
     to_openai_tools,
     extract_openai_tool_calls,
     format_openai_tool_result,
+    resolve_turn_without_tools,
 )
 
 
@@ -35,10 +37,10 @@ _FALLBACK_MODEL = "local-model"
 
 
 def available_models():
-    """Static fallback for the catalog when no live backend exists.
+    """Static fallback: empty, there is nothing universal across servers.
 
-    Empty list — there's nothing universal across all OpenAI-compatible
-    servers. The menu falls back to "(no models — set up credentials first)".
+    An empty static list marks this provider as live-only: the File menu
+    asks the server itself in the background (`providers.probe_models`).
     """
     return []
 
@@ -88,8 +90,8 @@ class OpenAICompatibleBackend:
     max_tokens: int = 4096
     verbose: bool = True
     on_tool_event: Any = None
-    # Default off per ProviderSpec (small local models often misuse tools).
-    tools_enabled: bool = False
+    # Matches ProviderSpec.default_tools_enabled; a chat's own flag wins.
+    tools_enabled: bool = True
 
     _client: OpenAI = field(init=False)
     _messages: list[dict] = field(default_factory=list, init=False)
@@ -122,6 +124,8 @@ class OpenAICompatibleBackend:
         # Best-effort tool loop. If the server doesn't support OpenAI's
         # tools=[...] schema, the .create() call raises and we surface a
         # clean message instead of crashing the panel.
+        nudges = 0
+        tool_calls_done = 0
         for _ in range(MAX_TOOL_ITERATIONS):
             if self._cancelled.is_set():
                 raise CancelledError()
@@ -158,8 +162,19 @@ class OpenAICompatibleBackend:
             self._messages.append(assistant_msg)
 
             if not calls:
-                return (msg.content or "").strip()
+                outcome = resolve_turn_without_tools(
+                    msg.content,
+                    finish_reason=getattr(choice, "finish_reason", None),
+                    nudges_used=nudges,
+                    tool_calls_done=tool_calls_done,
+                )
+                if outcome.answer is not None:
+                    return outcome.answer
+                nudges += 1
+                self._messages.append({"role": "user", "content": outcome.nudge})
+                continue
 
+            tool_calls_done += len(calls)
             for tc in calls:
                 if self._cancelled.is_set():
                     raise CancelledError()
@@ -234,23 +249,35 @@ class OpenAICompatibleBackend:
         except Exception:
             pass
 
+    def list_models(self, *, timeout_s: float | None = None):
+        """Live `/v1/models`. Raises on failure, so a caller can tell a
+        server that is down from one that has no models.
+
+        With `timeout_s` the request gets that time-out and no retries (the
+        client's defaults are minutes, with retries).
+        """
+        client = self._client
+        if timeout_s is not None:
+            client = client.with_options(timeout=timeout_s, max_retries=0)
+        resp = client.models.list()
+        from ..history.models import ModelRef
+        out: list[ModelRef] = []
+        label = self._host_label
+        for m in resp.data:
+            mid = getattr(m, "id", "")
+            if not mid:
+                continue
+            out.append(ModelRef(
+                "openai-compatible",
+                mid,
+                display_name=f"[{label}] {mid}",
+            ))
+        return out
+
     def available_models(self):
-        """Live `/v1/models` — the only source for this backend."""
+        """Live `/v1/models` — the only source for this backend. [] on failure."""
         try:
-            resp = self._client.models.list()
-            from ..history.models import ModelRef
-            out: list[ModelRef] = []
-            label = self._host_label
-            for m in resp.data:
-                mid = getattr(m, "id", "")
-                if not mid:
-                    continue
-                out.append(ModelRef(
-                    "openai-compatible",
-                    mid,
-                    display_name=f"[{label}] {mid}",
-                ))
-            return out
+            return self.list_models(timeout_s=3.0)
         except Exception:
             return []
 
@@ -282,7 +309,7 @@ class OpenAICompatibleBackend:
 def build_backend(panel) -> OpenAICompatibleBackend:
     cur = panel._conv_session.current()
     model = (cur.model if cur else None) or panel._model or _FALLBACK_MODEL
-    tools_enabled = bool(getattr(cur, "tools_enabled", False)) if cur else False
+    tools_enabled = bool(getattr(cur, "tools_enabled", True)) if cur else True
     backend = OpenAICompatibleBackend(
         model=model,
         verbose=False,

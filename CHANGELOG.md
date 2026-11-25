@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Een lokale server (Ollama, LM Studio) staat nu in het menu Switch Model.** Het menu vroeg de modellen alleen aan een chat die al met die aanbieder liep, en die kon je alleen uit datzelfde menu starten; er stond dus altijd "(no models available)". Nu vraagt LLSM de server zelf, op de achtergrond, bij het opstarten, na het opslaan in de wizard en bij elk openen van het menu (een later binnengehaald model verschijnt dan vanzelf). Staat de server uit of heeft hij niets, dan zegt het menu dat: "(server not reachable at …)" of "(server has no models)". Een lege lijst wordt niet meer voor de hele sessie onthouden. De testknop in de wizard gebruikt dezelfde vraag en onderscheidt nu ook "niet bereikbaar" van "geen modellen". docs/verify/local-models.md
+- **Een denkend model stopt de chat niet meer halverwege met een leeg antwoord.** Zo'n model zette zijn volgende tool-aanroep in zijn denkblok; de server gaf dan een lege beurt terug en LLSM zag dat als het eindantwoord. Nu vraagt LLSM het model tot twee keer om door te gaan, en zegt anders duidelijk dat het model stopte en na hoeveel tool-aanroepen. Met denkmodus aan van 3 naar 8 van de 9 goede modellen. Ook voor OpenAI; bij Gemini de duidelijke melding zonder doorvragen.
+
+### Changed
+- **Een lokale chat heeft de SCIA-tools aan.** Wie een lokaal model uit het menu kiest, komt op de route die gemeten is; via Tools zet je ze per chat uit.
+
+### Added
+- **`scripts/local_model_trial.py`: meet zelf of een lokaal model modellen kan bouwen.** Drie gewone Nederlandse opdrachten (ligger, portaal, doorgaande ligger), elk een paar keer, gecontroleerd op wat er echt gebouwd is. Gemeten: Qwen3.5-35B-A3B bouwde in 18 van 18 runs een model en slaagde voor alle controles in 16; een 7B-model 1 van 9.
+
 ## v0.3.18 — Honest calculation answer from the chat (2026-11-23)
 
 ### Fixed

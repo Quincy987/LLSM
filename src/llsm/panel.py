@@ -304,6 +304,23 @@ class LlsmPanel:
             "gemini":            _gemini_models,
             "openai-compatible": _openai_compat_models,
         })
+        # Providers without a fixed model list (OpenAI-compatible servers)
+        # get theirs from the server, asked on a worker thread so the menu
+        # works before any chat with that provider exists.
+        self._live_models = None
+        try:
+            from .conversation.live_models import LiveModelFetcher
+            from .llm.providers import PROVIDERS, has_static_models, probe_models
+            for _kind, _spec in PROVIDERS.items():
+                if not has_static_models(_spec):
+                    self._model_catalog.mark_live_only(_kind)
+            self._live_models = LiveModelFetcher(
+                catalog=self._model_catalog,
+                probe=lambda kind: probe_models(PROVIDERS[kind]),
+                tk_call=lambda fn: self.root.after(0, fn),
+            )
+        except Exception as exc:
+            print(f"[panel] live model lists unavailable: {exc}", file=sys.stderr)
         try:
             migrate_legacy(
                 store=self._conv_store,
@@ -828,6 +845,7 @@ class LlsmPanel:
             on_switch_model=self._on_menu_switch_model,
             on_open_history=self._on_menu_open_history,
             open_wizard_cb=self._on_menu_setup_credentials,
+            live_models=self._live_models,
         )
         file_mb.configure(menu=file_builder.build(file_mb))
         tools = tk.Menu(tools_mb, tearoff=False, postcommand=self._refresh_tools_menu)
@@ -1048,6 +1066,16 @@ class LlsmPanel:
             self._model_catalog.invalidate(kind)
         except Exception as exc:
             print(f"[panel] catalog invalidate failed: {exc}", file=sys.stderr)
+        # A server-only provider: forget the old answer and ask again now,
+        # so the menu lists the new server's models when it is next opened.
+        if kind and self._live_models is not None and self._model_catalog.is_live_only(kind):
+            try:
+                self._live_models.forget(kind)
+                from .llm.credentials import has_credential
+                if has_credential(kind, "base_url"):
+                    self._live_models.refresh(kind)
+            except Exception as exc:
+                print(f"[panel] model list refresh failed: {exc}", file=sys.stderr)
         if kind:
             self._sysline(f"credentials updated for {kind}")
 

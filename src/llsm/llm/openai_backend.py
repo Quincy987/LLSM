@@ -27,6 +27,7 @@ from .tool_loop import (
     to_openai_tools,
     extract_openai_tool_calls,
     format_openai_tool_result,
+    resolve_turn_without_tools,
 )
 
 
@@ -108,6 +109,8 @@ class OpenAIBackend:
         # and the panel already runs chat() on a worker so blocking is fine.
         # Cancel-mid-call still works because we check _cancelled between
         # the request return and the tool dispatch.
+        nudges = 0
+        tool_calls_done = 0
         for _ in range(MAX_TOOL_ITERATIONS):
             if self._cancelled.is_set():
                 raise CancelledError()
@@ -145,8 +148,19 @@ class OpenAIBackend:
             self._messages.append(assistant_msg)
 
             if not calls:
-                return (msg.content or "").strip()
+                outcome = resolve_turn_without_tools(
+                    msg.content,
+                    finish_reason=getattr(choice, "finish_reason", None),
+                    nudges_used=nudges,
+                    tool_calls_done=tool_calls_done,
+                )
+                if outcome.answer is not None:
+                    return outcome.answer
+                nudges += 1
+                self._messages.append({"role": "user", "content": outcome.nudge})
+                continue
 
+            tool_calls_done += len(calls)
             for tc in calls:
                 if self._cancelled.is_set():
                     raise CancelledError()

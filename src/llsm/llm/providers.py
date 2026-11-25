@@ -114,7 +114,10 @@ PROVIDERS: dict[str, ProviderSpec] = {
         help_url="https://docs.ollama.com/openai",
         static_models_path="llsm.llm.openai_compatible_backend:available_models",
         build_backend_path="llsm.llm.openai_compatible_backend:build_backend",
-        default_tools_enabled=False,  # local models often misuse tools
+        # On: picking a local model from the menu must reach the route that
+        # was measured (a 35B model built 9 of 9 beam models; 7B models
+        # build wrong ones). The Tools menu toggle still switches it off.
+        default_tools_enabled=True,
         sdk_install_hint="pip install llsm[openai]",
     ),
 }
@@ -155,6 +158,114 @@ def static_models(spec: ProviderSpec):
     except ImportError:
         return []
     return list(fn())
+
+
+def has_static_models(spec: ProviderSpec) -> bool:
+    """True when the provider ships a fixed model list.
+
+    A provider without one (OpenAI-compatible servers: Ollama, LM Studio,
+    ...) only knows its models by asking the server, so the menu fetches
+    that list in the background instead of waiting for a live chat. A
+    missing SDK counts as "static": the menu shows the install hint for it
+    and there is nothing to ask.
+    """
+    try:
+        fn = _resolve(spec.static_models_path)
+    except ImportError:
+        return True
+    try:
+        return bool(list(fn()))
+    except Exception:
+        return True
+
+
+def backend_class_for(spec: ProviderSpec):
+    """The concrete `*Backend` class in the module of the spec's factory.
+
+    Convention: each backend module exports a single public class whose
+    name ends in "Backend". Raises ImportError when the SDK is missing.
+    """
+    module = importlib.import_module(spec.build_backend_path.split(":", 1)[0])
+    for attr in dir(module):
+        if attr.endswith("Backend") and not attr.startswith("_"):
+            obj = getattr(module, attr)
+            if isinstance(obj, type):
+                return obj
+    raise RuntimeError(f"no Backend class found in {module.__name__}")
+
+
+@dataclass(frozen=True)
+class ModelProbe:
+    """Outcome of asking a provider for its models.
+
+    status: "ok" (models found), "empty" (reachable, no models),
+    "unreachable" (no connection or a time-out), "error" (anything else:
+    a refused key, a missing SDK, a bad URL).
+    """
+    status: str
+    models: tuple = ()
+    error: str = ""
+    base_url: str = ""
+
+
+def _is_connection_error(exc: BaseException) -> bool:
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return True
+    names = {cls.__name__ for cls in type(exc).__mro__}
+    return bool(names & {"APIConnectionError", "APITimeoutError",
+                         "ConnectError", "ConnectTimeout", "ReadTimeout"})
+
+
+def probe_models(
+    spec: ProviderSpec,
+    *,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    timeout_s: float = 3.0,
+) -> ModelProbe:
+    """Build a throwaway backend from credentials and ask it for its models.
+
+    Shared by the wizard's Test connection button and the File menu's
+    background fetch. Blocking: call it from a worker thread. Arguments left
+    out fall back to the stored credentials (the backend reads them itself).
+    A backend with `list_models(timeout_s=...)` gets the short time-out and
+    reports failures; the others fall back to `available_models()`.
+    """
+    try:
+        backend_class = backend_class_for(spec)
+    except ImportError as exc:
+        return ModelProbe("error", error=f"SDK missing: {spec.sdk_install_hint or exc}")
+    except Exception as exc:
+        return ModelProbe("error", error=f"{type(exc).__name__}: {exc}")
+
+    kwargs: dict = {"verbose": False}
+    if AuthMethod.API_KEY in spec.auth_methods and api_key:
+        kwargs["api_key"] = api_key
+    if spec.requires_base_url and base_url:
+        kwargs["base_url"] = base_url
+    try:
+        backend = backend_class(**kwargs)
+    except Exception as exc:
+        return ModelProbe("error", error=f"{type(exc).__name__}: {exc}",
+                          base_url=base_url or "")
+    resolved_url = str(getattr(backend, "base_url", "") or base_url or "")
+    try:
+        lister = getattr(backend, "list_models", None)
+        if callable(lister):
+            models = tuple(lister(timeout_s=timeout_s))
+        else:
+            models = tuple(backend.available_models())
+    except Exception as exc:
+        status = "unreachable" if _is_connection_error(exc) else "error"
+        return ModelProbe(status, error=f"{type(exc).__name__}: {exc}",
+                          base_url=resolved_url)
+    finally:
+        try:
+            backend.close()
+        except Exception:
+            pass
+    return ModelProbe("ok" if models else "empty", models=models,
+                      base_url=resolved_url)
 
 
 def build_backend(spec: ProviderSpec, panel):
