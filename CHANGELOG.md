@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.19 — Local models from the menu (2026-11-25)
+
 ### Fixed
 - **Een lokale server (Ollama, LM Studio) staat nu in het menu Switch Model.** Het menu vroeg de modellen alleen aan een chat die al met die aanbieder liep, en die kon je alleen uit datzelfde menu starten; er stond dus altijd "(no models available)". Nu vraagt LLSM de server zelf, op de achtergrond, bij het opstarten, na het opslaan in de wizard en bij elk openen van het menu (een later binnengehaald model verschijnt dan vanzelf). Staat de server uit of heeft hij niets, dan zegt het menu dat: "(server not reachable at …)" of "(server has no models)". Een lege lijst wordt niet meer voor de hele sessie onthouden. De testknop in de wizard gebruikt dezelfde vraag en onderscheidt nu ook "niet bereikbaar" van "geen modellen"; het menu wacht hooguit 3 s op de server, de testknop 10 s. docs/verify/local-models.md
 - **Een denkend model stopt de chat niet meer halverwege met een leeg antwoord.** Zo'n model zette zijn volgende tool-aanroep in zijn denkblok; de server gaf dan een lege beurt terug en LLSM zag dat als het eindantwoord. Nu vraagt LLSM het model tot twee keer om door te gaan, en zegt anders duidelijk dat het model stopte en na hoeveel tool-aanroepen. Met denkmodus aan van 3 naar 8 van de 9 geslaagde runs. Een lege beurt door een tokenlimiet of een inhoudsfilter wordt als zodanig gemeld, zonder doorvragen. Ook voor OpenAI; bij Gemini de duidelijke melding zonder doorvragen.
