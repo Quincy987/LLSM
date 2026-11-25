@@ -164,8 +164,8 @@ already chose, everywhere at once, which is where hand work forgets one.
   changing a factor in an existing combination, linear or code, are untested.
 - **Open question for Geert's model copy**: are his SLS frequent combinations SCIA code
   combinations (SCIA applies ψ itself from the load groups) or linear ones with explicit factors?
-  In a code combination a per-case factor would multiply on top of ψ, so "the factor" means
-  something else there. The preview must say which kind each combination is.
+  What a per-case coefficient means inside a code combination (on top of ψ or not) is unchecked;
+  find out on his copy before writing one. The preview must say which kind each combination is.
 - **Sophie's objection does not apply**: she objected to generating all combinations; this mode
   generates none. The opt-in and propose-first rules of §0 still hold.
 - No factor data file needed: the engineer gives the new value, LLSM shows where it lands.
