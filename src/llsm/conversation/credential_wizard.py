@@ -26,14 +26,29 @@ from typing import Callable, Optional
 
 from ..llm.providers import (
     AuthMethod,
+    ModelProbe,
     PROVIDERS,
     ProviderSpec,
     _resolve,
+    probe_models,
 )
 from ..llm import credentials
 
 
 _DEFAULT_PROFILE = "default"
+
+
+def describe_probe(result: ModelProbe) -> tuple[bool, str]:
+    """Status line for the Test connection button: (ok, text)."""
+    if result.status == "ok":
+        n = len(result.models)
+        return True, f"Connected ({n} model{'s' if n != 1 else ''} available)"
+    if result.status == "empty":
+        return False, "Connected, but no models returned."
+    if result.status == "unreachable":
+        where = f" at {result.base_url}" if result.base_url else ""
+        return False, f"Server not reachable{where}: {result.error}"
+    return False, result.error or "Unknown error"
 
 
 # Convenience: get_credential / has_credential / set_credential / delete_credential
@@ -366,39 +381,15 @@ class CredentialWizard(tk.Toplevel):
         ).start()
 
     def _test_worker(self, spec: ProviderSpec, api_key: str, base_url: str):
-        """Construct the backend with the entered creds, call available_models()."""
-        ok = False
-        msg = ""
+        """Ask the provider for its models with the entered creds (worker thread)."""
         try:
-            build_fn = _resolve(spec.build_backend_path)
-            # The factory is panel-coupled; we can't reuse it. Construct the
-            # backend class directly with kwargs. For the purpose of testing
-            # creds we just need a backend that can call available_models().
-            # Each backend module exports a class named like its kind; rather
-            # than maintaining a reverse map, use the build_backend module's
-            # __module__ to import the class.
-            mod_name = build_fn.__module__
-            backend_class = self._backend_class_from_module(mod_name)
-            kwargs = {"verbose": False}
-            if AuthMethod.API_KEY in spec.auth_methods and api_key:
-                kwargs["api_key"] = api_key
-            if spec.requires_base_url and base_url:
-                kwargs["base_url"] = base_url
-            backend = backend_class(**kwargs)
-            try:
-                models = backend.available_models()
-            finally:
-                try:
-                    backend.close()
-                except Exception:
-                    pass
-            n = len(list(models))
-            ok = n > 0
-            msg = f"Connected ({n} model{'s' if n != 1 else ''} available)" if ok else "Connected, but no models returned."
-        except ImportError as exc:
-            msg = f"SDK missing: {spec.sdk_install_hint or exc}"
+            # Longer than the menu's 3 s: the user is waiting for this one,
+            # and a cloud endpoint may be slower than a local server.
+            result = probe_models(spec, api_key=api_key or None,
+                                  base_url=base_url or None, timeout_s=10.0)
+            ok, msg = describe_probe(result)
         except Exception as exc:
-            msg = f"{type(exc).__name__}: {exc}"
+            ok, msg = False, f"{type(exc).__name__}: {exc}"
 
         # Marshal back to Tk thread.
         try:
@@ -406,19 +397,6 @@ class CredentialWizard(tk.Toplevel):
             self.after(0, lambda: self._set_busy(False))
         except Exception:
             pass
-
-    @staticmethod
-    def _backend_class_from_module(mod_name: str):
-        """Locate the Backend class by module — convention: each backend
-        module exports a single concrete `*Backend` class."""
-        import importlib
-        m = importlib.import_module(mod_name)
-        for attr in dir(m):
-            if attr.endswith("Backend") and not attr.startswith("_"):
-                obj = getattr(m, attr)
-                if isinstance(obj, type):
-                    return obj
-        raise RuntimeError(f"no Backend class found in {mod_name}")
 
     # --- Subscription login (claude setup-token) ---
 

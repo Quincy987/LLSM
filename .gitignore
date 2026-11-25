@@ -10,3 +10,4 @@ phase0/xml_route/work/
 demo_out/
 phase0/report/work/
 phase0/calc/work/
+local_model_trial*.json

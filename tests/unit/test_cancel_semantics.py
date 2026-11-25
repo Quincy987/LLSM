@@ -47,7 +47,9 @@ def test_openai_compat_cancel_mid_stream(monkeypatch):
         def close(self): pass
 
     monkeypatch.setattr(oc, "OpenAI", FakeOpenAI)
-    b = oc.OpenAICompatibleBackend(base_url="http://localhost:11434/v1", api_key="x")
+    # The streaming (chat-only) path; tools are on by default since v0.3.19.
+    b = oc.OpenAICompatibleBackend(base_url="http://localhost:11434/v1", api_key="x",
+                                   tools_enabled=False)
     backend_holder["b"] = b
 
     from llsm.llm.base import CancelledError

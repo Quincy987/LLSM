@@ -121,6 +121,10 @@ class ConversationSession:
         # so a defaults-populated cache from an earlier `contains()` call
         # can't shadow the real backend's list.
         models = self.catalog.for_backend(cur.backend_kind, backend)
+        if not models:
+            # No list known (a local server not asked yet, or down): that
+            # says nothing about this model, so don't flag it unavailable.
+            return True
         return any(m.model_id == cur.model for m in models)
 
     def title(self) -> str:

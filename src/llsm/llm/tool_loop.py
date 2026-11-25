@@ -45,6 +45,95 @@ class ToolCall:
     arguments: dict
 
 
+# ---------- A turn without tool calls ----------
+#
+# A turn with no tool calls used to count as the final answer, even when it
+# held no text either. Thinking models served over the OpenAI-compatible API
+# (seen with Qwen3.5-35B-A3B on llama-server, 2026-11-25) sometimes write the
+# next tool call inside their reasoning block: the server then reports
+# finish_reason="stop" with empty content and no tool_calls, and the chat
+# ended with an empty reply halfway through building the model. Such a turn
+# is not an answer. The loop asks the model to continue a few times, then
+# says plainly that it stopped; it never returns "" silently.
+
+MAX_EMPTY_TURN_NUDGES = 2
+
+EMPTY_TURN_NUDGE = (
+    "Your last reply was empty: no text and no tool call. Continue the task: "
+    "call the next tool, or give your final answer to the user."
+)
+
+
+@dataclass
+class TurnOutcome:
+    """What a tool loop does with a turn that made no tool calls.
+
+    Exactly one of the two is set: `answer` ends the chat() call with that
+    text; `nudge` is a user message to append before asking again.
+    """
+    answer: str | None = None
+    nudge: str | None = None
+
+
+_CUT_OFF_REASONS = {"length", "max_tokens"}
+_FILTERED_REASONS = {"content_filter", "safety", "recitation", "blocklist",
+                     "prohibited_content", "spii", "image_safety"}
+
+
+def _reason_name(finish_reason) -> str:
+    """'length', 'MAX_TOKENS', 'FinishReason.SAFETY' -> 'length', 'max_tokens', 'safety'."""
+    return str(finish_reason or "").rsplit(".", 1)[-1].strip().lower()
+
+
+def resolve_turn_without_tools(
+    text: str | None,
+    *,
+    finish_reason: str | None,
+    nudges_used: int,
+    tool_calls_done: int,
+    max_nudges: int = MAX_EMPTY_TURN_NUDGES,
+    stall_hint: str = "",
+) -> TurnOutcome:
+    """Decide whether a no-tool-call turn is the answer, a cut-off, a block, or a stall.
+
+    - Visible text: that is the answer, unchanged.
+    - Empty and cut off by the token limit (OpenAI "length", Gemini
+      "MAX_TOKENS"): say so; asking again would hit the same limit.
+    - Empty and blocked by the provider's filter (OpenAI "content_filter",
+      Gemini "SAFETY" and the like): say so; nudging a filter is pointless.
+    - Empty otherwise: nudge the model to continue, up to `max_nudges`
+      times per chat() call, then report that it stopped without an answer,
+      followed by `stall_hint` (backend-specific advice, may be empty).
+    """
+    clean = (text or "").strip()
+    if clean:
+        return TurnOutcome(answer=clean)
+    calls = f"{tool_calls_done} tool call{'' if tool_calls_done == 1 else 's'}"
+    reason = _reason_name(finish_reason)
+    if reason in _CUT_OFF_REASONS:
+        return TurnOutcome(answer=(
+            f"[ERROR] The model's reply was cut off by its token limit before it "
+            f"gave an answer (after {calls})."
+        ))
+    if reason in _FILTERED_REASONS:
+        return TurnOutcome(answer=(
+            f"[ERROR] The provider's content filter blocked the model's reply "
+            f"(after {calls}; finish reason {finish_reason})."
+        ))
+    if nudges_used < max_nudges:
+        return TurnOutcome(nudge=EMPTY_TURN_NUDGE)
+    asked = (
+        f" and stayed silent when asked to continue ({nudges_used}x)"
+        if nudges_used else ""
+    )
+    hint = f" {stall_hint}" if stall_hint else ""
+    return TurnOutcome(answer=(
+        f"[ERROR] The model stopped without an answer after {calls}{asked}. "
+        f"What it built so far is kept (View > Show Model Sidebar); "
+        f"ask it to continue.{hint}"
+    ))
+
+
 # ---------- Tool dispatch (was AnthropicBackend._invoke_tool) ----------
 
 def invoke_tool(

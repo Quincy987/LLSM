@@ -27,19 +27,46 @@ class ModelCatalog:
     ANTHROPIC_API_KEY just to render a menu). When no provider is registered
     for a backend_kind, the catalog falls back to asking the LIVE backend
     instance passed to `for_backend(..., backend)`.
+
+    Live-only kinds (`mark_live_only`) have no fixed list: their models
+    come from the server, fetched off the UI thread by the caller and
+    handed in with `put()`. For those `for_backend` only reads what it holds
+    and never calls the network itself, so a menu or title refresh on the Tk
+    thread cannot block on a server that is down.
+
+    An empty result is never cached: "nothing yet" must not stick for the
+    rest of the session.
     """
 
     def __init__(self, providers: ProviderMap | None = None) -> None:
         self._providers: ProviderMap = dict(providers or {})
         self._cache: dict[str, list[ModelRef]] = {}
+        self._live_only: set[str] = set()
 
     def register_provider(self, backend_kind: str, fn: Callable[[], list[ModelRef]]) -> None:
         self._providers[backend_kind] = fn
         self._cache.pop(backend_kind, None)
 
+    def mark_live_only(self, backend_kind: str) -> None:
+        """Declare that this kind's models only come in through `put()`."""
+        self._live_only.add(backend_kind)
+
+    def is_live_only(self, backend_kind: str) -> bool:
+        return backend_kind in self._live_only
+
+    def put(self, backend_kind: str, models: list[ModelRef]) -> None:
+        """Store a freshly fetched list; an empty list clears the entry."""
+        models = list(models)
+        if models:
+            self._cache[backend_kind] = models
+        else:
+            self._cache.pop(backend_kind, None)
+
     def for_backend(self, backend_kind: str, backend=None) -> list[ModelRef]:
         if backend_kind in self._cache:
             return self._cache[backend_kind]
+        if backend_kind in self._live_only:
+            return []
         models: list[ModelRef] = []
         # Prefer the live backend instance if we have one — supports future
         # backends whose model list depends on instance config.
@@ -55,7 +82,8 @@ class ModelCatalog:
                     models = list(provider())
                 except Exception:
                     models = []
-        self._cache[backend_kind] = models
+        if models:
+            self._cache[backend_kind] = models
         return models
 
     def contains(self, backend_kind: str, model_id: str) -> bool:

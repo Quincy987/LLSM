@@ -18,6 +18,7 @@ Every release and what it changed: [`CHANGELOG.md`](CHANGELOG.md).
 - ✅ **Results report of a saved model** (v0.3.12): SCIA's own engineering report as PDF, checked for results. [`docs/verify/report.md`](docs/verify/report.md)
 - ✅ **Traffic by the toetsmodel's rules** (v0.3.13, v0.3.14): LM1 per notional lane at the plaatbruggen toetsmodel's positions, from a plain request that names the file. [`docs/verify/phase4-traffic-rules.md`](docs/verify/phase4-traffic-rules.md)
 - ✅ **Model builder fixes** (v0.3.15): a load case takes its action type from its group, duplicate names are refused. [`docs/verify/builder-rules.md`](docs/verify/builder-rules.md)
+- ✅ **Locally hosted models**: a local server's models are listed under Switch Model, a local chat has the SCIA tools on, and a 35B model builds simple beam models; 7B models do not. [`docs/verify/local-models.md`](docs/verify/local-models.md)
 
 ## Installation
 
@@ -96,17 +97,15 @@ Any server that speaks the OpenAI Chat Completions API works. No cloud, no API k
    - Ollama: `http://localhost:11434/v1`
    - LM Studio: `http://localhost:1234/v1`
    - vLLM: `http://localhost:8000/v1`
-3. Launch the panel:
-
-```powershell
-.venv\Scripts\llsm-panel --backend openai-compatible
-```
-
-4. In the panel, open **Tools → Set up credentials…**, choose *OpenAI-compatible*, and enter the base URL (API key is optional — local servers accept anything). Then pick your model via **Switch Model**.
+3. Launch the panel (`.venv\Scripts\llsm-panel`), open **Tools → Set up credentials…**, choose *OpenAI-compatible*, and enter the base URL (API key is optional — local servers accept anything).
+4. Open **File → Switch Model → OpenAI-compatible**: it lists the server's models (asked in the background; a model you pull later shows up the next time you open the menu). Pick one; coming from another provider, that starts a new chat.
 
 Notes for local models:
 
-- **SCIA tool-use is OFF by default** for this backend — small local models often misuse tool calls. Enable it with the *SCIA tools* checkbox in the panel (per-conversation). Use a tool-capable model (e.g. `qwen2.5`, `llama3.1`) for driving SCIA; anything works for chat-only.
+- **Model size matters.** Measured on simple beam models ([`docs/verify/local-models.md`](docs/verify/local-models.md)): a 35B model (Qwen3.5-35B-A3B, ~15 GB) built a model that passed every check in 17 of 18 runs, 16 of them with a final answer; a 7B model passed 1 of 9. Use the 20-30 GB class (e.g. `qwen3-coder:30b`, `gpt-oss:20b`; not measured here), preferably with thinking off, and give the server a context of at least 8,000 tokens; a beam chat reached ~4,900.
+- **Measure your own model** before relying on it: `.venv\Scripts\python scripts\local_model_trial.py --model qwen3-coder:30b` (Ollama's URL is the default; `--base-url` for another server).
+- **SCIA tools are on** in a new local chat. **Tools → Enable SCIA tools for this chat** turns a chat into plain chat.
+- If the menu says *server not reachable*, the server is not running at the URL you entered; *server has no models* means it runs but has nothing pulled.
 - Cloud services with OpenAI-compatible APIs (OpenRouter, Groq, …) work the same way — just use their base URL and a real API key.
 
 ### Other cloud providers

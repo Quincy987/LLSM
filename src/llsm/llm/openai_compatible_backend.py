@@ -5,9 +5,10 @@ The user configures `base_url` (required) and an optional `api_key` (some
 local servers accept anything; cloud-hosted services like OpenRouter / Groq
 require a real key).
 
-Phase A scope: chat-only. Phase B will wire SCIA tools, defaulting to OFF
-for this backend because small local models often misuse tool calls
-(`ProviderSpec.default_tools_enabled = False`).
+SCIA tools are on by default (`ProviderSpec.default_tools_enabled`): a
+large local model (20-30 GB class) drives them correctly for simple beam
+models, small ones (5-8 GB) build wrong models. See docs/verify/local-models.md and
+scripts/local_model_trial.py. The Tools menu switches a chat to chat-only.
 """
 from __future__ import annotations
 
@@ -27,18 +28,24 @@ from .tool_loop import (
     to_openai_tools,
     extract_openai_tool_calls,
     format_openai_tool_result,
+    resolve_turn_without_tools,
 )
 
 
 # No DEFAULT_MODEL — there is nothing universal here. Caller must set one.
 _FALLBACK_MODEL = "local-model"
 
+# Said after a stall: thinking models wrote their next tool call inside the
+# reasoning block and came back empty (docs/verify/local-models.md).
+_STALL_HINT = ("A larger local model, or one with thinking switched off, "
+               "stops less often.")
+
 
 def available_models():
-    """Static fallback for the catalog when no live backend exists.
+    """Static fallback: empty, there is nothing universal across servers.
 
-    Empty list — there's nothing universal across all OpenAI-compatible
-    servers. The menu falls back to "(no models — set up credentials first)".
+    An empty static list marks this provider as live-only: the File menu
+    asks the server itself in the background (`providers.probe_models`).
     """
     return []
 
@@ -88,8 +95,8 @@ class OpenAICompatibleBackend:
     max_tokens: int = 4096
     verbose: bool = True
     on_tool_event: Any = None
-    # Default off per ProviderSpec (small local models often misuse tools).
-    tools_enabled: bool = False
+    # Matches ProviderSpec.default_tools_enabled; a chat's own flag wins.
+    tools_enabled: bool = True
 
     _client: OpenAI = field(init=False)
     _messages: list[dict] = field(default_factory=list, init=False)
@@ -119,9 +126,10 @@ class OpenAICompatibleBackend:
         if not self.tools_enabled:
             return self._chat_no_tools()
 
-        # Best-effort tool loop. If the server doesn't support OpenAI's
-        # tools=[...] schema, the .create() call raises and we surface a
-        # clean message instead of crashing the panel.
+        # Best-effort tool loop. A failed request (server down, no tool
+        # support, ...) becomes one clear message instead of a crash.
+        nudges = 0
+        tool_calls_done = 0
         for _ in range(MAX_TOOL_ITERATIONS):
             if self._cancelled.is_set():
                 raise CancelledError()
@@ -136,12 +144,7 @@ class OpenAICompatibleBackend:
                     tools=to_openai_tools(),
                 )
             except Exception as exc:
-                msg = (
-                    f"{self._host_label} doesn't support OpenAI-style tool calls "
-                    f"(or another error occurred): {type(exc).__name__}: {exc}. "
-                    "Disable 'Enable SCIA tools for this chat' under Tools."
-                )
-                raise RuntimeError(msg) from exc
+                raise self._request_failed(exc) from exc
             if self._cancelled.is_set():
                 raise CancelledError()
 
@@ -158,8 +161,20 @@ class OpenAICompatibleBackend:
             self._messages.append(assistant_msg)
 
             if not calls:
-                return (msg.content or "").strip()
+                outcome = resolve_turn_without_tools(
+                    msg.content,
+                    finish_reason=getattr(choice, "finish_reason", None),
+                    nudges_used=nudges,
+                    tool_calls_done=tool_calls_done,
+                    stall_hint=_STALL_HINT,
+                )
+                if outcome.answer is not None:
+                    return outcome.answer
+                nudges += 1
+                self._messages.append({"role": "user", "content": outcome.nudge})
+                continue
 
+            tool_calls_done += len(calls)
             for tc in calls:
                 if self._cancelled.is_set():
                     raise CancelledError()
@@ -185,9 +200,7 @@ class OpenAICompatibleBackend:
                 stream=True,
             )
         except Exception as exc:
-            raise RuntimeError(
-                f"{self._host_label} request failed: {type(exc).__name__}: {exc}"
-            ) from exc
+            raise self._request_failed(exc) from exc
 
         self._current_stream = stream
         parts: list[str] = []
@@ -213,6 +226,34 @@ class OpenAICompatibleBackend:
         self._messages.append({"role": "assistant", "content": full})
         return full
 
+    def _request_failed(self, exc: Exception) -> RuntimeError:
+        """A failed request as a message that says what to do about it.
+
+        Only a refusal of the `tools` parameter points at the Tools toggle;
+        with tools on by default, "server not running" must not read as
+        "this server cannot do tool calls".
+        """
+        from .providers import request_error_kind
+        kind = request_error_kind(exc)
+        detail = f"{type(exc).__name__}: {exc}"
+        where = f"{self._host_label} ({self.base_url})"
+        text = {
+            "unreachable": f"{where} is not reachable. Is the server running? ({detail})",
+            "timeout": f"{where} did not answer in time. ({detail})",
+            "auth": f"{where} refused the API key. ({detail})",
+            "not_found": (
+                f"{where} answered 404: check that the URL ends in /v1 and that "
+                f"'{self.model}' is a model the server lists. ({detail})"
+            ),
+            "rate_limited": f"{where} is rate limiting requests; try again shortly. ({detail})",
+            "tools_unsupported": (
+                f"{where} or this model does not accept tool calls. Pick a model "
+                f"that supports tools, or turn off 'Enable SCIA tools for this "
+                f"chat' under Tools. ({detail})"
+            ),
+        }.get(kind, f"{where} request failed: {detail}")
+        return RuntimeError(text)
+
     def cancel(self) -> bool:
         was_running = self._current_stream is not None
         self._cancelled.set()
@@ -234,23 +275,35 @@ class OpenAICompatibleBackend:
         except Exception:
             pass
 
+    def list_models(self, *, timeout_s: float | None = None):
+        """Live `/v1/models`. Raises on failure, so a caller can tell a
+        server that is down from one that has no models.
+
+        With `timeout_s` the request gets that time-out and no retries (the
+        client's defaults are minutes, with retries).
+        """
+        client = self._client
+        if timeout_s is not None:
+            client = client.with_options(timeout=timeout_s, max_retries=0)
+        resp = client.models.list()
+        from ..history.models import ModelRef
+        out: list[ModelRef] = []
+        label = self._host_label
+        for m in resp.data:
+            mid = getattr(m, "id", "")
+            if not mid:
+                continue
+            out.append(ModelRef(
+                "openai-compatible",
+                mid,
+                display_name=f"[{label}] {mid}",
+            ))
+        return out
+
     def available_models(self):
-        """Live `/v1/models` — the only source for this backend."""
+        """Live `/v1/models` — the only source for this backend. [] on failure."""
         try:
-            resp = self._client.models.list()
-            from ..history.models import ModelRef
-            out: list[ModelRef] = []
-            label = self._host_label
-            for m in resp.data:
-                mid = getattr(m, "id", "")
-                if not mid:
-                    continue
-                out.append(ModelRef(
-                    "openai-compatible",
-                    mid,
-                    display_name=f"[{label}] {mid}",
-                ))
-            return out
+            return self.list_models(timeout_s=3.0)
         except Exception:
             return []
 
@@ -282,7 +335,7 @@ class OpenAICompatibleBackend:
 def build_backend(panel) -> OpenAICompatibleBackend:
     cur = panel._conv_session.current()
     model = (cur.model if cur else None) or panel._model or _FALLBACK_MODEL
-    tools_enabled = bool(getattr(cur, "tools_enabled", False)) if cur else False
+    tools_enabled = bool(getattr(cur, "tools_enabled", True)) if cur else True
     backend = OpenAICompatibleBackend(
         model=model,
         verbose=False,
