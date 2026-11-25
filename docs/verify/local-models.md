@@ -52,7 +52,10 @@ was 4,884 tokens with the 18 tools; the server ran with 12,288.
 ## The menu, end to end
 
 The real panel, started with an isolated home folder (no change to the owner's settings), a local
-server URL saved, and a Gemini chat active with no message sent:
+server URL saved, and a Gemini chat active with no message sent. SCIA's start, push and calculate
+answer as in the trial. (One run whose calculate stub answered a bare "ok" while the results tools
+said "no results" sent the model into a rebuild loop until the 40-turn limit: tool answers that
+contradict each other cost a local model the whole chat.)
 
 - File → Switch Model → OpenAI-compatible listed the server's model 0.33 s after start
   (`img/local-models-menu.png`).
@@ -61,7 +64,8 @@ server URL saved, and a Gemini chat active with no message sent:
   answer (thinking off). With thinking on the same request built the model and then ended with the
   new "stopped without an answer after 11 tool calls" message.
 - With the server stopped, the cascade showed "(server not reachable at http://127.0.0.1:8089/v1)"
-  2.25 s later. Opening the menu took 16-31 ms and the UI loop answered within 63 ms while the
+  2.25 s later, and a message sent in the local chat answered "local:8089 (http://127.0.0.1:8089/v1)
+  is not reachable. Is the server running?" in 7.6 s, not the old "doesn't support tool calls". Opening the menu took 16-31 ms and the UI loop answered within 63 ms while the
   background probe waited on the dead port.
 
 ![Switch Model listing the local server's model](img/local-models-menu.png)
