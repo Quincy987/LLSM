@@ -33,7 +33,9 @@ from dataclasses import dataclass, field
 DOFS = ("X", "Y", "Z", "RX", "RY", "RZ")
 _AXES = {"X": (1.0, 0.0, 0.0), "Y": (0.0, 1.0, 0.0), "Z": (0.0, 0.0, 1.0)}
 TOUCH_MM = 1.0
+SHOWN = 4  # supports and motions named in the sentence; the rest counted
 _TOL = 1e-9
+_ZERO = 1e-7  # a velocity or work below this (unit motions, positions scaled to the group's size) is none
 
 Vec = tuple[float, float, float]
 
@@ -69,8 +71,11 @@ class Stability:
         """One plain sentence about what LLSM holds extra, or None."""
         if not self.extras:
             return None
-        held = "; ".join(f"{s} also in {', '.join(_dof_words(d) for d in dofs)}" for s, dofs in self.extras.items())
-        motions = ", ".join(self.held_motions) if self.held_motions else "move freely"
+        items = list(self.extras.items())
+        held = "; ".join(f"{s} also in {', '.join(_dof_words(d) for d in dofs)}" for s, dofs in items[:SHOWN])
+        if len(items) > SHOWN:
+            held += f" (and {len(items) - SHOWN} more supports)"
+        motions = ", ".join(self.held_motions[:SHOWN]) if self.held_motions else "move freely"
         return (f"LLSM holds {held}: otherwise the model could {motions}. No load acts in those directions, "
                 "so the forces do not change.")
 
@@ -149,7 +154,8 @@ def _null_space(rows: list[list[float]]) -> list[list[float]]:
         v[free] = 1.0
         for i, c in enumerate(pivots):
             v[c] = -red[i][free]
-        basis.append(v)
+        n = _norm(v)
+        basis.append([x / n for x in v])  # unit length: the thresholds below compare like with like
     return basis
 
 
@@ -207,23 +213,31 @@ def _touching(nodes: dict[str, Vec], members: dict[str, tuple[str, str]], groups
             for n in members[m]:
                 group_of_node[n] = g
     hits = []
-    used = sorted(group_of_node)
-    for i, a in enumerate(used):
-        for b in used[i + 1:]:
+    by_x = sorted(group_of_node, key=lambda n: nodes[n][0])  # sweep along X: only near neighbours compared
+    for i, a in enumerate(by_x):
+        for b in by_x[i + 1:]:
+            if nodes[b][0] - nodes[a][0] > TOUCH_MM:
+                break
             if group_of_node[a] != group_of_node[b] and _norm(_sub(nodes[a], nodes[b])) <= TOUCH_MM:
                 hits.append(f"nodes {a} and {b} are at the same place")
-    for n in used:
+    boxes = {m: tuple((min(nodes[a][k], nodes[b][k]) - TOUCH_MM, max(nodes[a][k], nodes[b][k]) + TOUCH_MM)
+                      for k in range(3)) for m, (a, b) in members.items()}
+    for n, g in group_of_node.items():
+        p = nodes[n]
         for m, (a, b) in members.items():
-            if group_of_node[n] != group_of_node[a] and _on_segment(nodes[n], nodes[a], nodes[b], TOUCH_MM):
+            box = boxes[m]
+            if g == group_of_node[a] or not all(box[k][0] <= p[k] <= box[k][1] for k in range(3)):
+                continue
+            if _on_segment(p, nodes[a], nodes[b], TOUCH_MM):
                 hits.append(f"node {n} lies on member {m}")
     return hits
 
 
-def _motion_words(m: list[float], nodes: dict[str, Vec], group_nodes: list[str],
-                  members: dict[str, tuple[str, str]], group: list[str], scale: float) -> str:
+def _motion_words(m: list[float], pos: dict[str, Vec], group_nodes: list[str],
+                  members: dict[str, tuple[str, str]], group: list[str]) -> str:
     """A free motion in plain words, matched against the simple ones (slide, turn about a line)."""
     w = m[3:]
-    if _norm(w) <= 1e-7:
+    if _norm(w) <= _ZERO:
         d = _unit(tuple(m[:3]))
         axis = next((k for k, a in _AXES.items() if abs(abs(_dot(a, d)) - 1) < 1e-6), None)
         return f"slide in {axis}" if axis else "slide sideways"
@@ -232,7 +246,7 @@ def _motion_words(m: list[float], nodes: dict[str, Vec], group_nodes: list[str],
     v = tuple(m[:3])
     wn = _dot(w, w)
     p0 = tuple(x / wn for x in _cross(tuple(w), v))
-    on_axis = [n for n in group_nodes if _norm(_cross(wu, _sub(tuple(x / scale for x in nodes[n]), p0))) < 1e-6]
+    on_axis = [n for n in group_nodes if _norm(_cross(wu, _sub(pos[n], p0))) < 1e-6]
     for name in group:
         a, b = members[name]
         if a in on_axis and b in on_axis:
@@ -268,20 +282,27 @@ def check(nodes: dict[str, Vec], members: dict[str, tuple[str, str]], supports: 
                             + "): SCIA may connect them, so LLSM does not check or hold free motions. "
                             "Share the node if they are meant to be connected.")
         return out
-    used = {n for ab in members.values() for n in ab}
-    scale = max((abs(c) for n in used for c in nodes[n]), default=1.0) or 1.0
-    pos = {n: tuple(c / scale for c in nodes[n]) for n in used}
-    loads_by_member: dict[str, list[Vec]] = {}
+    unknown = sorted({ld.name for ld in loads if ld.member not in members})
+    if unknown:  # a load LLSM cannot place could act on a free motion: hold nothing, refuse nothing
+        out.warnings.append(f"LLSM could not place load {', '.join(unknown[:SHOWN])} on a member, so it does not "
+                            "check or hold free motions.")
+        return out
+    dirs_by_member: dict[str, set[Vec]] = {}
     for ld in loads:
-        if ld.member in members and _norm(ld.direction) > 0:
-            loads_by_member.setdefault(ld.member, []).append(_unit(ld.direction))
+        if _norm(ld.direction) > 0:
+            dirs_by_member.setdefault(ld.member, set()).add(tuple(round(x, 9) for x in _unit(ld.direction)))
     if self_weight:
         for m in members:
-            loads_by_member.setdefault(m, []).append((0.0, 0.0, -1.0))
+            dirs_by_member.setdefault(m, set()).add((0.0, 0.0, -1.0))
 
     for group in groups:
         gnodes = sorted({n for m in group for n in members[m]})
-        gsupports = [s for s in supports if s.node in gnodes]
+        gset = set(gnodes)
+        gsupports = [s for s in supports if s.node in gset]
+        # positions about the group's centre, scaled to its size: well-conditioned also far from the origin
+        centre = tuple(sum(nodes[n][k] for n in gnodes) / len(gnodes) for k in range(3))
+        size = max(_norm(_sub(nodes[n], centre)) for n in gnodes) or 1.0
+        pos = {n: tuple((nodes[n][k] - centre[k]) / size for k in range(3)) for n in gnodes}
         label = group[0] if len(group) == 1 else f"{group[0]} and {len(group) - 1} more"
         if not gsupports:
             out.refusals.append(f"Member {label} has no support: it can move freely. Add a support.")
@@ -290,12 +311,13 @@ def check(nodes: dict[str, Vec], members: dict[str, tuple[str, str]], supports: 
         free = _null_space(rows) if rows else [[1.0 if i == j else 0.0 for j in range(6)] for i in range(6)]
         if not free:
             continue
-        texts = [_motion_words(m, nodes, gnodes, members, group, scale) for m in free]
+        texts = [_motion_words(m, pos, gnodes, members, group) for m in free]
         words = list(dict.fromkeys(texts))  # each description once
+        # a load acts on a motion when it does work at any point of its member: at either end (linear between)
         loaded = [
-            (ld_member, text) for m, text in zip(free, texts)
-            for ld_member, dirs in loads_by_member.items() if ld_member in group
-            for d in dirs for n in members[ld_member] if abs(_dot(d, _velocity(m, pos[n]))) > 1e-7
+            (member, text) for m, text in zip(free, texts) for member in group
+            for d in dirs_by_member.get(member, ()) for n in members[member]
+            if abs(_dot(d, _velocity(m, pos[n]))) > _ZERO
         ]
         if loaded:
             moved = list(dict.fromkeys(text for _, text in loaded))

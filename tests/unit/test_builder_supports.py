@@ -102,14 +102,16 @@ def test_a_reserved_name_is_refused_ignoring_case_and_spaces():
         b._check_free("S235")
 
 
-def test_materials_in_use_follow_the_members_sections(monkeypatch):
+def test_materials_in_use_follow_the_members_sections():
     b = _builder()
     b.grades = {"G": {"grade": "C30/37", "validated": True}, "U": {"grade": None, "validated": False}}
     b._section_material = {"R1": "G", "R2": "U"}
-    monkeypatch.setattr(b, "snapshot", lambda: {"beams": [{"name": "V", "section": "R1"}]})
+    b._member_section = {"V": "R1"}
     assert b.materials_in_use() == ["G"] and b.ungraded_in_use() == []
-    monkeypatch.setattr(b, "snapshot", lambda: {"beams": [{"name": "V", "section": "R1"}, {"name": "W", "section": "R2"}]})
+    b._member_section["W"] = "R2"
     assert b.ungraded_in_use() == ["U"]
+    b._member_section["W"] = "R1"  # set_member_cross_section
+    assert b.ungraded_in_use() == []
 
 
 def test_the_material_tool_says_when_there_is_no_grade():

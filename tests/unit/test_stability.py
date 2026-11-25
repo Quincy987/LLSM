@@ -48,6 +48,27 @@ def test_away_from_the_origin_the_same():
     assert r.ok and r.extras == {"SB": ["Y"], "SA": ["RX"]}
 
 
+def test_far_from_the_origin_in_rd_coordinates():
+    r = _line([(121_000_000, 487_000_000, 0), (121_012_000, 487_000_000, 0)], {"A": PIN, "B": ROLL_Z})
+    assert r.ok and r.extras == {"SB": ["Y"], "SA": ["RX"]}
+
+
+def test_a_load_on_no_known_member_stops_the_check():
+    r = _line([(0, 0), (12000, 0)], {"A": PIN, "B": ROLL_Z}, loads=[Load("q?", "?", DOWN)])
+    assert r.ok and r.extras == {} and "q?" in r.warnings[0]
+
+
+def test_many_supports_are_counted_not_listed():
+    nodes, members, sup, loads = {}, {}, [], []
+    for i in range(10):
+        nodes[f"A{i}"], nodes[f"B{i}"] = (0.0, 30000.0 * i, 0.0), (12000.0, 30000.0 * i, 0.0)
+        members[f"V{i}"] = (f"A{i}", f"B{i}")
+        sup += [Support(f"SA{i}", f"A{i}", PIN), Support(f"SB{i}", f"B{i}", ROLL_Z)]
+        loads.append(Load(f"q{i}", f"V{i}", DOWN))
+    r = check(nodes, members, sup, loads)
+    assert len(r.extras) == 20 and "(and 16 more supports)" in r.sentence()
+
+
 def test_a_fixed_end_needs_nothing():
     r = _line([(0, 0), (12000, 0), (24000, 0)], {"A": FIXED, "B": ROLL_Z, "C": ROLL_Z})
     assert r.ok and r.extras == {} and r.sentence() is None

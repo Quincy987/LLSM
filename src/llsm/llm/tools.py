@@ -23,7 +23,7 @@ TOOL_DEFS = [
     },
     {
         "name": "add_material",
-        "description": "Add a structural material with the grade the engineer gives (C30/37, C20/25, S235, S355, C24): SCIA then calculates with that grade's stiffness and weight from its library. A name that is a grade is its own grade (name='C30/37' is fine). kind follows from the grade; give it only for a material without a grade.",
+        "description": "Add a structural material with the grade the engineer gives (C30/37, C20/25, S235, S355): SCIA then calculates with that grade's stiffness and weight from its library. A name that is a grade is its own grade (name='C30/37' is fine). kind follows from the grade; give it only for a material without a grade.",
         "input_schema": {
             "type": "object",
             "properties": {

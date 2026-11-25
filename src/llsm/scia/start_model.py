@@ -64,7 +64,7 @@ def _names_by_table(path: Path) -> dict[str, tuple[str, ...]]:
             continue
         for _, text in names_in(chunk)[(1 if table else 0):]:  # the first string of a header block is the header
             text = text.strip()
-            if len(text) > 1 and "<" not in text and ">" not in text and not _VERSION_STAMP.match(text):
+            if text and "<" not in text and ">" not in text and not _VERSION_STAMP.match(text):
                 if text not in names[current]:
                     names[current].append(text)
     _names_cache[key] = {t: tuple(v) for t, v in names.items()}
@@ -78,7 +78,7 @@ def owned_names(path: Path) -> frozenset[str]:
 
 def material_grades(path: Path) -> tuple[str, ...]:
     """The names of SCIA's material library in the start model ("C30/37", "S 235", ...): the grades."""
-    return _names_by_table(path)[MATERIALS_TABLE]
+    return tuple(n for n in _names_by_table(path)[MATERIALS_TABLE] if len(n) > 1)  # "u": a stray table string
 
 
 def export_has_results_table(xml_text: str) -> bool:

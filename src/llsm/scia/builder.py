@@ -8,6 +8,8 @@ from __future__ import annotations
 import functools
 from typing import Any
 
+from .grades import library_name, normal as _normal, resolve
+
 # A load case's ADM ActionType follows its load group's LoadGroupType. Checked with pythonnet on the
 # SCIA 24 SDK (2026-11-16): LoadGroupType has Accidental, Fire, Moving, Permanent, Seismic, Tensioning,
 # Variable; ActionType has only Accidental, Permanent, Variable. AddItemToModel takes a case of any action
@@ -88,11 +90,6 @@ def case_load_type(kind: str, action_type: str) -> str:
     return kind
 
 
-def _normal(name: str) -> str:
-    """Names compared as SCIA's library does for grades: case and spaces ignored."""
-    return "".join(name.split()).lower()
-
-
 @functools.lru_cache(maxsize=4)
 def _normals(names: frozenset[str]) -> frozenset[str]:
     return frozenset(_normal(n) for n in names)
@@ -151,6 +148,7 @@ class ModelBuilder:
         # Empty: no start model, a grade is kept as typed and not validated.
         self.library: tuple[str, ...] = ()
         self._section_material: dict[str, str] = {}
+        self._member_section: dict[str, str] = {}  # kept here: read from the calculation's thread, no .NET
 
     # --- Name bookkeeping ----------------------------------------------------
 
@@ -222,13 +220,11 @@ class ModelBuilder:
         A name that is a library name is kept for the engineer (sections refer to it) but is called
         ``<name> (LLSM)`` in SCIA (scia_name).
         """
-        from .grades import resolve
-        kind, quality, validated = resolve(name, kind, grade, getattr(self, "library", ()))
+        library = getattr(self, "library", ())
+        kind, quality, validated = resolve(name, kind, grade, library)
         mt = getattr(self._adm.Enums.MaterialType, kind)
         scia_name = name
-        library = getattr(self, "library", ())
-        same = [n for n in library if _normal(n) == _normal(name)] if quality else []
-        if same and same[0] == quality:  # the name is its own grade
+        if quality and library and library_name(name, library) == quality:  # the name is its own grade
             scia_name = name + self.LIBRARY_ALIAS
             if name in self._objects_by_name:  # the engineer's name is taken: the usual duplicate refusal
                 raise DuplicateNameError(f"an object named {name!r} already exists (StructuralMaterial); "
@@ -295,6 +291,7 @@ class ModelBuilder:
         )
         beam.Layer = "LayerADM"
         self._add(name, beam)
+        self._member_section[name] = cross_section
         return beam
 
     # --- Supports ----------------------------------------------------------
@@ -319,6 +316,13 @@ class ModelBuilder:
             c = self._constraint_rot(kind) if dof.startswith("R") else self._constraint_trans(kind)
             setattr(support, prop, c)
 
+    def _engineer_name(self, scia_name: str) -> str:
+        """The name the engineer uses for an object SCIA knows as ``scia_name`` (LIBRARY_ALIAS)."""
+        for name, alias in self._aliases.items():
+            if alias == scia_name:
+                return name
+        return scia_name
+
     def _add_support(self, name: str, node: str, kind: str, held: frozenset[str], direction: str | None = None) -> Any:
         s = self._adm.StructuralElements.StructuralPointSupport(self._System.Guid.NewGuid(), name, self.get(node))
         self._set_held(s, held)
@@ -340,13 +344,16 @@ class ModelBuilder:
             raise ValueError(f"unknown roller direction {direction!r}; use X, Y or Z")
         return self._add_support(name, node, "roller", frozenset({direction}), direction)
 
+    def member_names(self) -> list[str]:
+        return list(self._member_section)
+
     def materials_in_use(self) -> list[str]:
-        """The materials of the sections the members have now."""
-        used = {b["section"] for b in self.snapshot()["beams"]}
+        """The materials of the sections the members have now (builder bookkeeping, no .NET call)."""
+        used = set(self._member_section.values())
         return sorted({self._section_material[x] for x in used if x in self._section_material})
 
     def ungraded_in_use(self) -> list[str]:
-        """Materials used by a member that carry no grade checked against SCIA's library."""
+        """Materials used by a member without a validated grade (none, unchecked, or of an unclear kind)."""
         return [m for m in self.materials_in_use() if not self.grades.get(m, {}).get("validated")]
 
     def requested_supports(self) -> dict[str, dict]:
@@ -376,8 +383,11 @@ class ModelBuilder:
         members = {b["name"]: (b["n1"], b["n2"]) for b in snap["beams"]}
         supports = [Support(name, info["node"], info["held"]) for name, info in self._supports.items()]
         axes = {"X": (1.0, 0.0, 0.0), "Y": (0.0, 1.0, 0.0), "Z": (0.0, 0.0, 1.0)}
-        loads = [Load(ld["name"], ld["target"], axes.get(str(ld["direction"]).split(".")[-1], (1.0, 1.0, 1.0)))
-                 for ld in snap["loads"]]
+        loads = []
+        for ld in snap["loads"]:  # line loads are in global axes (ADM's default CoordinateSystem Global)
+            axis = axes.get(str(ld["direction"]).split(".")[-1])
+            # a direction LLSM cannot read counts as acting in every direction
+            loads += [Load(ld["name"], ld["target"], d) for d in ([axis] if axis else axes.values())]
         return {"nodes": nodes, "members": members, "supports": supports, "loads": loads,
                 "self_weight": bool(self._self_weight_cases)}
 
@@ -506,6 +516,7 @@ class ModelBuilder:
         beam = self.get(name)
         xs = self.get(cross_section)
         beam.CrossSection = xs
+        self._member_section[name] = cross_section
         return beam
 
     def set_member_endpoints(self, name: str, node_a: str, node_b: str) -> Any:
@@ -565,7 +576,7 @@ class ModelBuilder:
             obj_name = _name_of(obj)
             if obj_name is None or obj_name == target_name:
                 continue
-            obj_name = {v: k for k, v in self._aliases.items()}.get(obj_name, obj_name)
+            obj_name = self._engineer_name(obj_name)
             try:
                 if _name_of(getattr(obj, "CrossSection", None)) == target_name:
                     deps.append(obj_name); continue
@@ -620,6 +631,7 @@ class ModelBuilder:
         dependents). With cascade=False, raises ValueError(blockers_list) if
         dependents exist. With cascade=True, recursively deletes dependents first.
         """
+        name = self._engineer_name(name)  # "C30/37 (LLSM)" is the material "C30/37"
         target = self.get(name)
         deps = self.find_dependents(name)
         if deps and not cascade:
@@ -662,6 +674,7 @@ class ModelBuilder:
         self._self_weight_cases.discard(name)
         self.grades.pop(name, None)
         self._section_material.pop(name, None)
+        self._member_section.pop(name, None)
         alias = self._aliases.pop(name, None)
         if alias is not None:
             self._objects_by_name.pop(alias, None)
@@ -762,8 +775,7 @@ class ModelBuilder:
                 continue
             try:
                 if t == "StructuralMaterial":
-                    shown = {v: k for k, v in self._aliases.items()}
-                    out["materials"].append(shown.get(_name(obj), _name(obj)))
+                    out["materials"].append(self._engineer_name(_name(obj)))
                 elif t == "StructuralParametricCrossSection":
                     out["sections"].append(_name(obj))
                 elif t == "StructuralPointConnection":

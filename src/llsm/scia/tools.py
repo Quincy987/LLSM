@@ -15,6 +15,7 @@ import time
 
 from . import calc, stability, start_model
 from .builder import DuplicateNameError, ModelBuilder, ReservedNameError
+from .grades import GradeError
 from .autoclick import OLD_SECTIONS_QUESTION, ScopedAnswer, SciaDialogPending
 from .session import SciaSession
 from ..jobs import MAX_WAIT_S, JobBoard
@@ -115,7 +116,9 @@ def _new_builder(name: str) -> ModelBuilder:
 def _refused(name: str, exc: ValueError) -> dict:
     """A refused add (duplicate name, unknown kind, a case ADM will not take): nothing was added."""
     out = {"ok": False, "error": str(exc), "name": name}
-    if isinstance(exc, ReservedNameError):
+    if isinstance(exc, GradeError):
+        out["grade_refused"] = True  # an unknown grade, or a kind against it: say the error, ask the engineer
+    elif isinstance(exc, ReservedNameError):
         out["reserved"] = True
     elif isinstance(exc, DuplicateNameError):
         out["duplicate"] = True
@@ -135,6 +138,9 @@ UNGRADED = ("This material has no grade from SCIA's library, so SCIA calculates 
             "(E about 27 GPa): deflections are not given. Give a grade, e.g. C30/37 or S235.")
 UNVALIDATED = ("There is no start model on this computer, so the grade is not checked against SCIA's library "
                "and the model cannot be calculated from the chat.")
+UNPROVEN = ("SCIA is only shown to calculate with LLSM's concrete and steel grades (C30/37, S235); for {grade} "
+            "it may use a default, so deflections are not given and forces are right only when every member "
+            "has this material.")
 
 
 def add_material(ctx: LlsmContext, name: str, kind: str | None = None, grade: str | None = None) -> dict:
@@ -154,7 +160,8 @@ def add_material(ctx: LlsmContext, name: str, kind: str | None = None, grade: st
     if info["grade"] is None:
         out["warning"] = UNGRADED
     elif not info["validated"]:
-        out["warning"] = UNVALIDATED
+        known = bool(getattr(ctx.builder, "library", ()))
+        out["warning"] = UNPROVEN.format(grade=info["grade"]) if known else UNVALIDATED
     return out
 
 
@@ -382,9 +389,10 @@ STALE = ("The model was changed while SCIA calculated, so that result is thrown 
          "Call run_analysis again to calculate the model as it is now.")
 FROM_A_COPY = ("These numbers come from a calculated copy of the model; the SCIA window itself is not "
                "calculated. SCIA exports the member ends and the extremes per member, not every section.")
-MATERIAL_NOTE = ("Material {names} has no grade from SCIA's library: SCIA uses its default concrete for it "
-                 "(E about 27 GPa, 2500 kg/m3). Forces are right only when all members share one material; "
-                 "deflections are not given. Give a grade (e.g. C30/37, S235) to calculate with the real material.")
+MATERIAL_NOTE = ("Material {names} has no grade SCIA is known to calculate with (none, or one of an unclear kind): "
+                 "SCIA may use a default for it (concrete: E about 27 GPa, 2500 kg/m3). Forces are right only when "
+                 "all members share one material; deflections are not given. Give a concrete or steel grade "
+                 "(e.g. C30/37, S235).")
 
 
 def _material_note(ctx: LlsmContext) -> str | None:
@@ -413,8 +421,9 @@ def _store_results(ctx: LlsmContext, version: int, run: dict, members: list[str]
         ctx.results = {"version": version, "cases": run["results"]}
         ctx.last_calc_ok = True
     out = {**base, "ok": True, "calculated": True, "load_cases": cases, "members": len(members), "note": FROM_A_COPY}
-    if _material_note(ctx):
-        out["material_note"] = _material_note(ctx)
+    note = _material_note(ctx)
+    if note:
+        out["material_note"] = note
     if without:
         out["members_without_results"] = without
         out["warning"] = NO_ROWS
@@ -568,9 +577,10 @@ def _propagate_edit(ctx: LlsmContext) -> str | None:
 def _attach_warning(ctx: LlsmContext, result: dict, warn: str | None) -> dict:
     if warn:
         result["sync_warning"] = warn
-    if getattr(ctx, "stability_changed", False) and ctx.stability is not None:
-        result.update(_stability_fields(ctx.stability))
-        if not ctx.stability.extras:
+    report = ctx.stability
+    if report is not None and (ctx.stability_changed or report.refusals or report.warnings):
+        result.update(_stability_fields(report))  # an edit that makes a mechanism says so at once
+        if ctx.stability_changed and not report.extras:
             result["also_held"] = {}  # what LLSM held extra before is released again
     ctx.stability_changed = False
     return result
@@ -742,9 +752,9 @@ RESULT_KINDS = ("inner_forces", "deformation")
 _DISPLAY = {"N": ("kN", 1e-3), "Vy": ("kN", 1e-3), "Vz": ("kN", 1e-3),
             "Mx": ("kNm", 1e-3), "My": ("kNm", 1e-3), "Mz": ("kNm", 1e-3)}
 DEFLECTION_NOT_GIVEN = (
-    "Deflections are not given for this model: material {names} has no grade from SCIA's library, so SCIA "
-    "calculated it with its default concrete. Give every material a grade (e.g. C30/37, S235), push and "
-    "calculate again."
+    "Deflections are not given for this model: material {names} has no grade SCIA is known to calculate with, "
+    "so its stiffness may be SCIA's default. Give every material a concrete or steel grade (e.g. C30/37, S235), "
+    "push and calculate again."
 )
 DEFLECTION_NOTE = (
     "Displacements in the global axes (uz up positive). SCIA's export gives a few sections per member (its "
@@ -771,10 +781,10 @@ def _load_beam_result(ctx, beam_name: str, load_case: str, result_kind: str) -> 
     if error is not None:
         return error
     case = results["cases"].get(load_case)
-    if result_kind == "deformation":
-        return _deflection(ctx, beam_name, load_case, case)
     if case is None:
         return {"ok": False, "error": f"no results for load case {load_case!r}; calculated cases: {sorted(results['cases'])}"}
+    if result_kind == "deformation":
+        return _deflection(ctx, beam_name, load_case, case)
     member = case.get(beam_name)
     if member is None or not member["forces"]:
         return {"ok": False, "error": f"no results for member {beam_name!r} in {load_case!r}; members with results: {sorted(case)}"}
@@ -785,7 +795,7 @@ def _load_beam_result(ctx, beam_name: str, load_case: str, result_kind: str) -> 
         f"{name} ({unit})": [round(v * factor, 2) for v in magnitudes[name]]
         for name, (unit, factor) in _DISPLAY.items() if any(abs(v) > 1e-9 for v in magnitudes[name])
     }
-    return {
+    out = {
         "ok": True,
         "beam": beam_name,
         "load_case": load_case,
@@ -796,20 +806,21 @@ def _load_beam_result(ctx, beam_name: str, load_case: str, result_kind: str) -> 
         "summary_per_magnitude": summary,
         "values_kN_kNm": shown,
         "note": FROM_A_COPY,
-        **({"material_note": _material_note(ctx)} if _material_note(ctx) else {}),
     }
+    note = _material_note(ctx)
+    if note:
+        out["material_note"] = note
+    return out
 
 
-def _deflection(ctx, beam_name: str, load_case: str, case: dict | None) -> dict:
+def _deflection(ctx, beam_name: str, load_case: str, case: dict) -> dict:
     """Deflections of one member in one case from the export, with the model's extreme (DEFLECTION_NOTE)."""
     ungraded = ctx.builder.ungraded_in_use() if ctx.builder is not None else []
     if ungraded:
         return {"ok": False, "calculated": True, "reliable": False,
                 "error": DEFLECTION_NOT_GIVEN.format(names=", ".join(ungraded))}
-    if case is None:
-        return {"ok": False, "error": f"no results for load case {load_case!r}"}
-    if beam_name not in (b["name"] for b in ctx.builder.snapshot()["beams"]):
-        return {"ok": False, "error": f"no member named {beam_name!r}"}
+    if beam_name not in ctx.builder.member_names():
+        return {"ok": False, "error": f"no member named {beam_name!r}; members: {sorted(ctx.builder.member_names())}"}
     extreme = None
     for member, entry in case.items():
         for r in entry["deformations"]:

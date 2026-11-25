@@ -308,8 +308,9 @@ two-span beam the second span had only its end).
 
 - Sections: [height, width] to SCIA; tools keep saying width x height.
 - Materials: `add_material(name, grade=..., kind=...)`. The grade is matched against the start model's
-  material library (case and spaces ignored: "S235" finds "S 235"; "C24" finds "C24 (EN 338)"); an unknown
-  grade is refused with the closest names; the kind follows from the grade and a contradicting kind is
+  material library (case and spaces ignored: "S235" finds "S 235"; also inside a name, "Beton C30/37"); an
+  unknown grade is refused with the closest names; only concrete and steel grades count as validated (the
+  measured cases; a timber class such as "C24 (EN 338)" is found but gives no deflections); the kind follows from the grade and a contradicting kind is
   refused (P3). A name that is a grade is its own grade; because of P2 it is called "C30/37 (LLSM)" inside
   SCIA, while the chat keeps using "C30/37". Without a grade a material is ungraded: forces only when all
   members share it, no deflections.

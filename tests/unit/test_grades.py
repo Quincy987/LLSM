@@ -18,6 +18,10 @@ def test_an_unknown_grade_is_refused_with_the_closest():
         match("C31/37", LIBRARY)
 
 
+def test_only_concrete_and_steel_grades_are_validated():
+    assert resolve("Hout", None, "C24", LIBRARY) == ("Timber", "C24 (EN 338)", False)
+
+
 def test_kind_follows_from_the_grade():
     assert kind_of("C30/37") == "Concrete" and kind_of("LC25/28") == "Concrete"
     assert kind_of("S 355") == "Steel" and kind_of("C24 (EN 338)") == "Timber"
@@ -50,7 +54,20 @@ def test_without_a_grade_the_material_is_ungraded():
 def test_a_grade_whose_kind_is_unclear_needs_the_kind():
     with pytest.raises(GradeError, match="give the kind"):
         resolve("Wapening", None, "B500B", LIBRARY)
-    assert resolve("Wapening", "Steel", "B500B", LIBRARY) == ("Steel", "B 500B", True)
+    # kept, but not validated: SCIA ignores a grade whose own kind differs (try 20 P3), and B 500B's is unknown
+    assert resolve("Wapening", "Steel", "B500B", LIBRARY) == ("Steel", "B 500B", False)
+
+
+def test_a_grade_in_a_longer_name_is_found():
+    assert resolve("Beton C30/37", None, None, LIBRARY) == ("Concrete", "C30/37", True)
+    assert resolve("staal S235 ligger", None, None, LIBRARY) == ("Steel", "S 235", True)
+    assert resolve("Beton C30/37x", "Concrete", None, LIBRARY) == ("Concrete", None, False)
+
+
+def test_suggestions_are_library_names():
+    with pytest.raises(GradeError) as err:
+        match("c3037", LIBRARY)
+    assert "c30/37" not in str(err.value).split("Closest:")[1]  # never the normalised form
 
 
 def test_several_matches_ask_for_the_full_name():

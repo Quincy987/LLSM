@@ -239,7 +239,7 @@ def _register_common_tools(mcp: FastMCP) -> None:
         return scia_tools.new_model(_ctx, name=name)
 
     def add_material(name: str, grade: str | None = None, kind: str | None = None) -> dict:
-        """Add a material with the grade the engineer gives (C30/37, C20/25, S235, S355, C24).
+        """Add a material with the grade the engineer gives (C30/37, C20/25, S235, S355).
 
         SCIA then calculates with that grade's stiffness and weight from its library. A name that is a grade
         is its own grade (name='C30/37' is fine). kind (Steel, Concrete, Timber, Aluminium) follows from the

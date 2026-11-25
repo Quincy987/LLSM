@@ -210,6 +210,9 @@ class _Builder:
     def ungraded_in_use(self):
         return list(self.ungraded)
 
+    def member_names(self):
+        return list(self.members)
+
 
 @pytest.fixture
 def tools(monkeypatch):
@@ -269,6 +272,8 @@ def test_deflections_come_from_the_export_with_the_models_extreme(tools, tmp_pat
     every = [r["Uz"] * 1e3 for m in ctx.results["cases"]["CB BG 01"].values() for r in m["deformations"]]
     assert abs(extreme["uz_mm"]) == pytest.approx(max(abs(v) for v in every), abs=1e-3)
     assert "material_note" not in tools.get_beam_inner_forces(ctx, "CB_Veld1", "CB BG 01")
+    assert tools.get_beam_deflection(ctx, "CB_Veld9", "CB BG 01")["error"].startswith("no member named 'CB_Veld9'")
+    assert "calculated cases" in tools.get_beam_deflection(ctx, "CB_Veld1", "nope")["error"]
 
 
 def test_deflections_are_refused_while_a_material_has_no_grade(tools, tmp_path, monkeypatch):
