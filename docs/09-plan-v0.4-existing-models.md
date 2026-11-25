@@ -152,17 +152,16 @@ The text above stays as written; this section records what changed. All wishes, 
 - **A new kind of wish: consistent edits to an existing model's geometry.** Move the whole model with
   its supports and loads; add piles like the existing ones (length, section, beddings, supports);
   connect them with a hinge. The value is that nothing is forgotten.
-- **The reader does not cover that yet.** `src/llsm/scia/esa_file.py` reads beams, line supports
-  (only counted per pile), nodes, plates, load groups, load cases, point forces and free surface
-  loads. It does not read point supports, hinges, line loads on beams, loads on plates or combination
-  contents. Without them LLSM cannot check a move or a pile copy afterwards, so reading them comes
-  before any geometry write.
+- **The reader does not cover that yet.** It does not read point supports, hinges, line loads on
+  beams, loads on plates or combination contents (full list: [14](14-wishes.md) §2). Without them
+  LLSM cannot check a move or a pile copy afterwards, so reading them comes before any geometry write.
 - **Results to IDEA** now has a 1D-member ask as well as Berber's plates ([11](11-plan-results-to-idea.md) §8).
 - **A document to load cases** (the new belastingnota for kademuren) is a later item: it needs a
   general load-case writer for saved models and a confirmed table first.
 
 Proposed order:
-1. Read combination contents (type, case, factor) from a saved model.
+1. Read combination contents (type, case, factor) from a saved model; then edit factors in them
+   ([12](12-plan-combinations.md) §8), and only after that propose new ones (12 §1).
 2. Read point supports, hinges, line loads on beams and loads on plates, each checked against
    SCIA's own object log, as was done for the loads (`docs/verify/phase3-moving-load.md`).
 3. Geometry spike on a copy: can the XML update change node coordinates, add members and add hinges
