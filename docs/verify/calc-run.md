@@ -347,3 +347,15 @@ So `push_model` now saves a probe copy after the push and looks for the model's 
 the same way. A missing case gives `not_landed: true`, a plain error, and LLSM closes its own SCIA but
 keeps the model, so `launch_scia` + `push_model` is the way back (a hub left by a failed push refuses
 the same names again).
+
+### Verification through the chat (2026-11-25)
+
+Claude Code (`claude -p`) with LLSM's MCP server from this branch, plain Dutch questions, no hints:
+
+| Question | What the chat did | Result |
+|---|---|---|
+| "Maak een ligger van 12 m op twee steunpunten, beton C30/37, 1000 x 600 mm, met 9 kN/m naar beneden. Reken hem door: wat zijn het grootste moment en de doorbuiging?" (before the landing check) | material "C30/37" with grade C30/37, pin + Z roller; first push did not land in SCIA, batch refused the case; the chat restarted and rebuilt | 162 kNm, -4.14 mm; led to the landing check above |
+| the same question (after the fix) | one push, roller held in Y and pin about X (said in the answer), one calculation in 32 s | 162 kNm at 6.0 m, -4.14 mm (hand 162 / 4.11); answer names the extra restraints and the calculated copy |
+| "Doorgaande stalen ligger S235 over drie steunpunten, twee velden van 12 m, doorsnede 1000 x 600 mm, 9 kN/m ..." | material "S235" found as S 235 (steel), one calculation in 29 s | -161.7 kNm over the middle support (hand 162), 90.8 kNm in the span (hand 91.1), -0.271 mm (hand 0.268) |
+
+No SCIA process was left afterwards.
