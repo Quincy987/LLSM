@@ -43,6 +43,13 @@ def test_upward_load_and_wrong_section_fail():
     assert checks["load"] is False and checks["section"] is False
 
 
+def test_a_swapped_section_fails():
+    _, exp = trial.PROMPTS["ligger"]
+    swapped = [{"tool": "add_rectangular_section", "ok": True,
+                "args": {"name": "S", "material": "C", "width_mm": 500, "height_mm": 300}}]
+    assert trial.score(_beam(["pinned", "roller"]), exp, swapped)["section"] is False
+
+
 def test_missing_results_are_not_counted_as_model_errors():
     events = [{"tool": "get_beam_inner_forces", "ok": False,
                "error": "no analysis results available - call run_analysis first"},

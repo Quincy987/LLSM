@@ -175,13 +175,13 @@ TOOL_DEFS = [
     },
     {
         "name": "push_model",
-        "description": "Open an empty SCIA project and push the current in-memory ADM model into it. Call AFTER all add_* tools.",
+        "description": "Open a copy of LLSM's start model in SCIA and push the in-memory ADM model into it. Call AFTER all add_* tools. Returns calc_estimate_s: tell the engineer how long run_analysis takes.",
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
         "name": "run_analysis",
-        "description": "Generate the FE mesh, run linear analysis and check that SCIA made results. ok is true only when results exist; with calculated false, tell the engineer the error text and do not call the result tools.",
-        "input_schema": {"type": "object", "properties": {}, "required": []},
+        "description": "Calculate the pushed model (SCIA's batch program on a saved copy). ok is true only when results came back. status running: call again. needs_confirmation: ask the engineer, then call with confirm=true. With calculated false, tell the engineer the error text and do not call the result tools.",
+        "input_schema": {"type": "object", "properties": {"confirm": {"type": "boolean", "description": "true after the engineer agreed to a long calculation."}}, "required": []},
     },
     {
         "name": "close_scia",
@@ -197,7 +197,7 @@ TOOL_NAMES = [t["name"] for t in TOOL_DEFS]
 TOOL_DEFS.extend([
     {
         "name": "get_beam_inner_forces",
-        "description": "Read beam internal forces (N, Vy, Vz, Mx, My, Mz per section) for a given load case. Forces in N, moments in N*m. Call AFTER run_analysis.",
+        "description": "Internal forces (N, Vy, Vz, Mx, My, Mz) of a member for a load case, from the last run_analysis: values_kN_kNm at positions_m, the member ends and extremes SCIA exports. Call AFTER run_analysis.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -209,7 +209,7 @@ TOOL_DEFS.extend([
     },
     {
         "name": "get_beam_deflection",
-        "description": "Read beam deformation (Ux, Uy, Uz, Fix, Fiy, Fiz per section) for a given load case. Translations in metres (multiply by 1000 for mm). Call AFTER run_analysis.",
+        "description": "Deflections of a member: not given yet (LLSM's materials carry no stiffness); the answer says why.",
         "input_schema": {
             "type": "object",
             "properties": {

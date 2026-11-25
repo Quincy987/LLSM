@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **De chat rekent een model door en leest de krachten terug.** Een model uit de chat komt in een kopie van het LLSM-startmodel; `run_analysis` laat SCIA's batchprogramma een opgeslagen kopie doorrekenen terwijl SCIA open blijft, op de manier van de VIKTOR-apps. Daarna geeft `get_beam_inner_forces` de krachten per staaf (uiteinden en extremen) in kN en kNm. De testligger van 2 x 12 m geeft 161,19 kNm boven de middensteun (handberekening 162), en na een wijziging naar 12 kN/m 214,93 kNm (hand 216). docs/verify/calc-run.md
+- **De chat zegt vooraf hoe lang het rekenen duurt.** `push_model` geeft een schatting uit de modelgrootte (gemeten: 35 s voor 2 staven, 150 s voor 200 staven met 10 belastinggevallen); boven 2 minuten vraagt `run_analysis` eerst om bevestiging. Duurt het langer dan één aanroep, dan rekent SCIA door en wacht een volgende `run_analysis` erop.
+- **`llsm start-model <template.esa>`** zet het startmodel eenmalig klaar (een SCIA-24-kopie van het model van de kademuren-app, met een gecontroleerde resultatenexport); `llsm diagnose` meldt of het er is.
+
+### Changed
+- **Resultaten horen bij één modelversie.** Elke push en elke wijziging maakt eerdere resultaten ongeldig, ook van een berekening die nog loopt: die wordt weggegooid en gemeld, nooit getoond.
+- **Namen uit het startmodel worden geweigerd** (de materiaalbibliotheek van SCIA, de doorsneden, LG1, BG1): SCIA weigert ze of rekent het model dan stilletjes niet.
+- **Doorbuigingen worden niet gegeven**, met de reden: LLSM geeft materialen nog geen stijfheid mee, en SCIA rekent dan met een eigen standaard.
+- **Nog een keer `run_analysis` zonder wijziging rekent niet opnieuw**: de chat krijgt de vorige uitkomst terug. De schatting is grof: dezelfde ligger deed er bij het testen 23 tot 64 s over (schatting 30 s).
+- De rapportroute en de berekening delen de rekenstap; het lezen van SCIA's XML-export staat nu in het pakket.
+
+### Removed
+- De rekenopdracht via SCIA's koppeling en het uitlezen via de resultatenkoppeling: die doen op deze licentie niets (v0.3.18).
+
 ## v0.3.20 — Wishes in one register (2026-11-25)
 
 ### Documentation

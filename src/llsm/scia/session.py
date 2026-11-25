@@ -340,6 +340,33 @@ class SciaSession:
     def temp_folder(self) -> Path:
         return self._our_temp
 
+    @property
+    def own_pids(self) -> frozenset[int]:
+        """This session's SCIA processes: the ones a batch run may run alongside."""
+        return frozenset(self._owned_pids())
+
+    def save_project_as(self, target: Path, timeout_s: float = 300) -> bool:
+        """Save the open project to ``target`` (SCIA's IEnvESAProject.SaveToFile); the open project stays as it is.
+
+        A project made in an older SCIA asks "Gegevens converteren?" first: answered "Ja" here, for
+        this save only (it saves nothing otherwise). Returns SCIA's answer.
+        """
+        from .autoclick import CONVERT_QUESTION, ScopedAnswer
+
+        def _save() -> bool:
+            import clr
+            import EnvESA80
+            from System.Reflection import BindingFlags as BF
+            flags = BF.Public | BF.NonPublic | BF.Instance
+            wrapper = clr.GetClrType(type(self._proj)).GetField("ServiceWrapper", flags).GetValue(self._proj)
+            env = wrapper.GetType().GetField("MyEnvEsa", flags).GetValue(wrapper)
+            app = EnvESA80.IEnvESAApp(EnvESA80.IEnvESA(env).ESAApp)
+            project = EnvESA80.IEnvESAProject(app.get_ProjectByID(app.ActiveProjectID))
+            return bool(project.SaveToFile(str(target)))
+
+        with ScopedAnswer(self._owned_pids, CONVERT_QUESTION):
+            return self.submit(_save, timeout_s=timeout_s)
+
     def _log(self, msg: str) -> None:
         if self._verbose:
             print(f"[scia] {msg}")

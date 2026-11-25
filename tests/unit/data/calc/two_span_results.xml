@@ -1,0 +1,1474 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+
+<project xmlns="http://www.scia.cz">
+   
+   <def uri="results.xml.def"/>
+   
+   <container id="{8E5A5442-7217-460C-853D-9D35EC18FAB9}" t="DataSetSciaTom.EP_SelectedLC.1">
+      <table id="6D11EED4-D7AB-448C-BA87-DE0C5335AEC6" t="DataSetSciaTom.EP_SelectedLC.1" name="Resultaatklasses - Alle UGT">
+         <h>
+            <h0 t="Naam"/>
+            <h1 t="UniqueID"/>
+            <h2 t="AllType"/>
+            <h3 t="Type"/>
+            <h4 t="Fase"/>
+            <h5 t="Resultaten"/>
+            <h6 t="TypeUC_US"/>
+            <h7 t="TypeRC"/>
+            <h8 t="ID_MainLC"/></h>
+         <obj id="1" nm="Alle UGT">
+            <p0 v="Alle UGT"/>
+            <p1 v="{A59F3FE9-5C58-482B-A93C-B1304CA0EF32}"/>
+            <p2 t="">
+            <h>
+            <h0 t="All Type Name"/>
+            <h1 t="All Type GUID"/>
+            <h2 t="All Type All"/>
+            <h3 t="All Type Type"/>
+            <h4 t="All Type tUS"/>
+            <h5 t="All Type FilterType1"/>
+            <h6 t="All Type FilterType2"/>
+            <h7 t="All Type Size"/>
+            </h>
+            <row id="0">
+            <p0 v="Ultimate combination"/>
+            <p1 v="{0908D21F-481F-11D4-AB84-00C06C452330}"/>
+            <p2 v="1"/>
+            <p3 v="1001"/>
+            <p4 v="0"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="1">
+            <p0 v="Serviceability combination"/>
+            <p1 v="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}"/>
+            <p2 v="0"/>
+            <p3 v="1001"/>
+            <p4 v="1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="2">
+            <p0 v="Nonlinear ultimate combination"/>
+            <p1 v="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}"/>
+            <p2 v="0"/>
+            <p3 v="1002"/>
+            <p4 v="0"/>
+            <p5 v="1"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="3">
+            <p0 v="Nonlinear serviceability combination"/>
+            <p1 v="{1E28F6C2-DD8B-11D5-AA60-0050FC1D5C09}"/>
+            <p2 v="0"/>
+            <p3 v="1002"/>
+            <p4 v="0"/>
+            <p5 v="2"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="4">
+            <p0 v="Niet-lineaire BGT-combinatie"/>
+            <p1 v="{1E28F6C2-DD8B-11D5-AA60-0050FC1D5C09}"/>
+            <p2 v="0"/>
+            <p3 v="1002"/>
+            <p4 v="0"/>
+            <p5 v="2"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="5">
+            <p0 v="Stabiliteitcombinatie"/>
+            <p1 v="{B6CCD4B2-DDDC-11D5-AA60-0050FC1D5C09}"/>
+            <p2 v="0"/>
+            <p3 v="1011"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="6">
+            <p0 v="Betonvervormingscombinaties"/>
+            <p1 v="{18EC9088-B8DB-4015-85FE-2049A9DFAACF}"/>
+            <p2 v="0"/>
+            <p3 v="1003"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="7">
+            <p0 v="Fase"/>
+            <p1 v="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}"/>
+            <p2 v="0"/>
+            <p3 v="1001"/>
+            <p4 v="0"/>
+            <p5 v="3"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="8">
+            <p0 v="Resultaatklasses"/>
+            <p1 v="{8E5A5442-7217-460C-853D-9D35EC18FAB9}"/>
+            <p2 v="0"/>
+            <p3 v="30003"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="9">
+            <p0 v="Belastingsgeval"/>
+            <p1 v="{0908D21F-481F-11D4-AB84-00C06C452330}"/>
+            <p2 v="0"/>
+            <p3 v="1001"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="10">
+            <p0 v="UGT Combinatie"/>
+            <p1 v="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}"/>
+            <p2 v="1"/>
+            <p3 v="1001"/>
+            <p4 v="0"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="11">
+            <p0 v="Niet-lineaire UGT-combinatie"/>
+            <p1 v="{1E28F6C2-DD8B-11D5-AA60-0050FC1D5C09}"/>
+            <p2 v="0"/>
+            <p3 v="1002"/>
+            <p4 v="0"/>
+            <p5 v="1"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            </p2>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            <p8 v="0"/></obj>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="EABE93FA-D2AE-4D9B-9D1C-8E5762F2A61B" t="BasicResults.10.00.EP_InternalForces1D_Shell.1" name="Interne 1D-krachten">
+         <obj id="17" nm="Interne 1D-krachten"/>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="EB4F1FB5-E6EE-4E0F-AA1C-F3B19AB342F8" t="BasicResults.EP_Deformations1D_Shell.1" name="1D-vervormingen">
+         <obj id="20" nm="1D-vervormingen"/>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="13360EE0-CC2B-4CAD-95D4-70FC2D7808A7" t="BasicResults.10.00.EP_InternalForces2D_Shell.1" name="Interne 2D-krachten basis">
+         <obj id="26" nm="Interne 2D-krachten"/>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="13360EE0-CC2B-4CAD-95D4-70FC2D7808A7" t="BasicResults.10.00.EP_InternalForces2D_Shell.1" name="Interne 2D-krachten elementair">
+         <obj id="26" nm="Interne 2D-krachten"/>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="7AF32CA1-39F8-481C-97F8-A68EB308D149" t="BasicResults.10.00.EP_Displacement2D_Shell.1" name="2D-verplaatsing">
+         <obj id="32" nm="2D-verplaatsing"/>
+      </table>
+   </container>
+   
+   <container id="{8E5A5442-7217-460C-853D-9D35EC18FAB9}" t="DataSetSciaTom.EP_SelectedLC.1">
+      <table id="6D11EED4-D7AB-448C-BA87-DE0C5335AEC6" t="DataSetSciaTom.EP_SelectedLC.1" name="Resultaatklasses - Alle BGT">
+         <h>
+            <h0 t="Naam"/>
+            <h1 t="UniqueID"/>
+            <h2 t="Belasting"/>
+            <h3 t="AllType"/>
+            <h4 t="Type"/>
+            <h5 t="Fase"/>
+            <h6 t="Resultaten"/>
+            <h7 t="TypeUC_US"/>
+            <h8 t="TypeRC"/>
+            <h9 t="ID_MainLC"/></h>
+         <obj id="2" nm="Alle BGT">
+            <p0 v="Alle BGT"/>
+            <p1 v="{22E91848-D967-4188-96F3-2600EF1B6958}"/>
+            <p2 t="">
+            <h>
+            <h1 t="Load combi ID"/>
+            <h6 t="Case_InxLc"/>
+            <h7 t="Case_Type"/>
+            <h8 t="Case_Model"/>
+            <h9 t="Case_tUS"/>
+            </h>
+            <row id="0">
+            <p1 i="1" n="CB BG 01"/>
+            <p6 v="1"/>
+            <p7 v="1001"/>
+            <p8 v="1"/>
+            <p9 v="1"/>
+            </row>
+            <row id="1">
+            <p1 i="2" n="CB BG 02"/>
+            <p6 v="2"/>
+            <p7 v="1001"/>
+            <p8 v="1"/>
+            <p9 v="1"/>
+            </row>
+            </p2>
+            <p3 t="">
+            <h>
+            <h0 t="All Type Name"/>
+            <h1 t="All Type GUID"/>
+            <h2 t="All Type All"/>
+            <h3 t="All Type Type"/>
+            <h4 t="All Type tUS"/>
+            <h5 t="All Type FilterType1"/>
+            <h6 t="All Type FilterType2"/>
+            <h7 t="All Type Size"/>
+            </h>
+            <row id="0">
+            <p0 v="Belastingsgeval"/>
+            <p1 v="{0908D21F-481F-11D4-AB84-00C06C452330}"/>
+            <p2 v="0"/>
+            <p3 v="1001"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="1">
+            <p0 v="UGT Combinatie"/>
+            <p1 v="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}"/>
+            <p2 v="0"/>
+            <p3 v="1001"/>
+            <p4 v="0"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="2">
+            <p0 v="BGT-combinatie"/>
+            <p1 v="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}"/>
+            <p2 v="1"/>
+            <p3 v="1001"/>
+            <p4 v="1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="3">
+            <p0 v="Niet-lineaire UGT-combinatie"/>
+            <p1 v="{1E28F6C2-DD8B-11D5-AA60-0050FC1D5C09}"/>
+            <p2 v="0"/>
+            <p3 v="1002"/>
+            <p4 v="0"/>
+            <p5 v="1"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="4">
+            <p0 v="Niet-lineaire BGT-combinatie"/>
+            <p1 v="{1E28F6C2-DD8B-11D5-AA60-0050FC1D5C09}"/>
+            <p2 v="0"/>
+            <p3 v="1002"/>
+            <p4 v="0"/>
+            <p5 v="2"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="5">
+            <p0 v="Stabiliteitcombinatie"/>
+            <p1 v="{B6CCD4B2-DDDC-11D5-AA60-0050FC1D5C09}"/>
+            <p2 v="0"/>
+            <p3 v="1011"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="6">
+            <p0 v="Betonvervormingscombinaties"/>
+            <p1 v="{18EC9088-B8DB-4015-85FE-2049A9DFAACF}"/>
+            <p2 v="0"/>
+            <p3 v="1003"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="7">
+            <p0 v="Fase"/>
+            <p1 v="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}"/>
+            <p2 v="0"/>
+            <p3 v="1001"/>
+            <p4 v="0"/>
+            <p5 v="3"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="8">
+            <p0 v="Resultaatklasses"/>
+            <p1 v="{8E5A5442-7217-460C-853D-9D35EC18FAB9}"/>
+            <p2 v="0"/>
+            <p3 v="30003"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="2"/>
+            </row>
+            </p3>
+            <p4 v="0"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            <p8 v="0"/>
+            <p9 v="0"/></obj>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="EABE93FA-D2AE-4D9B-9D1C-8E5762F2A61B" t="BasicResults.10.00.EP_InternalForces1D_Shell.1" name="Interne 1D-krachten">
+         <obj id="17" nm="Interne 1D-krachten">
+            <p0 h="Resultaten over 1D-elementen:" t="">
+            <h>
+            <h0 t="Naam"/>
+            <h1 t="dx"/>
+            <h2 t="Belasting"/>
+            <h3 t="N"/>
+            <h4 t="V_y"/>
+            <h5 t="V_z"/>
+            <h6 t="M_x"/>
+            <h7 t="M_y"/>
+            <h8 t="M_z"/>
+            <h9 t="V_r"/>
+            </h>
+            <row id="0">
+            <p0 v="CB_Veld1"/>
+            <p1 v="0"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="47283.58984375"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="1">
+            <p0 v="CB_Veld1"/>
+            <p1 v="12"/>
+            <p2 v="CB BG 01/2"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="-67432.828125"/>
+            <p6 v="0"/>
+            <p7 v="-161193.90625"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="2">
+            <p0 v="CB_Veld1"/>
+            <p1 v="4.7999999999999998"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="4083.5859375"/>
+            <p6 v="0"/>
+            <p7 v="123281.203125"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="3">
+            <p0 v="CB_Veld2"/>
+            <p1 v="12"/>
+            <p2 v="CB BG 01/2"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="-40567.1796875"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="4">
+            <p0 v="CB_Veld2"/>
+            <p1 v="7.1999999999999993"/>
+            <p2 v="CB BG 01/2"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="2632.825927734375"/>
+            <p6 v="0"/>
+            <p7 v="91042.4375"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="5">
+            <p0 v="CB_Veld2"/>
+            <p1 v="0"/>
+            <p2 v="CB BG 01/2"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="67432.828125"/>
+            <p6 v="0"/>
+            <p7 v="-161193.90625"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            </p0>
+         </obj>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="EB4F1FB5-E6EE-4E0F-AA1C-F3B19AB342F8" t="BasicResults.EP_Deformations1D_Shell.1" name="1D-vervormingen">
+         <obj id="20" nm="1D-vervormingen">
+            <p0 h="Vervormingen" t="">
+            <h>
+            <h0 t="Naam"/>
+            <h1 t="dx"/>
+            <h2 t="Belasting"/>
+            <h3 t="u_x"/>
+            <h4 t="u_y"/>
+            <h5 t="u_z"/>
+            <h6 t="f_x"/>
+            <h7 t="f_y"/>
+            <h8 t="f_z"/>
+            <h9 t="U_total"/>
+            </h>
+            <row id="0">
+            <p0 v="CB_Veld1"/>
+            <p1 v="6"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="-0.0012867259792983532"/>
+            <p6 v="0"/>
+            <p7 v="-2.854999911505729e-05"/>
+            <p8 v="0"/>
+            <p9 v="0.0012867259792983532"/>
+            </row>
+            <row id="1">
+            <p0 v="CB_Veld2"/>
+            <p1 v="4.7999999999999998"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="0.0005481779808178544"/>
+            <p6 v="0"/>
+            <p7 v="-1.0707000001275446e-05"/>
+            <p8 v="0"/>
+            <p9 v="0.0005481779808178544"/>
+            </row>
+            <row id="2">
+            <p0 v="CB_Veld1"/>
+            <p1 v="10.800000000000001"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="-0.00032919200020842254"/>
+            <p6 v="0"/>
+            <p7 v="-0.00028014200506731868"/>
+            <p8 v="0"/>
+            <p9 v="0.00032919200020842254"/>
+            </row>
+            <row id="3">
+            <p0 v="CB_Veld1"/>
+            <p1 v="0"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="0.00036045600427314639"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            </p0>
+         </obj>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="13360EE0-CC2B-4CAD-95D4-70FC2D7808A7" t="BasicResults.10.00.EP_InternalForces2D_Shell.1" name="Interne 2D-krachten basis">
+         <obj id="26" nm="Interne 2D-krachten"/>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="13360EE0-CC2B-4CAD-95D4-70FC2D7808A7" t="BasicResults.10.00.EP_InternalForces2D_Shell.1" name="Interne 2D-krachten elementair">
+         <obj id="26" nm="Interne 2D-krachten"/>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="7AF32CA1-39F8-481C-97F8-A68EB308D149" t="BasicResults.10.00.EP_Displacement2D_Shell.1" name="2D-verplaatsing">
+         <obj id="32" nm="2D-verplaatsing"/>
+      </table>
+   </container>
+   
+   <container id="{8E5A5442-7217-460C-853D-9D35EC18FAB9}" t="DataSetSciaTom.EP_SelectedLC.1">
+      <table id="6D11EED4-D7AB-448C-BA87-DE0C5335AEC6" t="DataSetSciaTom.EP_SelectedLC.1" name="Resultaatklasses - Alle UGT+BGT">
+         <h>
+            <h0 t="Naam"/>
+            <h1 t="UniqueID"/>
+            <h2 t="Belasting"/>
+            <h3 t="AllType"/>
+            <h4 t="Type"/>
+            <h5 t="Fase"/>
+            <h6 t="Resultaten"/>
+            <h7 t="TypeUC_US"/>
+            <h8 t="TypeRC"/>
+            <h9 t="ID_MainLC"/></h>
+         <obj id="3" nm="Alle UGT+BGT">
+            <p0 v="Alle UGT+BGT"/>
+            <p1 v="{1725C66D-5FB4-4774-A298-17031A4CC40C}"/>
+            <p2 t="">
+            <h>
+            <h1 t="Load combi ID"/>
+            <h6 t="Case_InxLc"/>
+            <h7 t="Case_Type"/>
+            <h8 t="Case_Model"/>
+            <h9 t="Case_tUS"/>
+            </h>
+            <row id="0">
+            <p1 i="1" n="CB BG 01"/>
+            <p6 v="1"/>
+            <p7 v="1001"/>
+            <p8 v="1"/>
+            <p9 v="1"/>
+            </row>
+            <row id="1">
+            <p1 i="2" n="CB BG 02"/>
+            <p6 v="2"/>
+            <p7 v="1001"/>
+            <p8 v="1"/>
+            <p9 v="1"/>
+            </row>
+            </p2>
+            <p3 t="">
+            <h>
+            <h0 t="All Type Name"/>
+            <h1 t="All Type GUID"/>
+            <h2 t="All Type All"/>
+            <h3 t="All Type Type"/>
+            <h4 t="All Type tUS"/>
+            <h5 t="All Type FilterType1"/>
+            <h6 t="All Type FilterType2"/>
+            <h7 t="All Type Size"/>
+            </h>
+            <row id="0">
+            <p0 v="Belastingsgeval"/>
+            <p1 v="{0908D21F-481F-11D4-AB84-00C06C452330}"/>
+            <p2 v="0"/>
+            <p3 v="1001"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="1">
+            <p0 v="UGT Combinatie"/>
+            <p1 v="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}"/>
+            <p2 v="1"/>
+            <p3 v="1001"/>
+            <p4 v="0"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="2">
+            <p0 v="BGT-combinatie"/>
+            <p1 v="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}"/>
+            <p2 v="1"/>
+            <p3 v="1001"/>
+            <p4 v="1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="3">
+            <p0 v="Niet-lineaire UGT-combinatie"/>
+            <p1 v="{1E28F6C2-DD8B-11D5-AA60-0050FC1D5C09}"/>
+            <p2 v="0"/>
+            <p3 v="1002"/>
+            <p4 v="0"/>
+            <p5 v="1"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="4">
+            <p0 v="Niet-lineaire BGT-combinatie"/>
+            <p1 v="{1E28F6C2-DD8B-11D5-AA60-0050FC1D5C09}"/>
+            <p2 v="0"/>
+            <p3 v="1002"/>
+            <p4 v="0"/>
+            <p5 v="2"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="5">
+            <p0 v="Stabiliteitcombinatie"/>
+            <p1 v="{B6CCD4B2-DDDC-11D5-AA60-0050FC1D5C09}"/>
+            <p2 v="0"/>
+            <p3 v="1011"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="6">
+            <p0 v="Betonvervormingscombinaties"/>
+            <p1 v="{18EC9088-B8DB-4015-85FE-2049A9DFAACF}"/>
+            <p2 v="0"/>
+            <p3 v="1003"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="7">
+            <p0 v="Fase"/>
+            <p1 v="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}"/>
+            <p2 v="0"/>
+            <p3 v="1001"/>
+            <p4 v="0"/>
+            <p5 v="3"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="8">
+            <p0 v="Resultaatklasses"/>
+            <p1 v="{8E5A5442-7217-460C-853D-9D35EC18FAB9}"/>
+            <p2 v="0"/>
+            <p3 v="30003"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="3"/>
+            </row>
+            </p3>
+            <p4 v="0"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            <p8 v="0"/>
+            <p9 v="0"/></obj>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="EABE93FA-D2AE-4D9B-9D1C-8E5762F2A61B" t="BasicResults.10.00.EP_InternalForces1D_Shell.1" name="Interne 1D-krachten">
+         <obj id="17" nm="Interne 1D-krachten">
+            <p0 h="Resultaten over 1D-elementen:" t="">
+            <h>
+            <h0 t="Naam"/>
+            <h1 t="dx"/>
+            <h2 t="Belasting"/>
+            <h3 t="N"/>
+            <h4 t="V_y"/>
+            <h5 t="V_z"/>
+            <h6 t="M_x"/>
+            <h7 t="M_y"/>
+            <h8 t="M_z"/>
+            <h9 t="V_r"/>
+            </h>
+            <row id="0">
+            <p0 v="CB_Veld1"/>
+            <p1 v="0"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="47283.58984375"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="1">
+            <p0 v="CB_Veld1"/>
+            <p1 v="12"/>
+            <p2 v="CB BG 01/2"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="-67432.828125"/>
+            <p6 v="0"/>
+            <p7 v="-161193.90625"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="2">
+            <p0 v="CB_Veld1"/>
+            <p1 v="4.7999999999999998"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="4083.5859375"/>
+            <p6 v="0"/>
+            <p7 v="123281.203125"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="3">
+            <p0 v="CB_Veld2"/>
+            <p1 v="12"/>
+            <p2 v="CB BG 01/2"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="-40567.1796875"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="4">
+            <p0 v="CB_Veld2"/>
+            <p1 v="7.1999999999999993"/>
+            <p2 v="CB BG 01/2"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="2632.825927734375"/>
+            <p6 v="0"/>
+            <p7 v="91042.4375"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="5">
+            <p0 v="CB_Veld2"/>
+            <p1 v="0"/>
+            <p2 v="CB BG 01/2"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="67432.828125"/>
+            <p6 v="0"/>
+            <p7 v="-161193.90625"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            </p0>
+         </obj>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="EB4F1FB5-E6EE-4E0F-AA1C-F3B19AB342F8" t="BasicResults.EP_Deformations1D_Shell.1" name="1D-vervormingen">
+         <obj id="20" nm="1D-vervormingen">
+            <p0 h="Vervormingen" t="">
+            <h>
+            <h0 t="Naam"/>
+            <h1 t="dx"/>
+            <h2 t="Belasting"/>
+            <h3 t="u_x"/>
+            <h4 t="u_y"/>
+            <h5 t="u_z"/>
+            <h6 t="f_x"/>
+            <h7 t="f_y"/>
+            <h8 t="f_z"/>
+            <h9 t="U_total"/>
+            </h>
+            <row id="0">
+            <p0 v="CB_Veld1"/>
+            <p1 v="6"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="-0.0012867259792983532"/>
+            <p6 v="0"/>
+            <p7 v="-2.854999911505729e-05"/>
+            <p8 v="0"/>
+            <p9 v="0.0012867259792983532"/>
+            </row>
+            <row id="1">
+            <p0 v="CB_Veld2"/>
+            <p1 v="4.7999999999999998"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="0.0005481779808178544"/>
+            <p6 v="0"/>
+            <p7 v="-1.0707000001275446e-05"/>
+            <p8 v="0"/>
+            <p9 v="0.0005481779808178544"/>
+            </row>
+            <row id="2">
+            <p0 v="CB_Veld1"/>
+            <p1 v="10.800000000000001"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="-0.00032919200020842254"/>
+            <p6 v="0"/>
+            <p7 v="-0.00028014200506731868"/>
+            <p8 v="0"/>
+            <p9 v="0.00032919200020842254"/>
+            </row>
+            <row id="3">
+            <p0 v="CB_Veld1"/>
+            <p1 v="0"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="0.00036045600427314639"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            </p0>
+         </obj>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="13360EE0-CC2B-4CAD-95D4-70FC2D7808A7" t="BasicResults.10.00.EP_InternalForces2D_Shell.1" name="Interne 2D-krachten basis">
+         <obj id="26" nm="Interne 2D-krachten"/>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="13360EE0-CC2B-4CAD-95D4-70FC2D7808A7" t="BasicResults.10.00.EP_InternalForces2D_Shell.1" name="Interne 2D-krachten elementair">
+         <obj id="26" nm="Interne 2D-krachten"/>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="7AF32CA1-39F8-481C-97F8-A68EB308D149" t="BasicResults.10.00.EP_Displacement2D_Shell.1" name="2D-verplaatsing">
+         <obj id="32" nm="2D-verplaatsing"/>
+      </table>
+   </container>
+   
+   <container id="{8E5A5442-7217-460C-853D-9D35EC18FAB9}" t="DataSetSciaTom.EP_SelectedLC.1">
+      <table id="6D11EED4-D7AB-448C-BA87-DE0C5335AEC6" t="DataSetSciaTom.EP_SelectedLC.1" name="Resultaatklasses - CB BG 01">
+         <h>
+            <h0 t="Naam"/>
+            <h1 t="UniqueID"/>
+            <h2 t="Belasting"/>
+            <h3 t="AllType"/>
+            <h4 t="Type"/>
+            <h5 t="Fase"/>
+            <h6 t="Resultaten"/>
+            <h7 t="TypeUC_US"/>
+            <h8 t="TypeRC"/>
+            <h9 t="ID_MainLC"/></h>
+         <obj id="7" nm="CB BG 01">
+            <p0 v="CB BG 01"/>
+            <p1 v="{58426FD3-A9B3-4A85-8938-3D25E1E90CDB}"/>
+            <p2 t="">
+            <h>
+            <h1 t="Load combi ID"/>
+            <h6 t="Case_InxLc"/>
+            <h7 t="Case_Type"/>
+            <h8 t="Case_Model"/>
+            <h9 t="Case_tUS"/>
+            </h>
+            <row id="0">
+            <p1 i="1" n="CB BG 01"/>
+            <p6 v="0"/>
+            <p7 v="1001"/>
+            <p8 v="1"/>
+            <p9 v="1"/>
+            </row>
+            </p2>
+            <p3 t="">
+            <h>
+            <h0 t="All Type Name"/>
+            <h1 t="All Type GUID"/>
+            <h2 t="All Type All"/>
+            <h3 t="All Type Type"/>
+            <h4 t="All Type tUS"/>
+            <h5 t="All Type FilterType1"/>
+            <h6 t="All Type FilterType2"/>
+            <h7 t="All Type Size"/>
+            </h>
+            <row id="0">
+            <p0 v="Belastingsgeval"/>
+            <p1 v="{0908D21F-481F-11D4-AB84-00C06C452330}"/>
+            <p2 v="0"/>
+            <p3 v="1001"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="1">
+            <p0 v="UGT Combinatie"/>
+            <p1 v="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}"/>
+            <p2 v="0"/>
+            <p3 v="1001"/>
+            <p4 v="0"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="2">
+            <p0 v="BGT combinatie"/>
+            <p1 v="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}"/>
+            <p2 v="0"/>
+            <p3 v="1001"/>
+            <p4 v="1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="3">
+            <p0 v="Niet-lineaire UGT combinatie"/>
+            <p1 v="{1E28F6C2-DD8B-11D5-AA60-0050FC1D5C09}"/>
+            <p2 v="0"/>
+            <p3 v="1002"/>
+            <p4 v="0"/>
+            <p5 v="1"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="4">
+            <p0 v="Niet-lineaire BGT combinatie"/>
+            <p1 v="{1E28F6C2-DD8B-11D5-AA60-0050FC1D5C09}"/>
+            <p2 v="0"/>
+            <p3 v="1002"/>
+            <p4 v="0"/>
+            <p5 v="2"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="5">
+            <p0 v="Stabiliteitcombinatie"/>
+            <p1 v="{B6CCD4B2-DDDC-11D5-AA60-0050FC1D5C09}"/>
+            <p2 v="0"/>
+            <p3 v="1011"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="6">
+            <p0 v="Betonvervormingscombinaties"/>
+            <p1 v="{18EC9088-B8DB-4015-85FE-2049A9DFAACF}"/>
+            <p2 v="0"/>
+            <p3 v="1003"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="7">
+            <p0 v="Fase"/>
+            <p1 v="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}"/>
+            <p2 v="0"/>
+            <p3 v="1001"/>
+            <p4 v="0"/>
+            <p5 v="3"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="8">
+            <p0 v="Resultaatklasses"/>
+            <p1 v="{8E5A5442-7217-460C-853D-9D35EC18FAB9}"/>
+            <p2 v="0"/>
+            <p3 v="30003"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="5"/>
+            </row>
+            </p3>
+            <p4 v="0"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            <p8 v="0"/>
+            <p9 v="0"/></obj>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="EABE93FA-D2AE-4D9B-9D1C-8E5762F2A61B" t="BasicResults.10.00.EP_InternalForces1D_Shell.1" name="Interne 1D-krachten">
+         <obj id="17" nm="Interne 1D-krachten">
+            <p0 h="Resultaten over 1D-elementen:" t="">
+            <h>
+            <h0 t="Naam"/>
+            <h1 t="dx"/>
+            <h2 t="Belasting"/>
+            <h3 t="N"/>
+            <h4 t="V_y"/>
+            <h5 t="V_z"/>
+            <h6 t="M_x"/>
+            <h7 t="M_y"/>
+            <h8 t="M_z"/>
+            <h9 t="V_r"/>
+            </h>
+            <row id="0">
+            <p0 v="CB_Veld1"/>
+            <p1 v="12"/>
+            <p2 v="CB BG 01/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="-67432.828125"/>
+            <p6 v="0"/>
+            <p7 v="-161193.90625"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="1">
+            <p0 v="CB_Veld1"/>
+            <p1 v="4.7999999999999998"/>
+            <p2 v="CB BG 01/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="-2632.825927734375"/>
+            <p6 v="0"/>
+            <p7 v="91042.4375"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="2">
+            <p0 v="CB_Veld1"/>
+            <p1 v="0"/>
+            <p2 v="CB BG 01/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="40567.1796875"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="3">
+            <p0 v="CB_Veld2"/>
+            <p1 v="12"/>
+            <p2 v="CB BG 01/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="-40567.1796875"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="4">
+            <p0 v="CB_Veld2"/>
+            <p1 v="7.1999999999999993"/>
+            <p2 v="CB BG 01/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="2632.825927734375"/>
+            <p6 v="0"/>
+            <p7 v="91042.4375"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="5">
+            <p0 v="CB_Veld2"/>
+            <p1 v="0"/>
+            <p2 v="CB BG 01/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="67432.828125"/>
+            <p6 v="0"/>
+            <p7 v="-161193.90625"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            </p0>
+         </obj>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="EB4F1FB5-E6EE-4E0F-AA1C-F3B19AB342F8" t="BasicResults.EP_Deformations1D_Shell.1" name="1D-vervormingen">
+         <obj id="20" nm="1D-vervormingen">
+            <p0 h="Vervormingen" t="">
+            <h>
+            <h0 t="Naam"/>
+            <h1 t="dx"/>
+            <h2 t="Belasting"/>
+            <h3 t="u_x"/>
+            <h4 t="u_y"/>
+            <h5 t="u_z"/>
+            <h6 t="f_x"/>
+            <h7 t="f_y"/>
+            <h8 t="f_z"/>
+            <h9 t="U_total"/>
+            </h>
+            <row id="0">
+            <p0 v="CB_Veld1"/>
+            <p1 v="4.7999999999999998"/>
+            <p2 v="CB BG 01/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="-0.00077608897117897868"/>
+            <p6 v="0"/>
+            <p7 v="2.0215000404277816e-05"/>
+            <p8 v="0"/>
+            <p9 v="0.00077608897117897868"/>
+            </row>
+            <row id="1">
+            <p0 v="CB_Veld2"/>
+            <p1 v="12"/>
+            <p2 v="CB BG 01/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="-0.00024268399283755571"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="2">
+            <p0 v="CB_Veld1"/>
+            <p1 v="0"/>
+            <p2 v="CB BG 01/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="0.00024268399283755571"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            </p0>
+         </obj>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="13360EE0-CC2B-4CAD-95D4-70FC2D7808A7" t="BasicResults.10.00.EP_InternalForces2D_Shell.1" name="Interne 2D-krachten basis">
+         <obj id="26" nm="Interne 2D-krachten"/>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="13360EE0-CC2B-4CAD-95D4-70FC2D7808A7" t="BasicResults.10.00.EP_InternalForces2D_Shell.1" name="Interne 2D-krachten elementair">
+         <obj id="26" nm="Interne 2D-krachten"/>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="7AF32CA1-39F8-481C-97F8-A68EB308D149" t="BasicResults.10.00.EP_Displacement2D_Shell.1" name="2D-verplaatsing">
+         <obj id="32" nm="2D-verplaatsing"/>
+      </table>
+   </container>
+   
+   <container id="{8E5A5442-7217-460C-853D-9D35EC18FAB9}" t="DataSetSciaTom.EP_SelectedLC.1">
+      <table id="6D11EED4-D7AB-448C-BA87-DE0C5335AEC6" t="DataSetSciaTom.EP_SelectedLC.1" name="Resultaatklasses - CB BG 02">
+         <h>
+            <h0 t="Naam"/>
+            <h1 t="UniqueID"/>
+            <h2 t="Belasting"/>
+            <h3 t="AllType"/>
+            <h4 t="Type"/>
+            <h5 t="Fase"/>
+            <h6 t="Resultaten"/>
+            <h7 t="TypeUC_US"/>
+            <h8 t="TypeRC"/>
+            <h9 t="ID_MainLC"/></h>
+         <obj id="8" nm="CB BG 02">
+            <p0 v="CB BG 02"/>
+            <p1 v="{25B7A90A-1384-4026-AD4A-ECE3FA569C63}"/>
+            <p2 t="">
+            <h>
+            <h1 t="Load combi ID"/>
+            <h6 t="Case_InxLc"/>
+            <h7 t="Case_Type"/>
+            <h8 t="Case_Model"/>
+            <h9 t="Case_tUS"/>
+            </h>
+            <row id="0">
+            <p1 i="2" n="CB BG 02"/>
+            <p6 v="0"/>
+            <p7 v="1001"/>
+            <p8 v="1"/>
+            <p9 v="1"/>
+            </row>
+            </p2>
+            <p3 t="">
+            <h>
+            <h0 t="All Type Name"/>
+            <h1 t="All Type GUID"/>
+            <h2 t="All Type All"/>
+            <h3 t="All Type Type"/>
+            <h4 t="All Type tUS"/>
+            <h5 t="All Type FilterType1"/>
+            <h6 t="All Type FilterType2"/>
+            <h7 t="All Type Size"/>
+            </h>
+            <row id="0">
+            <p0 v="Belastingsgeval"/>
+            <p1 v="{0908D21F-481F-11D4-AB84-00C06C452330}"/>
+            <p2 v="0"/>
+            <p3 v="1001"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="1">
+            <p0 v="UGT Combinatie"/>
+            <p1 v="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}"/>
+            <p2 v="0"/>
+            <p3 v="1001"/>
+            <p4 v="0"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="2">
+            <p0 v="BGT combinatie"/>
+            <p1 v="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}"/>
+            <p2 v="0"/>
+            <p3 v="1001"/>
+            <p4 v="1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="3">
+            <p0 v="Niet-lineaire UGT combinatie"/>
+            <p1 v="{1E28F6C2-DD8B-11D5-AA60-0050FC1D5C09}"/>
+            <p2 v="0"/>
+            <p3 v="1002"/>
+            <p4 v="0"/>
+            <p5 v="1"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="4">
+            <p0 v="Niet-lineaire BGT combinatie"/>
+            <p1 v="{1E28F6C2-DD8B-11D5-AA60-0050FC1D5C09}"/>
+            <p2 v="0"/>
+            <p3 v="1002"/>
+            <p4 v="0"/>
+            <p5 v="2"/>
+            <p6 v="0"/>
+            <p7 v="1"/>
+            </row>
+            <row id="5">
+            <p0 v="Stabiliteitcombinatie"/>
+            <p1 v="{B6CCD4B2-DDDC-11D5-AA60-0050FC1D5C09}"/>
+            <p2 v="0"/>
+            <p3 v="1011"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="6">
+            <p0 v="Betonvervormingscombinaties"/>
+            <p1 v="{18EC9088-B8DB-4015-85FE-2049A9DFAACF}"/>
+            <p2 v="0"/>
+            <p3 v="1003"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="7">
+            <p0 v="Fase"/>
+            <p1 v="{C0FBF7E1-4A71-11D4-AB86-00C06C452330}"/>
+            <p2 v="0"/>
+            <p3 v="1001"/>
+            <p4 v="0"/>
+            <p5 v="3"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            </row>
+            <row id="8">
+            <p0 v="Resultaatklasses"/>
+            <p1 v="{8E5A5442-7217-460C-853D-9D35EC18FAB9}"/>
+            <p2 v="0"/>
+            <p3 v="30003"/>
+            <p4 v="-1"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="5"/>
+            </row>
+            </p3>
+            <p4 v="0"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            <p8 v="0"/>
+            <p9 v="0"/></obj>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="EABE93FA-D2AE-4D9B-9D1C-8E5762F2A61B" t="BasicResults.10.00.EP_InternalForces1D_Shell.1" name="Interne 1D-krachten">
+         <obj id="17" nm="Interne 1D-krachten">
+            <p0 h="Resultaten over 1D-elementen:" t="">
+            <h>
+            <h0 t="Naam"/>
+            <h1 t="dx"/>
+            <h2 t="Belasting"/>
+            <h3 t="N"/>
+            <h4 t="V_y"/>
+            <h5 t="V_z"/>
+            <h6 t="M_x"/>
+            <h7 t="M_y"/>
+            <h8 t="M_z"/>
+            <h9 t="V_r"/>
+            </h>
+            <row id="0">
+            <p0 v="CB_Veld1"/>
+            <p1 v="12"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="-60716.421875"/>
+            <p6 v="0"/>
+            <p7 v="-80596.9609375"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="1">
+            <p0 v="CB_Veld1"/>
+            <p1 v="4.7999999999999998"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="4083.5859375"/>
+            <p6 v="0"/>
+            <p7 v="123281.203125"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="2">
+            <p0 v="CB_Veld1"/>
+            <p1 v="0"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="47283.58984375"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="3">
+            <p0 v="CB_Veld2"/>
+            <p1 v="12"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="6716.4130859375"/>
+            <p6 v="0"/>
+            <p7 v="0"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            <row id="4">
+            <p0 v="CB_Veld2"/>
+            <p1 v="0"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="6716.4130859375"/>
+            <p6 v="0"/>
+            <p7 v="-80596.9609375"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            </p0>
+         </obj>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="EB4F1FB5-E6EE-4E0F-AA1C-F3B19AB342F8" t="BasicResults.EP_Deformations1D_Shell.1" name="1D-vervormingen">
+         <obj id="20" nm="1D-vervormingen">
+            <p0 h="Vervormingen" t="">
+            <h>
+            <h0 t="Naam"/>
+            <h1 t="dx"/>
+            <h2 t="Belasting"/>
+            <h3 t="u_x"/>
+            <h4 t="u_y"/>
+            <h5 t="u_z"/>
+            <h6 t="f_x"/>
+            <h7 t="f_y"/>
+            <h8 t="f_z"/>
+            <h9 t="U_total"/>
+            </h>
+            <row id="0">
+            <p0 v="CB_Veld1"/>
+            <p1 v="6"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="-0.0012867259792983532"/>
+            <p6 v="0"/>
+            <p7 v="-2.854999911505729e-05"/>
+            <p8 v="0"/>
+            <p9 v="0.0012867259792983532"/>
+            </row>
+            <row id="1">
+            <p0 v="CB_Veld2"/>
+            <p1 v="4.7999999999999998"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="0.0005481779808178544"/>
+            <p6 v="0"/>
+            <p7 v="-1.0707000001275446e-05"/>
+            <p8 v="0"/>
+            <p9 v="0.0005481779808178544"/>
+            </row>
+            <row id="2">
+            <p0 v="CB_Veld1"/>
+            <p1 v="10.800000000000001"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="-0.00032919200020842254"/>
+            <p6 v="0"/>
+            <p7 v="-0.00028014200506731868"/>
+            <p8 v="0"/>
+            <p9 v="0.00032919200020842254"/>
+            </row>
+            <row id="3">
+            <p0 v="CB_Veld1"/>
+            <p1 v="0"/>
+            <p2 v="CB BG 02/1"/>
+            <p3 v="0"/>
+            <p4 v="0"/>
+            <p5 v="0"/>
+            <p6 v="0"/>
+            <p7 v="0.00036045600427314639"/>
+            <p8 v="0"/>
+            <p9 v="0"/>
+            </row>
+            </p0>
+         </obj>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="13360EE0-CC2B-4CAD-95D4-70FC2D7808A7" t="BasicResults.10.00.EP_InternalForces2D_Shell.1" name="Interne 2D-krachten basis">
+         <obj id="26" nm="Interne 2D-krachten"/>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="13360EE0-CC2B-4CAD-95D4-70FC2D7808A7" t="BasicResults.10.00.EP_InternalForces2D_Shell.1" name="Interne 2D-krachten elementair">
+         <obj id="26" nm="Interne 2D-krachten"/>
+      </table>
+   </container>
+   
+   <container id="{5E047655-38D6-11D5-A97E-000000000000}" t="BasicResults.EP_ResultsTable.1">
+      <table id="7AF32CA1-39F8-481C-97F8-A68EB308D149" t="BasicResults.10.00.EP_Displacement2D_Shell.1" name="2D-verplaatsing">
+         <obj id="32" nm="2D-verplaatsing"/>
+      </table>
+   </container>
+</project>

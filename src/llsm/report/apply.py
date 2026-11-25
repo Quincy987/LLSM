@@ -17,7 +17,7 @@ from pathlib import Path
 
 from ..scia import esa_xml
 from ..scia.esa_file import EsaFormatError, LoadModel, ReportIndex, read_loads, read_report_index
-from ..scia.load_xml import build_case_classes_update
+from ..scia.calc import calc_timeout, lin_with_case_classes
 from ..scia.output_files import mark_failed, next_output_set
 from .check import ReportCheck, check_xlsx
 
@@ -44,11 +44,6 @@ class ReportRequest:
 def print_timeout(model_path: Path) -> float:
     """Seconds for one print: 3-7 min on the 36 MB plate, 4-8 min on a 50 MB model (spike)."""
     return 600 + 20 * model_path.stat().st_size / 1e6
-
-
-def calc_timeout(model_path: Path) -> float:
-    """Seconds for LIN and a save: 38-44 s on the plate, 107 s on a 50 MB model (spike)."""
-    return 300 + 10 * model_path.stat().st_size / 1e6
 
 
 def _base_result(action: str, model_path: Path, request: ReportRequest) -> dict:
@@ -317,14 +312,7 @@ def _classes_joined(check: ReportCheck, cases: list[str]) -> list[str]:
 def _calculated_copy(model_path: Path, folder: Path, request: ReportRequest, result: dict, runner: Runner) -> Path | None:
     """LIN on a copy (with the per-case result classes, if asked), saved in ``folder``."""
     calc = folder / "calculated.esa"
-    switches = []
-    if result["cases"]:
-        update = folder / "classes.xml"
-        update.write_text(build_case_classes_update(result["cases"]), encoding="utf-8")
-        shutil.copyfile(esa_xml.RESULT_CLASSES_DEF_FILE, folder / esa_xml.RESULT_CLASSES_DEF_FILE.name)
-        switches.append(str(update))
-    switches += ["-tESA", f"-o{calc}"]
-    run = runner(model_path, folder, "LIN", switches, calc_timeout(model_path))
+    run = lin_with_case_classes(model_path, folder, result["cases"], ["-tESA", f"-o{calc}"], calc_timeout(model_path), runner)
     result["esa_xml"].append({"step": "calculate (LIN) on a copy", "message": run.message, "seconds": round(run.seconds, 1)})
     if not run.succeeded or not calc.exists():
         result["problems"].append(f"The linear calculation on the copy failed: {run.message}. {_log_tail(run.log)}".strip())

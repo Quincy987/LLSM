@@ -1,6 +1,6 @@
 # LLSM — Local LLM for SCIA Model
 
-Drive **SCIA Engineer** via natural language. An engineer types *"build a 6m x 4m steel portal frame with fixed bases and 5 kN/m gravity on the rafter"*, and LLSM builds the model and puts it in SCIA with a mesh. Calculating it from the chat does not work on the gemeente's SCIA licence yet ([`docs/verify/calc-run.md`](docs/verify/calc-run.md)).
+Drive **SCIA Engineer** via natural language. An engineer types *"build a 2-span concrete beam of 2 x 12 m with 9 kN/m traffic"*, and LLSM builds the model, puts it in SCIA with a mesh, calculates a copy with SCIA's batch program and reads the forces back ([`docs/verify/calc-run.md`](docs/verify/calc-run.md)).
 
 Inspired by VibeModel (the Revit equivalent, internal).
 
@@ -11,7 +11,7 @@ Inspired by VibeModel (the Revit equivalent, internal).
 Every release and what it changed: [`CHANGELOG.md`](CHANGELOG.md).
 
 - ✅ **Build a model from a chat** (chat → ADM model → SCIA with a mesh): chat panel, CLI and an MCP server (32 tools in all), Claude Code / API / OpenAI / Gemini / local backends. [`docs/06-phase0-results.md`](docs/06-phase0-results.md)
-- ❌ **Calculate it from the chat and read forces back**: on this licence SCIA calculates nothing for the OpenAPI, and its results API returns nothing; `run_analysis` says so instead of reporting ok. [`docs/verify/calc-run.md`](docs/verify/calc-run.md)
+- ✅ **Calculate a chat-built model and read the forces back**: pushed into a copy of LLSM's start model (`llsm start-model <template.esa>`, once per computer), a saved copy is calculated by SCIA's batch program while SCIA stays open; about 30 s for a small model, 150 s for 200 members with 10 load cases. Forces per member at its ends and extremes; deflections not yet. [`docs/verify/calc-run.md`](docs/verify/calc-run.md)
 - ✅ **Beddings on a saved model** (v0.3.6): soil layers onto the piles, a checked new file next to the model. [`docs/verify/phase1-bedding.md`](docs/verify/phase1-bedding.md)
 - ✅ **Pilot readiness** (v0.3.7): LLSM only manages the SCIA it started, `install.cmd`, `llsm diagnose`. [`docs/verify/phase2-pilot.md`](docs/verify/phase2-pilot.md)
 - ✅ **Moving load on a saved model** (v0.3.11): one load case per vehicle position along a road. [`docs/verify/phase3-moving-load.md`](docs/verify/phase3-moving-load.md)
@@ -259,5 +259,5 @@ Names are unique per model: an `add_*` with a name that already exists is refuse
 - Building a model from scratch: no point loads, surface loads or slabs yet (point and surface loads on a saved model: see Moving load).
 - LLSM writes no load combinations into a model, neither when building nor on a saved one ([`docs/12-plan-combinations.md`](docs/12-plan-combinations.md) is a proposal; the moving-load envelope is open). Only the report's chapter per load case uses one combination per case, on its throwaway print copy.
 - The OpenAPI cannot attach to a SCIA the engineer opened by hand, nor read back a model it did not build ([`docs/03-scia-integration.md`](docs/03-scia-integration.md)). So the saved-model routes work on the file through ESA_XML, with SCIA closed: beddings and moving load write a new `<model>_llsm-NN.esa` next to it; the report prints from a copy.
-- The chat cannot calculate a model or read forces back: the OpenAPI's calculation command is one SCIA allows for its own internal use only, and the results API returns nothing on this licence ([`docs/verify/calc-run.md`](docs/verify/calc-run.md)). Calculate in SCIA itself.
+- Calculating from the chat needs the start model (`llsm start-model`, see `llsm diagnose`). LLSM's materials carry no stiffness or weight yet: SCIA uses its default concrete (forces are right when all members share one material), deflections are not given, and steel models are not calculated. A single beam on a pin and a roller has no results (it can twist): give one end a fixed support. Support reactions are not read. The SCIA window itself stays uncalculated: the numbers come from a copy ([`docs/verify/calc-run.md`](docs/verify/calc-run.md)).
 - Single SCIA install assumed on the machine.

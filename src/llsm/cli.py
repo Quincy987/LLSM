@@ -18,6 +18,32 @@ import argparse
 import sys
 
 
+def start_model_main(argv: list[str]) -> int:
+    """``llsm start-model <template.esa>``: store LLSM's start model (scia/start_model.py)."""
+    import json
+
+    ap = argparse.ArgumentParser(prog="llsm start-model",
+                                 description="Store the SCIA project chat-built models are pushed into, so they can be calculated.")
+    ap.add_argument("template", help="A saved SCIA model with an XML IO document (e.g. the kademuren app's model.esa).")
+    ap.add_argument("--json", action="store_true", help="Machine-readable output.")
+    args = ap.parse_args(argv)
+    from llsm.scia import start_model
+
+    result = start_model.prepare(args.template)
+    if args.json:
+        print(json.dumps(result, indent=1))
+    else:
+        print(f"Start model: {result['start_model']} (saved by {result.get('saved_by')})")
+        if result.get("check"):
+            print(f"Results export: {'OK' if result['check']['ok'] else 'NOT OK'} ({result['check']['seconds']} s)")
+        if result.get("names_reserved") is not None:
+            print(f"Names the start model owns (refused in chat models): {result['names_reserved']}")
+        for problem in result["problems"]:
+            print(f"PROBLEM: {problem}")
+        print("OK" if result["ok"] else "NOT OK")
+    return 0 if result["ok"] else 1
+
+
 def main() -> int:
     # Before the parser: its `prompt` positional would swallow a subcommand.
     if len(sys.argv) > 1 and sys.argv[1] == "bedding":
@@ -29,6 +55,8 @@ def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "moving-load":
         from llsm.moving_load.cli import main as moving_load_main
         return moving_load_main(sys.argv[2:])
+    if len(sys.argv) > 1 and sys.argv[1] == "start-model":
+        return start_model_main(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "diagnose":
         from llsm.diagnose import main as diagnose_main
         return diagnose_main(sys.argv[2:])

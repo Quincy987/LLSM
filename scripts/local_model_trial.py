@@ -35,9 +35,10 @@ sys.path.insert(0, str(REPO / "src"))
 _NEUTRAL = {
     "launch_scia": {"ok": True},
     "push_model": {"ok": True},
-    "run_analysis": {"ok": True, "results_available": False,
-                     "note": "Results are not read back in this session; "
-                             "report the model that was built."},
+    # The shape the real tool gives when nothing was calculated (ok, calculated, error).
+    "run_analysis": {"ok": False, "calculated": False,
+                     "error": "Nothing is calculated in this session; "
+                              "report the model that was built."},
     "close_scia": {"ok": True},
 }
 
@@ -102,12 +103,13 @@ def score(snapshot: dict, expected: dict, events: list[dict]) -> dict[str, bool]
     sections = [e["args"] for e in events
                 if e["tool"] == "add_rectangular_section" and e.get("ok")]
 
-    def dims(a: dict) -> set[int]:
+    def dims(a: dict) -> tuple[int, ...]:
+        # In order: "300 x 500 mm" is 300 wide and 500 high; a swap is a different beam.
         try:
-            return {round(float(a.get("width_mm", 0))), round(float(a.get("height_mm", 0)))}
+            return (round(float(a.get("width_mm", 0))), round(float(a.get("height_mm", 0))))
         except Exception:
-            return set()
-    checks["section"] = any(dims(a) == set(expected["sec"]) for a in sections)
+            return ()
+    checks["section"] = any(dims(a) == tuple(expected["sec"]) for a in sections)
     kinds = [s.get("kind") for s in snapshot.get("supports", [])]
     rule = expected.get("support_rule")
     if rule == "all_fixed":

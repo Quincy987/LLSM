@@ -112,8 +112,14 @@ def running_scia() -> list[tuple[int, str]]:
     return found
 
 
-def assert_no_scia() -> None:
-    found = running_scia()
+def assert_no_scia(allow_pids: frozenset[int] = frozenset()) -> None:
+    """Refuse while any SCIA runs, except the processes in ``allow_pids``.
+
+    Only the calculation of a chat-built model passes its own session's SCIA here: ESA_XML ran
+    alongside it with identical results (docs/verify/calc-run.md). Every other caller keeps the
+    strict default.
+    """
+    found = [(pid, name) for pid, name in running_scia() if pid not in allow_pids]
     if found and all(pid in _own_pids() for pid, _ in found):
         raise SciaRunning("LLSM itself is running SCIA (ESA_XML) for another task right now, such as a report print; try again when that is done (report_status shows a print).")
     if found:
@@ -258,7 +264,8 @@ def stop_all() -> int:
     return len(running)
 
 
-def run_on_copy(source: Path, folder: Path, calc: str, switches: list[str], timeout: float) -> RunResult:
+def run_on_copy(source: Path, folder: Path, calc: str, switches: list[str], timeout: float,
+                allow_pids: frozenset[int] = frozenset()) -> RunResult:
     """Run ``ESA_XML <calc> <copy of source> <switches...>`` with the copy in ``folder``.
 
     ``calc`` is ESA_XML's calculation (NONE, LIN, ...). ``source`` is only ever read: ESA_XML
@@ -266,7 +273,7 @@ def run_on_copy(source: Path, folder: Path, calc: str, switches: list[str], time
     Paths in ``switches`` must be absolute: ESA_XML runs from its install folder.
     """
     source = Path(source).resolve()
-    assert_no_scia()
+    assert_no_scia(allow_pids)
     assert_unlocked(source)
     exe = _esa_xml_exe()
     working_copy = Path(folder) / f"input-{time.time_ns()}.esa"
