@@ -62,10 +62,6 @@ class ModelCatalog:
         else:
             self._cache.pop(backend_kind, None)
 
-    def peek(self, backend_kind: str) -> list[ModelRef] | None:
-        """The list held for this kind, or None. Never fetches."""
-        return self._cache.get(backend_kind)
-
     def for_backend(self, backend_kind: str, backend=None) -> list[ModelRef]:
         if backend_kind in self._cache:
             return self._cache[backend_kind]

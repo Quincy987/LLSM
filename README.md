@@ -102,7 +102,7 @@ Any server that speaks the OpenAI Chat Completions API works. No cloud, no API k
 
 Notes for local models:
 
-- **Model size matters.** Measured on simple beam models ([`docs/verify/local-models.md`](docs/verify/local-models.md)): a 35B model (Qwen3.5-35B-A3B, ~15 GB) built a model in 18 of 18 runs and passed every check in 16; a 7B model passed 1 of 9. Use the 20-30 GB class (e.g. `qwen3-coder:30b`, `gpt-oss:20b`; not measured here), preferably with thinking off, and give the server a context of at least 8,000 tokens; a beam chat reached ~4,900.
+- **Model size matters.** Measured on simple beam models ([`docs/verify/local-models.md`](docs/verify/local-models.md)): a 35B model (Qwen3.5-35B-A3B, ~15 GB) built a model that passed every check in 17 of 18 runs, 16 of them with a final answer; a 7B model passed 1 of 9. Use the 20-30 GB class (e.g. `qwen3-coder:30b`, `gpt-oss:20b`; not measured here), preferably with thinking off, and give the server a context of at least 8,000 tokens; a beam chat reached ~4,900.
 - **Measure your own model** before relying on it: `.venv\Scripts\python scripts\local_model_trial.py --model qwen3-coder:30b` (Ollama's URL is the default; `--base-url` for another server).
 - **SCIA tools are on** in a new local chat. **Tools → Enable SCIA tools for this chat** turns a chat into plain chat.
 - If the menu says *server not reachable*, the server is not running at the URL you entered; *server has no models* means it runs but has nothing pulled.

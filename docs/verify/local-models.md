@@ -6,9 +6,9 @@ the OpenAI-compatible API. Script: `scripts/local_model_trial.py`.
 ## Answer
 
 - **A 35B model builds simple beam models correctly through LLSM's local route.**
-  Qwen3.5-35B-A3B (Q3_K_S, ~15 GB): every one of 18 runs built a model, and 16 of 18 passed every
-  check. The two misses: one beam clamped at both ends instead of on two supports, and one run that
-  built a correct portal frame and then stopped without a final answer.
+  Qwen3.5-35B-A3B (Q3_K_S, ~15 GB): in 17 of 18 runs the built model passed every check, and 16
+  of 18 also ended with a final answer. The misses: one beam clamped at both ends instead of on two
+  supports, and one run that built a correct portal frame and then stopped without a final answer.
 - **A 7B model does not.** qwen2.5-7b-instruct (Q4_K_M, ~4.7 GB): 1 of 9 in the first spike. Its tool
   calls are well formed, but the structure is wrong: missing supports, a portal frame lying flat,
   loads pointing up, answers in English.

@@ -48,3 +48,14 @@ def test_missing_results_are_not_counted_as_model_errors():
                "error": "no analysis results available - call run_analysis first"},
               {"tool": "add_beam", "ok": False, "error": "KeyError: 'N9'"}]
     assert trial._model_errors(events) == 1
+
+
+def test_a_run_only_passes_with_a_correct_model_and_a_real_answer():
+    good = {"nodes": True, "load": True}
+    assert trial.judge(good, "Klaar.", None) == {"built": True, "answered": True, "passed": True}
+    assert trial.judge(good, "   ", None)["passed"] is False
+    assert trial.judge(good, "[ERROR] The model stopped", None)["passed"] is False
+    assert trial.judge(good, "Klaar.", "RuntimeError: x")["passed"] is False
+    assert trial.judge({"nodes": False}, "Klaar.", None) == \
+        {"built": False, "answered": True, "passed": False}
+    assert trial.judge({}, "Klaar.", None)["built"] is False

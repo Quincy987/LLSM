@@ -103,6 +103,18 @@ def score(snapshot: dict, expected: dict, events: list[dict]) -> dict[str, bool]
     return checks
 
 
+def judge(checks: dict[str, bool], reply: str, error: str | None) -> dict:
+    """The verdict of one run, derived only from its own record.
+
+    built:    every check on the built model holds.
+    answered: the chat ended with a real answer (not empty, not an error).
+    passed:   both.
+    """
+    built = bool(checks) and all(checks.values())
+    answered = not error and bool(reply.strip()) and not reply.startswith("[ERROR]")
+    return {"built": built, "answered": answered, "passed": built and answered}
+
+
 def _model_errors(events: list[dict]) -> int:
     return sum(
         1 for e in events
@@ -163,17 +175,16 @@ def main(argv: list[str] | None = None) -> int:
             row = dict(
                 request=key, rep=rep, seconds=round(seconds, 1), error=error,
                 tool_calls=len(events), model_errors=_model_errors(events),
-                empty_reply=not reply.strip(), stopped=reply.startswith("[ERROR]"),
-                checks=checks,
-                passed=all(checks.values()) and not error and not reply.startswith("[ERROR]"),
+                checks=checks, **judge(checks, reply, error),
                 reply=reply, events=events, snapshot=snapshot,
             )
             rows.append(row)
             failed = [k for k, v in checks.items() if not v]
+            no_answer = "" if row["answered"] else \
+                "  no answer: " + ((error or reply)[:90] or "(empty)")
             print(f"{key:9} #{rep}  {'PASS' if row['passed'] else 'FAIL'}  {seconds:5.0f} s  "
                   f"calls {len(events):2}  "
-                  f"{'checks off: ' + ', '.join(failed) if failed else ''}"
-                  f"{'  ' + (error or reply[:90]) if (error or row['stopped']) else ''}",
+                  f"{'checks off: ' + ', '.join(failed) if failed else ''}{no_answer}",
                   flush=True)
             try:
                 backend.close()
@@ -184,15 +195,17 @@ def main(argv: list[str] | None = None) -> int:
                                       indent=1, default=str), encoding="utf-8")
 
     print()
-    print(f"{'request':10}{'passed':>8}{'median s':>10}{'stopped':>9}")
+    print(f"{'request':10}{'built':>7}{'answered':>10}{'passed':>8}{'median s':>10}")
     for key in (args.only or list(PROMPTS)):
         mine = [r for r in rows if r["request"] == key]
         secs = sorted(r["seconds"] for r in mine)
         median = secs[len(secs) // 2] if secs else 0
-        print(f"{key:10}{sum(r['passed'] for r in mine):>5} / {len(mine):<2}"
-              f"{median:>8.0f}{sum(r['stopped'] or r['empty_reply'] for r in mine):>9}")
+        print(f"{key:10}{sum(r['built'] for r in mine):>7}{sum(r['answered'] for r in mine):>10}"
+              f"{sum(r['passed'] for r in mine):>8}{median:>10.0f}   of {len(mine)}")
     total = sum(r["passed"] for r in rows)
-    print(f"\n{args.model}: {total} of {len(rows)} models correct. Results: {out}")
+    built = sum(r["built"] for r in rows)
+    print(f"\n{args.model}: {total} of {len(rows)} runs passed (model built correctly and a "
+          f"final answer); {built} of {len(rows)} built correctly. Results: {out}")
     return 0 if total == len(rows) else 1
 
 

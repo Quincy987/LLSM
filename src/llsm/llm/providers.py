@@ -115,8 +115,9 @@ PROVIDERS: dict[str, ProviderSpec] = {
         static_models_path="llsm.llm.openai_compatible_backend:available_models",
         build_backend_path="llsm.llm.openai_compatible_backend:build_backend",
         # On: picking a local model from the menu must reach the route that
-        # was measured (a 35B model built 9 of 9 beam models; 7B models
-        # build wrong ones). The Tools menu toggle still switches it off.
+        # was measured (docs/verify/local-models.md: a 35B model builds simple
+        # beam models, 7B models build wrong ones). The Tools menu toggle
+        # still switches a chat to chat-only.
         default_tools_enabled=True,
         sdk_install_hint="pip install llsm[openai]",
     ),

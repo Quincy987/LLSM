@@ -75,6 +75,16 @@ class TurnOutcome:
     nudge: str | None = None
 
 
+_CUT_OFF_REASONS = {"length", "max_tokens"}
+_FILTERED_REASONS = {"content_filter", "safety", "recitation", "blocklist",
+                     "prohibited_content", "spii", "image_safety"}
+
+
+def _reason_name(finish_reason) -> str:
+    """'length', 'MAX_TOKENS', 'FinishReason.SAFETY' -> 'length', 'max_tokens', 'safety'."""
+    return str(finish_reason or "").rsplit(".", 1)[-1].strip().lower()
+
+
 def resolve_turn_without_tools(
     text: str | None,
     *,
@@ -82,23 +92,33 @@ def resolve_turn_without_tools(
     nudges_used: int,
     tool_calls_done: int,
     max_nudges: int = MAX_EMPTY_TURN_NUDGES,
+    stall_hint: str = "",
 ) -> TurnOutcome:
-    """Decide whether a no-tool-call turn is the answer, a cut-off, or a stall.
+    """Decide whether a no-tool-call turn is the answer, a cut-off, a block, or a stall.
 
     - Visible text: that is the answer, unchanged.
-    - Empty and cut off by the token limit (finish_reason "length" in the
-      OpenAI shape, "MAX_TOKENS" in Gemini's): say so.
+    - Empty and cut off by the token limit (OpenAI "length", Gemini
+      "MAX_TOKENS"): say so; asking again would hit the same limit.
+    - Empty and blocked by the provider's filter (OpenAI "content_filter",
+      Gemini "SAFETY" and the like): say so; nudging a filter is pointless.
     - Empty otherwise: nudge the model to continue, up to `max_nudges`
-      times per chat() call, then report that it stopped without an answer.
+      times per chat() call, then report that it stopped without an answer,
+      followed by `stall_hint` (backend-specific advice, may be empty).
     """
     clean = (text or "").strip()
     if clean:
         return TurnOutcome(answer=clean)
     calls = f"{tool_calls_done} tool call{'' if tool_calls_done == 1 else 's'}"
-    if str(finish_reason or "").lower() in ("length", "max_tokens", "finishreason.max_tokens"):
+    reason = _reason_name(finish_reason)
+    if reason in _CUT_OFF_REASONS:
         return TurnOutcome(answer=(
             f"[ERROR] The model's reply was cut off by its token limit before it "
-            f"gave an answer (after {calls}). Ask again to let it continue."
+            f"gave an answer (after {calls})."
+        ))
+    if reason in _FILTERED_REASONS:
+        return TurnOutcome(answer=(
+            f"[ERROR] The provider's content filter blocked the model's reply "
+            f"(after {calls}; finish reason {finish_reason})."
         ))
     if nudges_used < max_nudges:
         return TurnOutcome(nudge=EMPTY_TURN_NUDGE)
@@ -106,10 +126,11 @@ def resolve_turn_without_tools(
         f" and stayed silent when asked to continue ({nudges_used}x)"
         if nudges_used else ""
     )
+    hint = f" {stall_hint}" if stall_hint else ""
     return TurnOutcome(answer=(
         f"[ERROR] The model stopped without an answer after {calls}{asked}. "
-        "What it built so far is in the model overview; ask it to continue, "
-        "or use a larger model or one with thinking switched off."
+        f"What it built so far is kept (View > Show Model Sidebar); "
+        f"ask it to continue.{hint}"
     ))
 
 

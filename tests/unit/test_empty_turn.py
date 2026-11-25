@@ -50,6 +50,23 @@ def test_empty_turn_cut_off_by_the_token_limit_says_so(reason):
     assert "after 1 tool call)" in out.answer
 
 
+@pytest.mark.parametrize("reason", ["content_filter", "SAFETY", "FinishReason.SAFETY"])
+def test_empty_turn_blocked_by_a_filter_is_reported_not_nudged(reason):
+    out = resolve_turn_without_tools("", finish_reason=reason,
+                                     nudges_used=0, tool_calls_done=2)
+    assert out.nudge is None
+    assert out.answer.startswith("[ERROR] The provider's content filter blocked")
+
+
+def test_stall_hint_is_only_added_where_given():
+    plain = resolve_turn_without_tools("", finish_reason="stop", nudges_used=2,
+                                       tool_calls_done=3)
+    hinted = resolve_turn_without_tools("", finish_reason="stop", nudges_used=2,
+                                        tool_calls_done=3, stall_hint="Try X.")
+    assert "thinking" not in plain.answer and plain.answer.endswith("ask it to continue.")
+    assert hinted.answer.endswith("ask it to continue. Try X.")
+
+
 # ---------- the OpenAI-compatible loop ----------
 
 class _Fn:

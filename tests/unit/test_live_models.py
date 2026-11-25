@@ -142,7 +142,7 @@ def test_live_only_kind_never_asks_the_backend_and_reads_what_was_put():
     cat.put("oc", [ModelRef("oc", "qwen3")])
     assert [m.model_id for m in cat.for_backend("oc", _Backend())] == ["qwen3"]
     cat.put("oc", [])
-    assert cat.peek("oc") is None
+    assert cat.for_backend("oc", _Backend()) == []
 
 
 def test_static_list_providers_keep_their_behaviour():
@@ -185,8 +185,6 @@ class _Sync:
         self.pending = []
 
     def thread(self, target, args, **kw):
-        sync = self
-
         class _T:
             def start(self_):
                 target(*args)
@@ -316,10 +314,10 @@ def test_menu_rows_for_a_server_only_provider(server, monkeypatch):
 
         assert rows() == [("(loading models…)", "disabled")]
         sync.pump()  # the fetch lands: the listener rebuilds the cascade
-        assert [r[0] for r in rows()] == [
-            "[local:%d] qwen3:latest" % int(server.url.split(":")[2].split("/")[0]),
-            "[local:%d] qwen3-coder:30b" % int(server.url.split(":")[2].split("/")[0]),
-        ]
+        port = server.httpd.server_address[1]
+        assert rows() == [(f"[local:{port}] qwen3:latest", "normal"),
+                          (f"[local:{port}] qwen3-coder:30b", "normal")]
+
 
         server.ids = []
         builder._populate_models(); sync.pump()

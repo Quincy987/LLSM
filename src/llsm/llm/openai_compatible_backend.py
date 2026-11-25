@@ -35,6 +35,11 @@ from .tool_loop import (
 # No DEFAULT_MODEL — there is nothing universal here. Caller must set one.
 _FALLBACK_MODEL = "local-model"
 
+# Said after a stall: thinking models wrote their next tool call inside the
+# reasoning block and came back empty (docs/verify/local-models.md).
+_STALL_HINT = ("A larger local model, or one with thinking switched off, "
+               "stops less often.")
+
 
 def available_models():
     """Static fallback: empty, there is nothing universal across servers.
@@ -167,6 +172,7 @@ class OpenAICompatibleBackend:
                     finish_reason=getattr(choice, "finish_reason", None),
                     nudges_used=nudges,
                     tool_calls_done=tool_calls_done,
+                    stall_hint=_STALL_HINT,
                 )
                 if outcome.answer is not None:
                     return outcome.answer
