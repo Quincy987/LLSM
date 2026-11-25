@@ -136,6 +136,23 @@ fail-loud cases from §2.
   command, one test model generator, one verify doc. Reuses the ESA_XML runner and guards from the
   bedding work; touches no existing tool. Spike is the gate; the reorder-her-export path can ship alone.
 
+## 8. Follow-up scope: 1D members for a ULS section check (added 2026-11-25, Geert)
+Geert (mail 2026-11-24): "Kun je voor dit element op mogelijk maatgevende locaties voor een
+doorsnedetoets in UGT, de combinaties van optredende momenten, normaalkrachten en dwarskrachten
+klaarzetten om in IDEA in te kunnen voeren. Gebruik de basis grootheden." Together with Berber's
+plates this partly answers the TODO "Ask constructeurs how forces go to IDEA / peaks": both want
+the forces in IDEA's order, as concurrent sets. The peaks question stays open.
+- **In**: a saved, calculated `.esa`, one 1D member, ULS combinations or result classes.
+- **Out**: per candidate section, one row of concurrent M, N and V (basic magnitudes, as §3:
+  never maxima from different combinations in one row), in IDEA's input order, units in the header.
+- **Open question: who picks the sections.** Proposal: the tool lists, per component, the extreme
+  of M, N and V along the member with the two concurrent others, labelled with the section position
+  and the combination; the engineer picks the rows that go to IDEA. To ask Geert.
+- **Compare first**, as for plates: the toetsmodel's `scia_integration_strips_to_idea.py` already
+  picks one extreme per zone for its strips; check whether that rule fits 1D members.
+- **Depends on** results coming back from a saved model (§2 route) and, for chat-built models,
+  on calculation from the chat (`docs/verify/calc-run.md`). Register: `docs/14-wishes.md`.
+
 ## Prior attempts
 - Beam results via OpenAPI (`get_beam_inner_forces`): v0.3.4 fixed a TypeError, the `ResultKey`
   mapping miss on v24 is still open (docs/08 Phase A). Only works for models LLSM built live.

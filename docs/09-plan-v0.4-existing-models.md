@@ -143,6 +143,34 @@ substitute for SCIA's mobile-load module — it writes what is now copied by han
 - **Track G (plugin / live attach)**: still the end-state (memory: `project_direction`). One action only:
   ask SCIA support whether external-app registration is documented for 24/25. No code.
 
+### Update 2026-11-25: Geert's mail, and what it changes
+The text above stays as written; this section records what changed. All wishes, with status:
+[`14-wishes.md`](14-wishes.md).
+- **Combinations are no longer "one yes, one no".** Sebastiaan (10-30), Berber (11-12) and Geert
+  (11-24) ask for them; Sophie is against generating them all. Geert's ask is to *edit* factors in
+  combinations he made ([12](12-plan-combinations.md) §8), which her objection does not cover.
+- **A new kind of wish: consistent edits to an existing model's geometry.** Move the whole model with
+  its supports and loads; add piles like the existing ones (length, section, beddings, supports);
+  connect them with a hinge. The value is that nothing is forgotten.
+- **The reader does not cover that yet.** `src/llsm/scia/esa_file.py` reads beams, line supports
+  (only counted per pile), nodes, plates, load groups, load cases, point forces and free surface
+  loads. It does not read point supports, hinges, line loads on beams, loads on plates or combination
+  contents. Without them LLSM cannot check a move or a pile copy afterwards, so reading them comes
+  before any geometry write.
+- **Results to IDEA** now has a 1D-member ask as well as Berber's plates ([11](11-plan-results-to-idea.md) §8).
+- **A document to load cases** (the new belastingnota for kademuren) is a later item: it needs a
+  general load-case writer for saved models and a confirmed table first.
+
+Proposed order:
+1. Read combination contents (type, case, factor) from a saved model.
+2. Read point supports, hinges, line loads on beams and loads on plates, each checked against
+   SCIA's own object log, as was done for the loads (`docs/verify/phase3-moving-load.md`).
+3. Geometry spike on a copy: can the XML update change node coordinates, add members and add hinges
+   in an existing model, and do the supports and loads follow? Checked by reading back with 1–2.
+4. Copy piles (with beddings, supports, hinge), on top of the bedding tool.
+5. Forces for IDEA on 1D members, once results come back in the chat.
+6. Belastingnota to load cases.
+
 ## 4. VibeModel lessons carried into every phase
 Preview before write · work on a copy, never the original · read back and compare, never report success
 from the tool's own return value · structured errors with a hint and candidate names · domain knowledge

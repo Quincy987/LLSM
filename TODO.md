@@ -42,9 +42,19 @@ Plan: `docs/09-plan-v0.4-existing-models.md` (order) + `docs/08-plan-v0.4-vibemo
 
 ## People
 - [ ] Reply to the hands-on engineer: real geo table + model copy; confirm GEF; k variant/units
-- [ ] Ask constructeurs how forces go to IDEA / peaks
+- [ ] Ask constructeurs how forces go to IDEA / peaks (partly answered: Berber for plates, Geert for 1D members, docs/11 §8; peaks still open)
 - [ ] Remind the other engineers; mail the one not yet asked
 - [ ] Geotechnical colleague for layer rule + units
+- [ ] Geert: model copy with piles, his IDEA input for one section, the belastingnota (asked 2026-11-25, draft mail)
+
+## Wishes from Geert (docs/14, order in docs/09 update 2026-11-25)
+- [ ] Read combination contents (type, case, factor) from a saved model
+- [ ] Read point supports and hinges from a saved model, plus line loads on beams and loads on plates; check against SCIA's object log
+- [ ] Geometry spike on a copy: move nodes, add members and hinges via the XML update; do supports and loads follow (read back)
+- [ ] Edit factors in existing combinations of one kind (docs/12 §8)
+- [ ] Copy piles with length, section, beddings and supports; hinged connection
+- [ ] Concurrent M, N, V at candidate sections of a 1D member for IDEA (docs/11 §8)
+- [ ] Belastingnota to load cases, via a confirmed table
 
 ## Calculation from the chat (verify: docs/verify/calc-run.md)
 - [x] Find why results stay empty: hidden calculation is SCIA-internal only; variable case had load type Standard (now Static)
