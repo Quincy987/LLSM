@@ -13,7 +13,7 @@ import tempfile
 import threading
 import time
 
-from . import calc, start_model
+from . import calc, stability, start_model
 from .builder import DuplicateNameError, ModelBuilder, ReservedNameError
 from .autoclick import OLD_SECTIONS_QUESTION, ScopedAnswer, SciaDialogPending
 from .session import SciaSession
@@ -53,6 +53,9 @@ class LlsmContext:
         self.pushed_items: int = 0
         self.calc_job: str | None = None  # the last calculation job of this context
         self.lock = threading.Lock()  # results are stored from the calculation's thread
+        self.stability: stability.Stability | None = None  # the last check (push, edit, run_analysis)
+        self.synced_extras: dict | None = None  # the extra restraints SCIA has (push or edit sync)
+        self.stability_changed: bool = False  # the last edit changed the extras: its answer says so
 
     def model_changed(self) -> None:
         """A push or an edit: earlier results no longer describe the model."""
@@ -100,6 +103,7 @@ def _new_builder(name: str) -> ModelBuilder:
     found = start_model.find()
     if found is not None:
         builder.reserved = start_model.owned_names(found)
+        builder.library = start_model.material_grades(found)
     return builder
 
 
@@ -127,13 +131,31 @@ def new_model(ctx: LlsmContext, name: str = "LLSM_Model") -> dict:
     return {"ok": True, "model_name": name, "items": ctx.builder.item_count()}
 
 
-def add_material(ctx: LlsmContext, name: str, kind: str = "Steel") -> dict:
+UNGRADED = ("This material has no grade from SCIA's library, so SCIA calculates it with its default concrete "
+            "(E about 27 GPa): deflections are not given. Give a grade, e.g. C30/37 or S235.")
+UNVALIDATED = ("There is no start model on this computer, so the grade is not checked against SCIA's library "
+               "and the model cannot be calculated from the chat.")
+
+
+def add_material(ctx: LlsmContext, name: str, kind: str | None = None, grade: str | None = None) -> dict:
+    """A material. Its grade ("C30/37", "S235", or the name itself when that is a grade) is looked up in
+    SCIA's library; SCIA then calculates with that grade's stiffness and weight."""
     ctx.ensure_builder()
     try:
-        ctx.builder.add_material(name, kind=kind)
+        ctx.builder.add_material(name, kind=kind, grade=grade)
     except ValueError as exc:
         return _refused(name, exc)
-    return {"ok": True, "name": name, "kind": kind}
+    info = ctx.builder.grades[name]
+    out = {"ok": True, "name": name, "kind": info["kind"], "grade": info["grade"]}
+    if info.get("scia_name", name) != name:
+        out["scia_name"] = info["scia_name"]
+        out["note"] = (f"In SCIA it is called {info['scia_name']!r}: SCIA's library already has a material "
+                       f"{name!r}, and the same name makes SCIA drop the model. Keep using {name!r} here.")
+    if info["grade"] is None:
+        out["warning"] = UNGRADED
+    elif not info["validated"]:
+        out["warning"] = UNVALIDATED
+    return out
 
 
 def add_rectangular_section(ctx: LlsmContext, name: str, material: str, width_mm: float, height_mm: float) -> dict:
@@ -247,11 +269,32 @@ def _members_and_cases(ctx: LlsmContext) -> tuple[list[str], list[str]]:
     return [b["name"] for b in snap.get("beams") or []], [c["name"] for c in snap.get("load_cases") or []]
 
 
+def _check_stability(ctx: LlsmContext) -> stability.Stability:
+    """Find free motions, hold the unloaded ones with extra support restraints (stability.check)."""
+    report = stability.check(**ctx.builder.stability_input())
+    ctx.builder.apply_extras(report.extras)
+    ctx.stability = report
+    return report
+
+
+def _stability_fields(report: stability.Stability) -> dict:
+    out: dict = {}
+    if report.sentence():
+        out["also_held"] = {k: sorted(v) for k, v in report.extras.items()}
+        out["stability_note"] = report.sentence()
+    if report.refusals:
+        out["cannot_calculate"] = report.refusals
+    if report.warnings:
+        out["stability_warning"] = " ".join(report.warnings)
+    return out
+
+
 def push_model(ctx: LlsmContext) -> dict:
     """Open a copy of the start model (or SCIA's empty file without one) and push the ADM model into it."""
     if ctx.builder is None:
         return {"ok": False, "error": "no builder initialized — call new_model first"}
     sess = ctx.ensure_session()
+    report = _check_stability(ctx)  # before the push: SCIA gets the supports with their extra restraints
     ctx.builder.validate()
 
     import SCIA.OpenAPI.Utils as SciaUtils
@@ -296,6 +339,7 @@ def push_model(ctx: LlsmContext) -> dict:
     ctx.start_copy = template if start is not None else None
     _remove_old_start_copies(temp, keep=ctx.start_copy)
     ctx.pushed_items = ctx.builder.item_count()
+    ctx.synced_extras = ctx.builder.extras
     ctx.model_changed()
     members, cases = _members_and_cases(ctx)
     out = {"ok": not errors, "errors": errors, "items_pushed": ctx.pushed_items, "mesh_dirty": ctx.mesh_dirty,
@@ -304,6 +348,7 @@ def push_model(ctx: LlsmContext) -> dict:
         out["calc_estimate_s"] = calc.estimate_seconds(len(members), len(cases))
     else:
         out["warning"] = NO_START_MODEL
+    out.update(_stability_fields(report))
     return out
 
 
@@ -330,17 +375,21 @@ NO_START_MODEL = (
     "calculated from the chat. Once: `llsm start-model <template.esa>` (docs/verify/calc-run.md)."
 )
 NO_ROWS = (
-    "SCIA calculated a copy but gave no results for these members. Known causes: the model can move or "
-    "twist freely (a single span on a pin and a roller can rotate about its own axis: give one end a fixed "
-    "support), or a steel material (LLSM's steel materials are not calculated by SCIA yet)."
+    "SCIA calculated a copy but gave no results for these members. LLSM found no free motion in the model, "
+    "so the cause is unknown: check the model in SCIA (supports, members that do not share a node)."
 )
 STALE = ("The model was changed while SCIA calculated, so that result is thrown away. "
          "Call run_analysis again to calculate the model as it is now.")
 FROM_A_COPY = ("These numbers come from a calculated copy of the model; the SCIA window itself is not "
                "calculated. SCIA exports the member ends and the extremes per member, not every section.")
-MATERIAL_NOTE = ("LLSM gives its materials no stiffness or weight yet; SCIA uses its default concrete "
-                 "(self weight with 2500 kg/m3). Forces are right when all members share one material; "
-                 "deflections are not given.")
+MATERIAL_NOTE = ("Material {names} has no grade from SCIA's library: SCIA uses its default concrete for it "
+                 "(E about 27 GPa, 2500 kg/m3). Forces are right only when all members share one material; "
+                 "deflections are not given. Give a grade (e.g. C30/37, S235) to calculate with the real material.")
+
+
+def _material_note(ctx: LlsmContext) -> str | None:
+    ungraded = ctx.builder.ungraded_in_use() if ctx.builder is not None else []
+    return MATERIAL_NOTE.format(names=", ".join(ungraded)) if ungraded else None
 
 
 def _calc_status(job_id: str, wait_s: float | None = None) -> dict:
@@ -363,8 +412,9 @@ def _store_results(ctx: LlsmContext, version: int, run: dict, members: list[str]
             return {**base, "ok": False, "calculated": False, "error": error, "problems": run["problems"]}
         ctx.results = {"version": version, "cases": run["results"]}
         ctx.last_calc_ok = True
-    out = {**base, "ok": True, "calculated": True, "load_cases": cases, "members": len(members),
-           "note": FROM_A_COPY, "material_note": MATERIAL_NOTE}
+    out = {**base, "ok": True, "calculated": True, "load_cases": cases, "members": len(members), "note": FROM_A_COPY}
+    if _material_note(ctx):
+        out["material_note"] = _material_note(ctx)
     if without:
         out["members_without_results"] = without
         out["warning"] = NO_ROWS
@@ -409,6 +459,13 @@ def run_analysis(ctx: LlsmContext, confirm: bool = False) -> dict:
     members, cases = _members_and_cases(ctx)
     if not members or not cases:
         return {"ok": False, "calculated": False, "error": "The model has no member or no load case: nothing to calculate."}
+    report = _check_stability(ctx)
+    if report.refusals:  # SCIA would calculate for half a minute and give nothing
+        return {"ok": False, "calculated": False, "unstable": True, "error": " ".join(report.refusals)}
+    if ctx.builder.extras != ctx.synced_extras:
+        return {"ok": False, "calculated": False, **_stability_fields(report),
+                "error": "The supports LLSM holds extra changed since SCIA got the model: call push_model again, "
+                         "then run_analysis."}
     estimate = calc.estimate_seconds(len(members), len(cases))
     if estimate > calc.CONFIRM_ABOVE_S and not confirm:
         return {"ok": False, "calculated": False, "needs_confirmation": True, "calc_estimate_s": estimate,
@@ -477,6 +534,10 @@ def _propagate_edit(ctx: LlsmContext) -> str | None:
     """
     ctx.mesh_dirty = True
     ctx.model_changed()  # earlier results no longer describe the model
+    if ctx.builder is not None:
+        before = ctx.builder.extras
+        _check_stability(ctx)  # an edit can free or hold a motion: the extras follow the model
+        ctx.stability_changed = ctx.builder.extras != before
     if not ctx.project_opened or ctx.session is None:
         return None
     sess = ctx.session
@@ -500,12 +561,18 @@ def _propagate_edit(ctx: LlsmContext) -> str | None:
         return f"ADM updated but SCIA sync failed: {type(e).__name__}: {e}"
     if ok is False:
         return "TrySynchronizeModel returned False — SCIA may not have applied the edit"
+    ctx.synced_extras = ctx.builder.extras
     return None
 
 
-def _attach_warning(result: dict, warn: str | None) -> dict:
+def _attach_warning(ctx: LlsmContext, result: dict, warn: str | None) -> dict:
     if warn:
         result["sync_warning"] = warn
+    if getattr(ctx, "stability_changed", False) and ctx.stability is not None:
+        result.update(_stability_fields(ctx.stability))
+        if not ctx.stability.extras:
+            result["also_held"] = {}  # what LLSM held extra before is released again
+    ctx.stability_changed = False
     return result
 
 
@@ -535,6 +602,7 @@ def update_node(ctx: LlsmContext, name: str, x_mm: float, y_mm: float, z_mm: flo
                 "rolled_back": True, "dependent_beams": deps}
     warn = _propagate_edit(ctx)
     return _attach_warning(
+        ctx,
         {"ok": True, "name": name, "xyz_mm": [x_mm, y_mm, z_mm], "mesh_dirty": True},
         warn,
     )
@@ -605,7 +673,7 @@ def delete_object(ctx: LlsmContext, name: str, cascade: bool = False) -> dict:
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     warn = _propagate_edit(ctx)
-    return _attach_warning({"ok": True, "deleted": deleted, "mesh_dirty": True}, warn)
+    return _attach_warning(ctx, {"ok": True, "deleted": deleted, "mesh_dirty": True}, warn)
 
 
 def set_line_load_magnitude(ctx: LlsmContext, name: str, magnitude_kn_per_m: float) -> dict:
@@ -620,6 +688,7 @@ def set_line_load_magnitude(ctx: LlsmContext, name: str, magnitude_kn_per_m: flo
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
     warn = _propagate_edit(ctx)
     return _attach_warning(
+        ctx,
         {"ok": True, "name": name, "q_kNpm": magnitude_kn_per_m, "mesh_dirty": True},
         warn,
     )
@@ -637,6 +706,7 @@ def set_member_cross_section(ctx: LlsmContext, name: str, cross_section: str) ->
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
     warn = _propagate_edit(ctx)
     return _attach_warning(
+        ctx,
         {"ok": True, "name": name, "section": cross_section, "mesh_dirty": True},
         warn,
     )
@@ -657,6 +727,7 @@ def set_member_endpoints(ctx: LlsmContext, name: str, node_a: str, node_b: str) 
                 "rolled_back": True}
     warn = _propagate_edit(ctx)
     return _attach_warning(
+        ctx,
         {"ok": True, "name": name, "between": [node_a, node_b], "mesh_dirty": True},
         warn,
     )
@@ -671,9 +742,14 @@ RESULT_KINDS = ("inner_forces", "deformation")
 _DISPLAY = {"N": ("kN", 1e-3), "Vy": ("kN", 1e-3), "Vz": ("kN", 1e-3),
             "Mx": ("kNm", 1e-3), "My": ("kNm", 1e-3), "Mz": ("kNm", 1e-3)}
 DEFLECTION_NOT_GIVEN = (
-    "Deflections are not given yet: LLSM gives its materials no stiffness, so SCIA calculates with its own "
-    "default (the test beam deflected 2.2 x less than C30/37 by hand, docs/verify/calc-run.md). "
-    "Forces are not affected when all members share one material."
+    "Deflections are not given for this model: material {names} has no grade from SCIA's library, so SCIA "
+    "calculated it with its default concrete. Give every material a grade (e.g. C30/37, S235), push and "
+    "calculate again."
+)
+DEFLECTION_NOTE = (
+    "Displacements in the global axes (uz up positive). SCIA's export gives a few sections per member (its "
+    "ends and extremes; a member can miss some), not every section; model_extreme is the largest vertical "
+    "deflection of the whole model in this case."
 )
 
 
@@ -694,9 +770,9 @@ def _load_beam_result(ctx, beam_name: str, load_case: str, result_kind: str) -> 
     results, error = _results_or_error(ctx)
     if error is not None:
         return error
-    if result_kind == "deformation":
-        return {"ok": False, "calculated": True, "reliable": False, "error": DEFLECTION_NOT_GIVEN}
     case = results["cases"].get(load_case)
+    if result_kind == "deformation":
+        return _deflection(ctx, beam_name, load_case, case)
     if case is None:
         return {"ok": False, "error": f"no results for load case {load_case!r}; calculated cases: {sorted(results['cases'])}"}
     member = case.get(beam_name)
@@ -720,8 +796,40 @@ def _load_beam_result(ctx, beam_name: str, load_case: str, result_kind: str) -> 
         "summary_per_magnitude": summary,
         "values_kN_kNm": shown,
         "note": FROM_A_COPY,
-        "material_note": MATERIAL_NOTE,
+        **({"material_note": _material_note(ctx)} if _material_note(ctx) else {}),
     }
+
+
+def _deflection(ctx, beam_name: str, load_case: str, case: dict | None) -> dict:
+    """Deflections of one member in one case from the export, with the model's extreme (DEFLECTION_NOTE)."""
+    ungraded = ctx.builder.ungraded_in_use() if ctx.builder is not None else []
+    if ungraded:
+        return {"ok": False, "calculated": True, "reliable": False,
+                "error": DEFLECTION_NOT_GIVEN.format(names=", ".join(ungraded))}
+    if case is None:
+        return {"ok": False, "error": f"no results for load case {load_case!r}"}
+    if beam_name not in (b["name"] for b in ctx.builder.snapshot()["beams"]):
+        return {"ok": False, "error": f"no member named {beam_name!r}"}
+    extreme = None
+    for member, entry in case.items():
+        for r in entry["deformations"]:
+            if "Uz" in r and (extreme is None or abs(r["Uz"]) > abs(extreme["uz"])):
+                extreme = {"uz": r["Uz"], "member": member, "dx_m": r["dx_m"]}
+    rows = case.get(beam_name, {}).get("deformations", [])
+    out = {
+        "ok": True, "beam": beam_name, "load_case": load_case, "kind": "deformation", "reliable": True,
+        "positions_m": [round(r["dx_m"], 3) for r in rows],
+        "uz_mm": [round(r.get("Uz", 0.0) * 1e3, 3) for r in rows],
+        "rotations_mrad": {name: [round(r.get(name, 0.0) * 1e3, 4) for r in rows] for name in ("Fix", "Fiy", "Fiz")},
+        "note": DEFLECTION_NOTE,
+    }
+    if extreme is not None:
+        out["model_extreme"] = {"uz_mm": round(extreme["uz"] * 1e3, 3), "member": extreme["member"],
+                                "position_m": round(extreme["dx_m"], 3)}
+    if not rows:
+        out["no_rows"] = (f"SCIA's export has no deflection for {beam_name} in this case; model_extreme is the "
+                          "largest in the model.")
+    return out
 
 
 def get_beam_inner_forces(ctx: LlsmContext, beam: str, load_case: str) -> dict:
@@ -734,5 +842,8 @@ def get_beam_inner_forces(ctx: LlsmContext, beam: str, load_case: str) -> dict:
 
 
 def get_beam_deflection(ctx: LlsmContext, beam: str, load_case: str) -> dict:
-    """Deflections are not given yet (see DEFLECTION_NOT_GIVEN); the answer says why."""
+    """Deflections (mm) and rotations (mrad) of a member, with the model's largest deflection in that case.
+
+    Given only when every material a member uses has a grade from SCIA's library (DEFLECTION_NOT_GIVEN).
+    """
     return _load_beam_result(ctx, beam_name=beam, load_case=load_case, result_kind="deformation")

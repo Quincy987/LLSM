@@ -163,8 +163,11 @@ INSTRUCTIONS_BASE = (
     "Calculating a model built in the chat: push_model gives calc_estimate_s. Before run_analysis tell the "
     "engineer in their language that you calculate it and roughly how long it takes (e.g. 'ik reken het door, dat duurt ongeveer 40 s'). run_analysis may answer needs_confirmation (a long calculation): ask the engineer "
     "once, then call run_analysis(confirm=true). status running: call run_analysis again. With the results, say "
-    "they come from a calculated copy and the SCIA window itself is not calculated. Deflections and support "
-    "reactions are not available. A name refused as reserved belongs to LLSM's start model: pick another.\n\n"
+    "they come from a calculated copy and the SCIA window itself is not calculated. Support reactions are not "
+    "available. Give every material the grade the engineer names (add_material grade, or name 'C30/37', 'S235'); "
+    "without a grade deflections are not given. push_model may say LLSM holds a support in more directions "
+    "(stability_note): tell the engineer in one sentence. When run_analysis is refused as a mechanism, say what "
+    "can move and ask which support to add. A name refused as reserved belongs to LLSM's start model: pick another.\n\n"
     + ANSWER_RULES
 )
 
@@ -235,12 +238,20 @@ def _register_common_tools(mcp: FastMCP) -> None:
         """Start a fresh in-memory ADM model. Call this FIRST before adding anything."""
         return scia_tools.new_model(_ctx, name=name)
 
-    def add_material(name: str, kind: str = "Steel") -> dict:
-        """Add a material. kind: Steel, Concrete, Timber, or Aluminium."""
-        return scia_tools.add_material(_ctx, name=name, kind=kind)
+    def add_material(name: str, grade: str | None = None, kind: str | None = None) -> dict:
+        """Add a material with the grade the engineer gives (C30/37, C20/25, S235, S355, C24).
+
+        SCIA then calculates with that grade's stiffness and weight from its library. A name that is a grade
+        is its own grade (name='C30/37' is fine). kind (Steel, Concrete, Timber, Aluminium) follows from the
+        grade; give it only for a material without a grade (then SCIA uses its default concrete).
+        """
+        return scia_tools.add_material(_ctx, name=name, kind=kind, grade=grade)
 
     def add_rectangular_section(name: str, material: str, width_mm: float, height_mm: float) -> dict:
-        """Add a rectangular cross-section (width x height, mm)."""
+        """Add a rectangular cross-section, width x height in mm ('300 x 500' = width 300, height 500).
+
+        height is along the section's local z: vertical for a horizontal beam.
+        """
         return scia_tools.add_rectangular_section(_ctx, name=name, material=material,
                                                   width_mm=width_mm, height_mm=height_mm)
 
@@ -342,6 +353,8 @@ def _register_common_tools(mcp: FastMCP) -> None:
 
         Returns calc_estimate_s: tell the engineer roughly how long run_analysis takes. Without a start model
         on this computer the model goes into SCIA's empty file and cannot be calculated (warning says how).
+        stability_note: LLSM holds a support in more directions so the model cannot twist or swing (no load
+        acts there, the forces do not change); say it in one sentence. cannot_calculate: a mechanism.
         After edits, do NOT call this again — the edit tools auto-propagate; just call run_analysis."""
         return scia_tools.push_model(_ctx)
 
@@ -351,7 +364,8 @@ def _register_common_tools(mcp: FastMCP) -> None:
         ok is true only when SCIA's results came back. status "running" (ok null): call run_analysis again,
         each call waits up to 4 minutes. needs_confirmation: the calculation is long; ask the engineer, then
         call again with confirm=true. ok false with calculated false: tell the engineer the error text and do
-        not call the result tools. stale: the model changed meanwhile; call run_analysis again."""
+        not call the result tools. unstable: the model can move (a mechanism); say what can move and ask which
+        support to add. stale: the model changed meanwhile; call run_analysis again."""
         return scia_tools.run_analysis(_ctx, confirm=confirm)
 
     # --- Results ---
@@ -364,7 +378,12 @@ def _register_common_tools(mcp: FastMCP) -> None:
         return scia_tools.get_beam_inner_forces(_ctx, beam=beam, load_case=load_case)
 
     def get_beam_deflection(beam: str, load_case: str) -> dict:
-        """Deflections of a member: not given yet (LLSM's materials carry no stiffness); the answer says why."""
+        """Deflections of a member for a load case, from the last run_analysis.
+
+        uz_mm (global Z, up positive) and rotations_mrad at positions_m, the sections SCIA exports; model_extreme
+        is the largest vertical deflection in the model for that case. Given only when every material has a
+        grade; otherwise the answer names the material without one.
+        """
         return scia_tools.get_beam_deflection(_ctx, beam=beam, load_case=load_case)
 
     # --- Beddings on a saved model ---

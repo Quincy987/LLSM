@@ -178,15 +178,37 @@ class _Session:
 
 
 class _Builder:
-    def __init__(self, members=("CB_Veld1", "CB_Veld2"), cases=tuple(CASES)):
+    """The two-span test beam: pinned at A, Z rollers at B and C, so LLSM holds B in Y and A about X."""
+
+    def __init__(self, members=("CB_Veld1", "CB_Veld2"), cases=tuple(CASES), ungraded=()):
         self.members, self.cases = list(members), list(cases)
         self.items = 15
+        self.ungraded = list(ungraded)
+        self.supports = {"A": {"X", "Y", "Z"}, "B": {"Z"}, "C": {"Z"}}
+        self.extras: dict = {}
 
     def snapshot(self):
         return {"beams": [{"name": m} for m in self.members], "load_cases": [{"name": c} for c in self.cases]}
 
     def item_count(self):
         return self.items
+
+    def stability_input(self):
+        from llsm.scia.stability import Load, Support
+        nodes = {"A": (0.0, 0.0, 0.0), "B": (12000.0, 0.0, 0.0), "C": (24000.0, 0.0, 0.0)}
+        ends = [("A", "B"), ("B", "C")]
+        members = {m: ends[i % 2] for i, m in enumerate(self.members)}
+        return {"nodes": nodes, "members": members,
+                "supports": [Support(f"Sup-{n}", n, frozenset(h)) for n, h in self.supports.items()],
+                "loads": [Load(f"q{m}", m, (0.0, 0.0, -1.0)) for m in self.members]}
+
+    def apply_extras(self, extras):
+        new = {k: frozenset(v) for k, v in extras.items() if v}
+        changed, self.extras = new != self.extras, new
+        return changed
+
+    def ungraded_in_use(self):
+        return list(self.ungraded)
 
 
 @pytest.fixture
@@ -204,6 +226,9 @@ def _ctx(t, tmp_path, builder=None):
     ctx.project_opened, ctx.mesh_dirty = True, True
     ctx.start_copy = tmp_path / "start-copy.esa"
     ctx.pushed_items = ctx.builder.item_count()
+    tools_stability = t.stability.check(**ctx.builder.stability_input())
+    ctx.builder.apply_extras(tools_stability.extras)
+    ctx.synced_extras = dict(ctx.builder.extras)  # as push_model leaves it
     return ctx
 
 
@@ -232,20 +257,57 @@ def test_run_analysis_calculates_and_the_forces_come_from_the_results(tools, tmp
     assert "calculated cases" in tools.get_beam_inner_forces(ctx, "CB_Veld1", "nope")["error"]
 
 
-def test_deflections_are_refused_with_the_reason(tools, tmp_path, monkeypatch):
+def test_deflections_come_from_the_export_with_the_models_extreme(tools, tmp_path, monkeypatch):
     _fake_calculate(monkeypatch, tools)
     ctx = _ctx(tools, tmp_path)
     tools.run_analysis(ctx)
     out = tools.get_beam_deflection(ctx, "CB_Veld1", "CB BG 01")
-    assert out["ok"] is False and out["reliable"] is False and "stiffness" in out["error"]
+    assert out["ok"] is True and out["reliable"] is True, out
+    assert len(out["uz_mm"]) == len(out["positions_m"]) and set(out["rotations_mrad"]) == {"Fix", "Fiy", "Fiz"}
+    extreme = out["model_extreme"]
+    assert extreme["member"] in ("CB_Veld1", "CB_Veld2") and extreme["uz_mm"] < 0
+    every = [r["Uz"] * 1e3 for m in ctx.results["cases"]["CB BG 01"].values() for r in m["deformations"]]
+    assert abs(extreme["uz_mm"]) == pytest.approx(max(abs(v) for v in every), abs=1e-3)
+    assert "material_note" not in tools.get_beam_inner_forces(ctx, "CB_Veld1", "CB BG 01")
+
+
+def test_deflections_are_refused_while_a_material_has_no_grade(tools, tmp_path, monkeypatch):
+    _fake_calculate(monkeypatch, tools)
+    ctx = _ctx(tools, tmp_path, _Builder(ungraded=["Beton ligger"]))
+    out = tools.run_analysis(ctx)
+    assert "Beton ligger" in out["material_note"]
+    out = tools.get_beam_deflection(ctx, "CB_Veld1", "CB BG 01")
+    assert out["ok"] is False and out["reliable"] is False and "Beton ligger" in out["error"] and "grade" in out["error"]
+    assert "Beton ligger" in tools.get_beam_inner_forces(ctx, "CB_Veld1", "CB BG 01")["material_note"]
 
 
 def test_no_rows_is_not_a_calculation(tools, tmp_path, monkeypatch):
     _fake_calculate(monkeypatch, tools, ok=False)
     ctx = _ctx(tools, tmp_path)
     out = tools.run_analysis(ctx)
-    assert out["ok"] is False and out["calculated"] is False and "twist" in out["error"]
+    assert out["ok"] is False and out["calculated"] is False and "no results" in out["error"]
     assert tools.get_beam_inner_forces(ctx, "CB_Veld1", "CB BG 01")["ok"] is False
+
+
+def test_a_mechanism_is_refused_before_calculating(tools, tmp_path, monkeypatch):
+    _fake_calculate(monkeypatch, tools)
+    builder = _Builder()
+    builder.supports = {"A": {"Z"}, "B": {"Z"}, "C": {"Z"}}  # rollers only: free to slide
+    ctx = _ctx(tools, tmp_path, builder)
+    ctx.builder.stability_input = lambda: {**_Builder.stability_input(builder), "loads": [
+        tools.stability.Load("wind", "CB_Veld1", (1.0, 0.0, 0.0))]}
+    out = tools.run_analysis(ctx)
+    assert out["ok"] is False and out["unstable"] is True and "slide in X" in out["error"]
+    assert ctx.session.calls == []  # not even meshed
+
+
+def test_changed_extra_restraints_need_a_push_first(tools, tmp_path, monkeypatch):
+    _fake_calculate(monkeypatch, tools)
+    ctx = _ctx(tools, tmp_path)
+    assert ctx.builder.extras  # the test beam gets B in Y and A about X
+    ctx.synced_extras = {}  # SCIA got the model before these
+    out = tools.run_analysis(ctx)
+    assert out["ok"] is False and "push_model" in out["error"] and out["also_held"]
 
 
 def test_an_edit_during_the_calculation_throws_its_result_away(tools, tmp_path, monkeypatch):

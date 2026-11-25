@@ -28,16 +28,17 @@ from .esa_file import _table_of, iter_tables, names_in, saved_by_version
 ENV = "LLSM_START_MODEL"
 DEFAULT = Path.home() / ".llsm" / "start_model.esa"
 EXPORT_TABLE = "Interne 1D-krachten"   # the export must hold this table, per result class
+MATERIALS_TABLE = "EP_Material.EP_Material.1"
 # Tables whose names a chat model must not reuse (each continues in the blocks after its header).
 OWNED_TABLES = (
-    "EP_Material.EP_Material.1",
+    MATERIALS_TABLE,
     "EP_CrossSection.EP_CssGener.1",
     "DataSetScia.EP_LoadGroup.1",
     "DataSetScia.EP_LoadCase.1",
     "EP_DSG_Elements.EP_DataLayer.1",
 )
 _VERSION_STAMP = re.compile(r"^\+D_\d+_")
-_names_cache: dict[tuple[str, float], frozenset[str]] = {}
+_names_cache: dict[tuple[str, float], dict[str, tuple[str, ...]]] = {}
 
 
 def find() -> Path | None:
@@ -47,13 +48,13 @@ def find() -> Path | None:
     return path if path.is_file() else None
 
 
-def owned_names(path: Path) -> frozenset[str]:
-    """Every name the start model's materials, sections, load groups, load cases and layers use."""
+def _names_by_table(path: Path) -> dict[str, tuple[str, ...]]:
+    """The names in each OWNED_TABLES table of the start model, in file order, read once per file version."""
     path = Path(path)
     key = (str(path.resolve()), path.stat().st_mtime)
     if key in _names_cache:
         return _names_cache[key]
-    names: set[str] = set()
+    names: dict[str, list[str]] = {t: [] for t in OWNED_TABLES}
     current = None
     for chunk in iter_tables(path.read_bytes()):
         table = _table_of(chunk)
@@ -63,10 +64,21 @@ def owned_names(path: Path) -> frozenset[str]:
             continue
         for _, text in names_in(chunk)[(1 if table else 0):]:  # the first string of a header block is the header
             text = text.strip()
-            if text and "<" not in text and ">" not in text and not _VERSION_STAMP.match(text):
-                names.add(text)
-    _names_cache[key] = frozenset(names)
+            if len(text) > 1 and "<" not in text and ">" not in text and not _VERSION_STAMP.match(text):
+                if text not in names[current]:
+                    names[current].append(text)
+    _names_cache[key] = {t: tuple(v) for t, v in names.items()}
     return _names_cache[key]
+
+
+def owned_names(path: Path) -> frozenset[str]:
+    """Every name the start model's materials, sections, load groups, load cases and layers use."""
+    return frozenset(n for names in _names_by_table(path).values() for n in names)
+
+
+def material_grades(path: Path) -> tuple[str, ...]:
+    """The names of SCIA's material library in the start model ("C30/37", "S 235", ...): the grades."""
+    return _names_by_table(path)[MATERIALS_TABLE]
 
 
 def export_has_results_table(xml_text: str) -> bool:

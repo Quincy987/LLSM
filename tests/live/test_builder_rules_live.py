@@ -68,8 +68,15 @@ def test_action_type_and_duplicates_on_the_live_route(ctx):
     calc = tools.run_analysis(ctx, confirm=True)
     while calc.get("status") == "running":
         calc = tools.run_analysis(ctx, confirm=True)
-    # ok only with results, never ok without (docs/verify/calc-run.md). This model is steel, which SCIA does
-    # not calculate from LLSM's materials yet; without a start model nothing is calculated at all.
+    # ok only with results, never ok without (docs/verify/calc-run.md). Steel S 235 on a pin and a roller:
+    # LLSM holds the roller sideways and the pin against twisting, so it calculates (try 20). Without a
+    # start model nothing is calculated at all.
     assert calc["ok"] is calc.get("calculated"), calc
-    if not calc["ok"]:
-        assert calc["error"] in (tools.NOT_CALCULATED, tools.NO_ROWS), calc
+    from llsm.scia import start_model
+    if start_model.find() is None:
+        assert calc["error"] == tools.NOT_CALCULATED, calc
+        return
+    assert calc["ok"] is True and pushed["also_held"] == {"S2": ["Y"], "S1": ["RX"]}, (calc, pushed)
+    forces = tools.get_beam_inner_forces(ctx, "B1", "LC_q")
+    i = forces["positions_m"].index(3.0)
+    assert forces["values_kN_kNm"]["My (kNm)"][i] == pytest.approx(5 * 6 ** 2 / 8, rel=0.01)  # 22.5 kNm
