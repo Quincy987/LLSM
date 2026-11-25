@@ -159,8 +159,9 @@ already chose, everywhere at once, which is where hand work forgets one.
   equals the confirmed value, every other factor and every other combination is unchanged.
 - **Needs** the same missing piece as §1 and §3 R3, one step further: reading the *contents* of a
   combination (type, case, factor), not only its name. The writer half exists only for *new*
-  linear combinations (`build_case_classes_update` in `src/llsm/scia/load_xml.py`, used by the
-  report route); changing a factor in an existing combination, linear or code, is untested.
+  linear combinations at coefficient 1 (`build_case_classes_update` in `src/llsm/scia/load_xml.py`,
+  one case each, used by the report route; spike S8, three cases). A factor other than 1, and
+  changing a factor in an existing combination, linear or code, are untested.
 - **Open question for Geert's model copy**: are his SLS frequent combinations SCIA code
   combinations (SCIA applies ψ itself from the load groups) or linear ones with explicit factors?
   In a code combination a per-case factor would multiply on top of ψ, so "the factor" means
@@ -168,3 +169,6 @@ already chose, everywhere at once, which is where hand work forgets one.
 - **Sophie's objection does not apply**: she objected to generating all combinations; this mode
   generates none. The opt-in and propose-first rules of §0 still hold.
 - No factor data file needed: the engineer gives the new value, LLSM shows where it lands.
+- §7's "thin demand (1 yes, 1 no)" is out of date: Sebastiaan, Berber and Geert ask, Sophie is
+  against generating them all (`docs/14-wishes.md` §3). The gate of §7 (a model copy first, spike
+  first) still holds.

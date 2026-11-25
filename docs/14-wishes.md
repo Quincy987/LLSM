@@ -14,10 +14,11 @@ know yet what is wanted).
 
 | Who, date | Wish | Status | Backed by / plan | What blocks the rest |
 |---|---|---|---|---|
-| Sebastiaan, 10-30 | "beddingen uit een geotechnisch rapport/som/excel-export toepassen op de palen in een model" | works | `src/llsm/bedding/`, tools `bedding_preview` / `bedding_apply`, CLI `llsm bedding`; `docs/verify/phase1-bedding.md`; [09](09-plan-v0.4-existing-models.md) Phase 1 | GEF directly: not yet ([09](09-plan-v0.4-existing-models.md) Phase 4) |
+| Sebastiaan, 10-30 | "beddingen uit een geotechnisch rapport/som/excel-export toepassen op de palen in een model" | works | `src/llsm/bedding/`, tools `bedding_preview` / `bedding_apply`, CLI `llsm bedding`; `docs/verify/phase1-bedding.md`; [09](09-plan-v0.4-existing-models.md) Phase 1 | Input is a layer table: in the chat the AI fills it from what the engineer pastes or attaches; the CLI takes .csv or .json. No reader for a geo calculation file or GEF ([09](09-plan-v0.4-existing-models.md) Phase 4) |
 | Sophie, 11-06 | "Ik haat echt beddingen invoeren" … lagen "meer om de meter. Met een duidelijke omschrijving" … "met 1 druk op de knop" | partly | Same bedding tool: a layer table (NAP, k, description) goes on every pile in one write | Merging the kademuur tool's 20 cm steps from her "gif file" (probably GEF, to confirm: TODO People) into ~1 m layers is not built and needs a geotechnician's rule ([09](09-plan-v0.4-existing-models.md) Phase 4) |
-| Sebastiaan, 10-30 | "belastinggevallen en -combinaties genereren conform de normen" … "(vrijwel) foutloos de juiste belasting- en combinatiefactoren uit de norm overnemen" | not yet | [12](12-plan-combinations.md) (proposal) | The reader does not read combination contents (`src/llsm/scia/esa_file.py`); factor table needs a senior sign-off ([12](12-plan-combinations.md) §2) |
+| Sebastiaan, 10-30 | "belastinggevallen en -combinaties genereren conform de normen" … "Herkennen waar bepaalde belastinggevallen wel en niet van toepassing zijn, (vrijwel) foutloos de juiste belasting- en combinatiefactoren uit de norm overnemen" | not yet | [12](12-plan-combinations.md) (proposal) | The reader does not read combination contents (`src/llsm/scia/esa_file.py`); factor table needs a senior sign-off ([12](12-plan-combinations.md) §2) |
 | Sophie, 11-06 (against) | "Belastingsgevallen aanmaken of combinaties doe ik toch liever zelf … Ga niet alle combis maken." | rule | [12](12-plan-combinations.md) §0: opt-in, propose first, never "all" | — |
+| Sophie, 11-06 (against) | "Geometrie zie ik ook niet geautomatiseerd worden" | rule | The saved-model tools never create geometry; the chat builder for new models from a sentence exists, but is not pushed as the product ([09](09-plan-v0.4-existing-models.md) §1, "Deferred") | Geert's moves and pile copies (below) edit geometry the engineer made, on his instruction; they do not generate it |
 | Berber, 11-12 | "Jouw voorbeeld van de belastingcombinaties + beddingen zouden erg handig zijn." | partly | Beddings: as Sebastiaan's bedding row; combinations: as his combinations row | Combinations: as that row |
 | Sebastiaan, 10-30 | "resultaten in een excelbestand zetten die makkelijk in IDEA gekopieerd kan worden" | not yet | [11](11-plan-results-to-idea.md) (proposal) | See Berber and Geert below |
 | Sebastiaan, 11-06 | Forces often go into IDEA by hand: "je moet altijd rekening houden met pieken in krachtswerking" | open question | [11](11-plan-results-to-idea.md) §3 (peaks flagged, never smoothed) | How engineers treat peaks: nobody has answered yet. Geert (11-24, §2 item 5) says what goes into IDEA, not how peaks are handled |
@@ -66,9 +67,11 @@ loads or loads on plates.
    groups with point forces and free surface loads, and only the moving-load tool uses it; a
    kademuur's loads also need permanent groups, line loads and loads on plates or walls. Any route
    must show the cases from the document as a table the engineer confirms before writing.
-4. **Combination factors: not yet.** A linear combination can be written (`build_case_classes_update`
-   in `load_xml.py`; spike S8 in `docs/verify/phase3-moving-load.md`). Reading the contents of the
-   engineer's combinations is not built (TODO Phase 3 "Decode combinations in the reader").
+4. **Combination factors: not yet.** Only *new* linear combinations have been written: one case at
+   coefficient 1 each in shipped code (`build_case_classes_update` in `load_xml.py`), three cases at
+   1.0 in spike S8 (`docs/verify/phase3-moving-load.md`). A factor other than 1, and any change to an
+   existing combination, have never been written. Reading the contents of the engineer's
+   combinations is not built (TODO Phase 3 "Decode combinations in the reader").
 5. **Forces for IDEA: partly.** SCIA's own report prints the forces of a saved model that carries a
    report, on a copy calculated first if needed.
    Choosing the sections and putting the concurrent M, N and V together is not built
@@ -83,4 +86,5 @@ loads or loads on plates.
 - **Forces to IDEA**: Sebastiaan (10-30, 11-06), Berber (plates, 11-12), Geert (1D members, 11-24).
 - **Consistent edits to an existing model** (new with Geert): move everything, copy piles, hinge.
   The value is that nothing is forgotten, which only holds once LLSM can read back every object
-  that has to follow.
+  that has to follow. Sophie's "geometrie … niet geautomatiseerd" is about generating geometry, not
+  about these edits; worth checking with her once a move works.

@@ -151,7 +151,8 @@ The text above stays as written; this section records what changed. All wishes, 
   combinations he made ([12](12-plan-combinations.md) §8), which her objection does not cover.
 - **A new kind of wish: consistent edits to an existing model's geometry.** Move the whole model with
   its supports and loads; add piles like the existing ones (length, section, beddings, supports);
-  connect them with a hinge. The value is that nothing is forgotten.
+  connect them with a hinge. The value is that nothing is forgotten. This edits the engineer's own
+  geometry on request; the "geometry generation" no of §1 was about generating it.
 - **The reader does not cover that yet.** It does not read point supports, hinges, line loads on
   beams, loads on plates or combination contents (full list: [14](14-wishes.md) §2). Without them
   LLSM cannot check a move or a pile copy afterwards, so reading them comes before any geometry write.
@@ -167,7 +168,8 @@ Proposed order:
 3. Geometry spike on a copy: can the XML update change node coordinates, add members and add hinges
    in an existing model, and do the supports and loads follow? Checked by reading back with 1–2.
 4. Copy piles (with beddings, supports, hinge), on top of the bedding tool.
-5. Forces for IDEA on 1D members, once results come back in the chat.
+5. Forces for IDEA on 1D members, first from the report route's XLSX of a saved model
+   ([11](11-plan-results-to-idea.md) §8); chat-built models once calculation from the chat works.
 6. Belastingnota to load cases.
 
 ## 4. VibeModel lessons carried into every phase
