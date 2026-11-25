@@ -321,3 +321,12 @@ two-span beam the second span had only its end).
   calculating and says what can move. The sidebar keeps the support type the engineer asked for.
 - Deflections: `get_beam_deflection` gives uz (mm) and rotations (mrad) at the exported sections and the
   model's largest deflection in that case, when every material in use has a grade.
+
+### Verification of the build (2026-11-25)
+
+| Check | Result |
+|---|---|
+| Unit suite (`tests/unit`, new: `test_stability.py`, `test_grades.py`, `test_builder_supports.py`) | 622 passed, 2 skipped |
+| Live `tests/live/test_calc_live.py` | passed in 144 s: "C30/37" becomes "C30/37 (LLSM)" with grade C30/37, "S235" finds S 235, steel + C30/37 refused; push reports the roller held in Y and the pin about X; one calculation of three pin + roller beams in 34 s (estimate 35 s); 162 kNm within 1 % for the single span (C30/37 and S 235) and at the middle support of the two-span beam; the model's largest deflection within 3 % of 4.11 / 0.64 / 1.71 mm; after 12 kN/m the old result is gone, then 216 kNm within 1 % |
+| Live `tests/live/test_builder_rules_live.py` (steel S235, pin + roller, 6 m, 5 kN/m) | passed: calculated, 22.5 kNm at mid-span (hand 22.5); S2 held in Y, S1 about X |
+| Left behind | no SCIA process (SCIA's RPC finaliser noise at close, as before) |
