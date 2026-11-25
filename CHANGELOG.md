@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.21 — Calculate a chat-built model with real materials (2026-11-25)
+
 ### Added
 - **Materialen met hun echte stijfheid en gewicht.** Zeg de kwaliteit ("C30/37", "C20/25", "S235", "S355"), ook in een naam als "Beton C30/37", en LLSM zoekt hem op in SCIA's materiaalbibliotheek (hoofdletters en spaties maken niet uit); SCIA rekent dan met de E en het gewicht van die kwaliteit, voor beton en staal. Houtklassen (C24) en wapeningsstaal worden wel gevonden maar zijn niet gemeten: daarvoor geen doorbuigingen. Een onbekende kwaliteit wordt geweigerd met de dichtstbijzijnde namen; een soort die niet bij de kwaliteit past (staal met C30/37) ook, want SCIA negeert de kwaliteit dan stilletjes. Een materiaal mag gewoon "C30/37" heten. Gemeten op een ligger van 12 m, 1000 x 600 mm, 9 kN/m: 4,14 mm doorbuiging in C30/37 (hand 4,11), 0,647 mm in S 355 (hand 0,643), 3,74 mm in C45/55 (hand 3,72). docs/verify/calc-run.md
 - **Doorbuigingen in de chat.** `get_beam_deflection` geeft de doorbuiging (mm) en hoekverdraaiing (mrad) op de doorsneden die SCIA exporteert, plus de grootste doorbuiging van het model in dat belastinggeval. Alleen als elk gebruikt materiaal een kwaliteit heeft; anders noemt het antwoord het materiaal zonder.
