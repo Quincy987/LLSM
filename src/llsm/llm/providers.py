@@ -209,12 +209,33 @@ class ModelProbe:
     base_url: str = ""
 
 
-def _is_connection_error(exc: BaseException) -> bool:
-    if isinstance(exc, (ConnectionError, TimeoutError)):
-        return True
+def request_error_kind(exc: BaseException) -> str:
+    """Sort a failed request to a server into what the user can act on.
+
+    "timeout", "unreachable" (nothing listening, DNS, refused), "auth"
+    (401/403), "rate_limited" (429), "tools_unsupported" (the server or
+    model refuses the `tools` parameter: Ollama says "does not support
+    tools", llama-server without --jinja names the tools parameter), or
+    "other". Matched on class names and status codes so the SDK stays an
+    optional import here.
+    """
     names = {cls.__name__ for cls in type(exc).__mro__}
-    return bool(names & {"APIConnectionError", "APITimeoutError",
-                         "ConnectError", "ConnectTimeout", "ReadTimeout"})
+    # APITimeoutError subclasses APIConnectionError: test timeouts first.
+    if isinstance(exc, TimeoutError) or names & {
+            "APITimeoutError", "ConnectTimeout", "ReadTimeout", "TimeoutException"}:
+        return "timeout"
+    if isinstance(exc, ConnectionError) or names & {"APIConnectionError", "ConnectError"}:
+        return "unreachable"
+    status = getattr(exc, "status_code", None)
+    if status in (401, 403):
+        return "auth"
+    if status == 429 or "RateLimitError" in names:
+        return "rate_limited"
+    text = str(exc).lower()
+    if status is not None and "tool" in text and any(
+            w in text for w in ("support", "jinja", "not enabled", "not allowed")):
+        return "tools_unsupported"
+    return "other"
 
 
 def probe_models(
@@ -257,7 +278,8 @@ def probe_models(
         else:
             models = tuple(backend.available_models())
     except Exception as exc:
-        status = "unreachable" if _is_connection_error(exc) else "error"
+        kind = request_error_kind(exc)
+        status = "unreachable" if kind in ("timeout", "unreachable") else "error"
         return ModelProbe(status, error=f"{type(exc).__name__}: {exc}",
                           base_url=resolved_url)
     finally:

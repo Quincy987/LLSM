@@ -1,7 +1,7 @@
 """File menu cascade: New / Recent / Open History / Switch Model.
 
-Talks only to the session, store, and model catalog/usage. Never touches
-backends directly.
+Talks only to the session, store, model catalog/usage and the injected
+live-model fetcher. Never touches backends directly.
 """
 from __future__ import annotations
 

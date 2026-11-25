@@ -126,9 +126,8 @@ class OpenAICompatibleBackend:
         if not self.tools_enabled:
             return self._chat_no_tools()
 
-        # Best-effort tool loop. If the server doesn't support OpenAI's
-        # tools=[...] schema, the .create() call raises and we surface a
-        # clean message instead of crashing the panel.
+        # Best-effort tool loop. A failed request (server down, no tool
+        # support, ...) becomes one clear message instead of a crash.
         nudges = 0
         tool_calls_done = 0
         for _ in range(MAX_TOOL_ITERATIONS):
@@ -145,12 +144,7 @@ class OpenAICompatibleBackend:
                     tools=to_openai_tools(),
                 )
             except Exception as exc:
-                msg = (
-                    f"{self._host_label} doesn't support OpenAI-style tool calls "
-                    f"(or another error occurred): {type(exc).__name__}: {exc}. "
-                    "Disable 'Enable SCIA tools for this chat' under Tools."
-                )
-                raise RuntimeError(msg) from exc
+                raise self._request_failed(exc) from exc
             if self._cancelled.is_set():
                 raise CancelledError()
 
@@ -206,9 +200,7 @@ class OpenAICompatibleBackend:
                 stream=True,
             )
         except Exception as exc:
-            raise RuntimeError(
-                f"{self._host_label} request failed: {type(exc).__name__}: {exc}"
-            ) from exc
+            raise self._request_failed(exc) from exc
 
         self._current_stream = stream
         parts: list[str] = []
@@ -233,6 +225,30 @@ class OpenAICompatibleBackend:
         full = "".join(parts).strip()
         self._messages.append({"role": "assistant", "content": full})
         return full
+
+    def _request_failed(self, exc: Exception) -> RuntimeError:
+        """A failed request as a message that says what to do about it.
+
+        Only a refusal of the `tools` parameter points at the Tools toggle;
+        with tools on by default, "server not running" must not read as
+        "this server cannot do tool calls".
+        """
+        from .providers import request_error_kind
+        kind = request_error_kind(exc)
+        detail = f"{type(exc).__name__}: {exc}"
+        where = f"{self._host_label} ({self.base_url})"
+        text = {
+            "unreachable": f"{where} is not reachable. Is the server running? ({detail})",
+            "timeout": f"{where} did not answer in time. ({detail})",
+            "auth": f"{where} refused the API key. ({detail})",
+            "rate_limited": f"{where} is rate limiting requests; try again shortly. ({detail})",
+            "tools_unsupported": (
+                f"{where} or this model does not accept tool calls. Pick a model "
+                f"that supports tools, or turn off 'Enable SCIA tools for this "
+                f"chat' under Tools. ({detail})"
+            ),
+        }.get(kind, f"{where} request failed: {detail}")
+        return RuntimeError(text)
 
     def cancel(self) -> bool:
         was_running = self._current_stream is not None
