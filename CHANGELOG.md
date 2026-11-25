@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.3.20 — Wishes in one register (2026-11-25)
+
 ### Documentation
 - **Alle wensen van de constructeurs op één plek, met de stand van nu.** `docs/14-wishes.md` zet elke wens uit de mails (30-10 t/m 24-11) naast wat de code nu doet en welk plan erover gaat. De vijf vragen van Geert staan erin: model verschuiven, palen kopiëren en scharnieren, belastingnota inlezen, combinatiefactoren aanpassen, krachten voor IDEA. Combinaties gaan in het plan naar voren (drie collega's vragen erom). Ook in het plan: eerst moet LLSM opleggingen, scharnieren en de inhoud van combinaties leren lezen, anders kan het een verschuiving of gekopieerde paal achteraf niet controleren. Plannen bijgewerkt: docs/09 (volgorde), docs/11 §8 (staven naar IDEA), docs/12 §8 (bestaande combinaties aanpassen); TODO met de open punten. Geen codewijziging.
 
