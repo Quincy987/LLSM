@@ -241,6 +241,10 @@ class OpenAICompatibleBackend:
             "unreachable": f"{where} is not reachable. Is the server running? ({detail})",
             "timeout": f"{where} did not answer in time. ({detail})",
             "auth": f"{where} refused the API key. ({detail})",
+            "not_found": (
+                f"{where} answered 404: check that the URL ends in /v1 and that "
+                f"'{self.model}' is a model the server lists. ({detail})"
+            ),
             "rate_limited": f"{where} is rate limiting requests; try again shortly. ({detail})",
             "tools_unsupported": (
                 f"{where} or this model does not accept tool calls. Pick a model "

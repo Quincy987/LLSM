@@ -9,7 +9,8 @@ starting it, pushing the model and calculating are replaced by a neutral
 answer, so this measures the model, not SCIA. Three natural Dutch requests
 (a beam, a portal frame, a continuous beam) are each asked `--reps` times;
 every run is checked on what was actually built (nodes, members, supports,
-loads, span, load sign and size, section size).
+loads, span and node positions, height, load sign and size, section size,
+support type).
 
 Needs: the `openai` extra (`pip install -e .[openai]`) and SCIA Engineer
 installed (the model builder loads its libraries; SCIA does not start).
@@ -48,20 +49,21 @@ PROMPTS = {
     "ligger": (
         "Maak een betonnen ligger van 6 m op twee steunpunten, doorsnede 300 x 500 mm, "
         "met een gelijkmatige belasting van 10 kN/m naar beneden.",
-        dict(nodes=2, beams=1, supports=2, loads=1, span=6000, height=0,
+        dict(nodes=2, beams=1, supports=2, loads=1, span=6000, height=0, stations=(0, 6000),
              load=-10, sec=(300, 500), support_rule="not_clamped_both_ends"),
     ),
     "portaal": (
         "Maak een stalen portaal: twee kolommen van 4 m hoog die 8 m uit elkaar staan, "
         "ingeklemd aan de voet, met een ligger erbovenop. Doorsnede 200 x 400 mm. "
         "Zet 15 kN/m naar beneden op de ligger.",
-        dict(nodes=4, beams=3, supports=2, loads=1, span=8000, height=4000,
+        dict(nodes=4, beams=3, supports=2, loads=1, span=8000, height=4000, stations=(0, 8000),
              load=-15, sec=(200, 400), support_rule="all_fixed"),
     ),
     "doorgaand": (
         "Doorgaande stalen ligger over drie steunpunten, overspanningen 5 m en 7 m, "
         "doorsnede 200 x 400 mm, veranderlijke belasting 8 kN/m naar beneden op beide velden.",
         dict(nodes=3, beams=2, supports=3, loads=2, span=12000, height=0,
+             stations=(0, 5000, 12000),
              load=-8, sec=(200, 400), support_rule=None),
     ),
 }
@@ -70,6 +72,15 @@ PROMPTS = {
 def _extent(nodes: list[dict], axis: str) -> float:
     vals = [float(n.get(axis, 0) or 0) for n in nodes]
     return (max(vals) - min(vals)) if vals else 0.0
+
+
+def _stations(nodes: list[dict]) -> tuple[int, ...]:
+    """Distinct node positions along the longer horizontal axis, from 0."""
+    if not nodes:
+        return ()
+    axis = "x_mm" if _extent(nodes, "x_mm") >= _extent(nodes, "y_mm") else "y_mm"
+    vals = sorted({round(float(n.get(axis, 0) or 0)) for n in nodes})
+    return tuple(v - vals[0] for v in vals)
 
 
 def score(snapshot: dict, expected: dict, events: list[dict]) -> dict[str, bool]:
@@ -81,6 +92,10 @@ def score(snapshot: dict, expected: dict, events: list[dict]) -> dict[str, bool]
     horizontal = max(_extent(nodes, "x_mm"), _extent(nodes, "y_mm"))
     checks["span"] = abs(horizontal - expected["span"]) < 1
     checks["height"] = abs(_extent(nodes, "z_mm") - expected["height"]) < 1
+    # Spans in the right order and place (5 m then 7 m, or mirrored).
+    want = tuple(expected["stations"])
+    mirrored = tuple(want[-1] - s for s in reversed(want))
+    checks["stations"] = _stations(nodes) in (want, mirrored)
     mags = [ld.get("magnitude_kN_per_m") for ld in snapshot.get("loads", [])]
     checks["load"] = bool(mags) and all(
         m is not None and abs(float(m) - expected["load"]) < 1e-6 for m in mags)

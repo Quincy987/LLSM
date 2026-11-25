@@ -383,8 +383,10 @@ class CredentialWizard(tk.Toplevel):
     def _test_worker(self, spec: ProviderSpec, api_key: str, base_url: str):
         """Ask the provider for its models with the entered creds (worker thread)."""
         try:
+            # Longer than the menu's 3 s: the user is waiting for this one,
+            # and a cloud endpoint may be slower than a local server.
             result = probe_models(spec, api_key=api_key or None,
-                                  base_url=base_url or None)
+                                  base_url=base_url or None, timeout_s=10.0)
             ok, msg = describe_probe(result)
         except Exception as exc:
             ok, msg = False, f"{type(exc).__name__}: {exc}"

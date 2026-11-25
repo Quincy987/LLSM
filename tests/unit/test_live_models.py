@@ -35,7 +35,7 @@ class _Server:
         class _H(BaseHTTPRequestHandler):
             def do_GET(self):
                 outer.hits += 1
-                if self.path.rstrip("/").endswith("/models"):
+                if self.path.rstrip("/") == "/v1/models":  # only under /v1, like a real server
                     body = json.dumps({"object": "list", "data": [
                         {"id": i, "object": "model", "created": 0, "owned_by": "x"}
                         for i in outer.ids]}).encode()
@@ -328,3 +328,9 @@ def test_menu_rows_for_a_server_only_provider(server, monkeypatch):
         assert rows() == [(f"(server not reachable at {holder['url']})", "disabled")]
     finally:
         root.destroy()
+
+
+def test_probe_of_a_url_without_v1_says_so(server):
+    r = probe_models(SPEC, base_url=server.url[:-len("/v1")] + "/wrong")
+    assert r.status == "error"
+    assert r.error.startswith("no model list at this URL; does it end in /v1?")

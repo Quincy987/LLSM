@@ -98,7 +98,7 @@ Any server that speaks the OpenAI Chat Completions API works. No cloud, no API k
    - LM Studio: `http://localhost:1234/v1`
    - vLLM: `http://localhost:8000/v1`
 3. Launch the panel (`.venv\Scripts\llsm-panel`), open **Tools → Set up credentials…**, choose *OpenAI-compatible*, and enter the base URL (API key is optional — local servers accept anything).
-4. Open **File → Switch Model → OpenAI-compatible**: it lists the server's models (asked in the background; a model you pull later shows up the next time you open the menu). Pick one; that starts a new chat on it.
+4. Open **File → Switch Model → OpenAI-compatible**: it lists the server's models (asked in the background; a model you pull later shows up the next time you open the menu). Pick one; coming from another provider, that starts a new chat.
 
 Notes for local models:
 

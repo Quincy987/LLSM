@@ -59,3 +59,13 @@ def test_a_run_only_passes_with_a_correct_model_and_a_real_answer():
     assert trial.judge({"nodes": False}, "Klaar.", None) == \
         {"built": False, "answered": True, "passed": False}
     assert trial.judge({}, "Klaar.", None)["built"] is False
+
+
+def test_continuous_beam_spans_must_be_in_place_mirrored_or_not():
+    _, exp = trial.PROMPTS["doorgaand"]
+    def nodes(xs):
+        return [{"name": f"N{i}", "x_mm": float(x), "y_mm": 0.0, "z_mm": 0.0} for i, x in enumerate(xs)]
+    assert trial._stations(nodes([0, 5000, 12000])) == (0, 5000, 12000)
+    for xs, ok in (([0, 5000, 12000], True), ([0, 7000, 12000], True), ([0, 6000, 12000], False)):
+        snap = {"nodes": nodes(xs), "beams": [], "supports": [], "loads": []}
+        assert trial.score(snap, exp, [])["stations"] is ok

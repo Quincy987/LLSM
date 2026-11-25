@@ -29,8 +29,10 @@ the OpenAI-compatible API. Script: `scripts/local_model_trial.py`.
 Three natural Dutch requests, three runs each, through the real OpenAI-compatible backend with the
 SCIA tools a new local chat gets, and the real in-memory model builder. Starting SCIA, pushing and
 calculating return a neutral answer (SCIA itself is not measured here). Each run is checked on what
-was built: number of nodes, members, supports and loads, span, height, load sign and size, section
-size, and the support type (portal: clamped; beam "op twee steunpunten": not clamped at both ends).
+was built: number of nodes, members, supports and loads, span and node positions along it (5 m then
+7 m, or mirrored), height, load sign and size, section size, and the support type (portal: clamped;
+beam "op twee steunpunten": not clamped at both ends). The node-position check was added after the
+runs; re-scored with it, every recorded run gives the same result.
 
 ```
 model                                   thinking  passed  built   median

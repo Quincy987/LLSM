@@ -77,3 +77,13 @@ def test_a_model_without_tools_points_at_the_toggle(monkeypatch):
 def test_an_unrelated_tool_mention_is_not_called_unsupported():
     exc = _status(openai.BadRequestError, 400, "invalid tool_call_id in message 7")
     assert request_error_kind(exc) == "other"
+
+
+def test_a_404_names_the_url_and_the_model(monkeypatch):
+    exc = _status(openai.NotFoundError, 404, "model 'qwen9' not found")
+    assert request_error_kind(exc) == "not_found"
+    b = _backend_raising(monkeypatch, exc)
+    b.model = "qwen9"
+    with pytest.raises(RuntimeError) as err:
+        b.chat("hoi")
+    assert "ends in /v1" in str(err.value) and "'qwen9'" in str(err.value)

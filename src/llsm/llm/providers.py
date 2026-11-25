@@ -213,7 +213,8 @@ def request_error_kind(exc: BaseException) -> str:
     """Sort a failed request to a server into what the user can act on.
 
     "timeout", "unreachable" (nothing listening, DNS, refused), "auth"
-    (401/403), "rate_limited" (429), "tools_unsupported" (the server or
+    (401/403), "not_found" (404: a base URL without /v1, or a model name
+    the server does not have), "rate_limited" (429), "tools_unsupported" (the server or
     model refuses the `tools` parameter: Ollama says "does not support
     tools", llama-server without --jinja names the tools parameter), or
     "other". Matched on class names and status codes so the SDK stays an
@@ -229,6 +230,8 @@ def request_error_kind(exc: BaseException) -> str:
     status = getattr(exc, "status_code", None)
     if status in (401, 403):
         return "auth"
+    if status == 404:
+        return "not_found"
     if status == 429 or "RateLimitError" in names:
         return "rate_limited"
     text = str(exc).lower()
@@ -280,8 +283,11 @@ def probe_models(
     except Exception as exc:
         kind = request_error_kind(exc)
         status = "unreachable" if kind in ("timeout", "unreachable") else "error"
-        return ModelProbe(status, error=f"{type(exc).__name__}: {exc}",
-                          base_url=resolved_url)
+        error = f"{type(exc).__name__}: {exc}"
+        if kind == "not_found":
+            # Asked for <base_url>/models: a 404 means the URL is off.
+            error = f"no model list at this URL; does it end in /v1? ({error})"
+        return ModelProbe(status, error=error, base_url=resolved_url)
     finally:
         try:
             backend.close()
