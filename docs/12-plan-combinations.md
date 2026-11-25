@@ -18,8 +18,13 @@ it first and prefer reusing its rules over a new data file; that needs LLSM's tr
 carry its title pattern (docs/10 §3.4) and the same agreement with Geert (docs/10 §6).
 
 ## 0. Who asked, and the rule that follows
+- Sebastiaan (2026-10-30): "belastinggevallen en -combinaties genereren conform de normen" (also
+  docs/09 §1, "design lead").
 - Berber (2026-11-12): "Jouw voorbeeld van de belastingcombinaties + beddingen zouden erg handig zijn."
 - Sophie (2026-11-06), against: "Ga niet alle combis maken … kijk eerst wat maatgevend is."
+- Geert (2026-11-24): "Kun je in alle BGT-frequente belastingcombinaties de combinatiefactor van
+  belastinggevallen {x} t/m {x} aanpassen naar {x}?" That edits combinations he already made, not
+  new ones: see §8. All wishes in one register: `docs/14-wishes.md`.
 
 **Not negotiable:** the tool *proposes* a table and writes nothing until the engineer confirms it.
 Dropping rows is one sentence. It never generates "all" combinations: every row needs a reason
@@ -143,3 +148,27 @@ Hoi Berber, Leuk dat de combinaties + beddingen je handig lijken. Voordat ik iet
 package mirroring `bedding/`, one data file, one def resource, 2 MCP tools, one builder bug fix,
 tests and a verify doc. Roughly the size of the v0.3.6 bedding release; the factor sign-off by a
 senior engineer is the long pole, not the code.
+
+## 8. Second mode: edit existing combinations (added 2026-11-25, Geert)
+Geert's ask: one factor for a range of cases, in every combination of one kind (e.g. all SLS
+frequent combinations). LLSM proposes no combination here; it changes a number the engineer
+already chose, everywhere at once, which is where hand work forgets one.
+- **Preview**: a table per affected combination, `case: old factor → new factor`, plus the
+  combinations of that kind that hold none of the cases (so "all" is visibly all). Nothing written.
+- **Apply**: to a new file version (`<model>_llsm-N.esa`), then read back: every changed factor
+  equals the confirmed value, every other factor and every other combination is unchanged.
+- **Needs** the same missing piece as §1 and §3 R3, one step further: reading the *contents* of a
+  combination (type, case, factor), not only its name. The writer half exists only for *new*
+  linear combinations at coefficient 1 (`build_case_classes_update` in `src/llsm/scia/load_xml.py`,
+  one case each, used by the report route; spike S8, three cases). A factor other than 1, and
+  changing a factor in an existing combination, linear or code, are untested.
+- **Open question for Geert's model copy**: are his SLS frequent combinations SCIA code
+  combinations (SCIA applies ψ itself from the load groups) or linear ones with explicit factors?
+  What a per-case coefficient means inside a code combination (on top of ψ or not) is unchecked;
+  find out on his copy before writing one. The preview must say which kind each combination is.
+- **Sophie's objection does not apply**: she objected to generating all combinations; this mode
+  generates none. The opt-in and propose-first rules of §0 still hold.
+- No factor data file needed: the engineer gives the new value, LLSM shows where it lands.
+- §7's "thin demand (1 yes, 1 no)" is out of date: Sebastiaan, Berber and Geert ask, Sophie is
+  against generating them all (`docs/14-wishes.md` §3). The gate of §7 (a model copy first, spike
+  first) still holds.

@@ -136,6 +136,30 @@ fail-loud cases from §2.
   command, one test model generator, one verify doc. Reuses the ESA_XML runner and guards from the
   bedding work; touches no existing tool. Spike is the gate; the reorder-her-export path can ship alone.
 
+## 8. Follow-up scope: 1D members for a ULS section check (added 2026-11-25, Geert)
+Geert (mail 2026-11-24): "Kun je voor dit element op mogelijk maatgevende locaties voor een
+doorsnedetoets in UGT, de combinaties van optredende momenten, normaalkrachten en dwarskrachten
+klaarzetten om in IDEA in te kunnen voeren. Gebruik de basis grootheden." Together with Berber's
+plates this partly answers the TODO "Ask constructeurs how forces go to IDEA / peaks": Berber wants
+plate forces in IDEA's column order, Geert wants concurrent M, N and V for a 1D member. How
+engineers treat peaks is still unanswered.
+- **In**: a saved `.esa` (calculated by the engineer, or on a copy as the report route's `calculate`
+  does), one 1D member, ULS combinations or result classes.
+- **Out**: per candidate section, one row of concurrent M, N and V in basic magnitudes ("basis
+  grootheden"), in IDEA's input order, units in the header. As in §3, never maxima from different
+  combinations in one row.
+- **Open question: who picks the sections.** Proposal: the tool lists, per component, the extreme
+  of M, N and V along the member with the two concurrent others, labelled with the section position
+  and the combination; the engineer picks the rows that go to IDEA. To ask Geert.
+- **Compare first**, as for plates: the toetsmodel's `scia_integration_strips_to_idea.py` (Geert's
+  team) already picks one extreme per zone for its strips; ask Geert whether that rule is how he
+  picks sections, and whether it fits 1D members.
+- **Depends on** results from a saved model. The report route already prints 1D internal forces to
+  XLSX for a model that carries a report: column N per result class (`docs/verify/report.md`), and
+  My, Vz per case for a test beam (`docs/verify/calc-run.md`, try 14). §2's XML export is the other
+  route. For chat-built models: calculation from the chat (`docs/verify/calc-run.md`).
+  Register: `docs/14-wishes.md`.
+
 ## Prior attempts
 - Beam results via OpenAPI (`get_beam_inner_forces`): v0.3.4 fixed a TypeError, the `ResultKey`
   mapping miss on v24 is still open (docs/08 Phase A). Only works for models LLSM built live.
