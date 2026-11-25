@@ -1,7 +1,7 @@
 # 14 — What the constructeurs asked for, and where it stands
 
 Date: 2026-11-25. One register of every wish from the replies to "LLSM: is er behoefte aan een
-chat-assistent voor SCIA Engineer?" (2026-10-30) and "Drie vragen uit je SCIA-werk voor een
+chat-assistent voor SCIA Engineer?" (2026-10-30 and 2026-11-06) and "Drie vragen uit je SCIA-werk voor een
 chat-assistent" (2026-11-06 to 2026-11-24). Each row points at the plan that covers it; the plans
 keep the detail. Quotes are from the mails, in Dutch. A status is what the code on `main` does
 today, not what a plan proposes.
