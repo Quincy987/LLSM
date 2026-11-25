@@ -11,7 +11,7 @@ Inspired by VibeModel (the Revit equivalent, internal).
 Every release and what it changed: [`CHANGELOG.md`](CHANGELOG.md).
 
 - ✅ **Build a model from a chat** (chat → ADM model → SCIA with a mesh): chat panel, CLI and an MCP server (32 tools in all), Claude Code / API / OpenAI / Gemini / local backends. [`docs/06-phase0-results.md`](docs/06-phase0-results.md)
-- ✅ **Calculate a chat-built model and read the forces back**: pushed into a copy of LLSM's start model (`llsm start-model <template.esa>`, once per computer), a saved copy is calculated by SCIA's batch program while SCIA stays open; about 30 s for a small model, 150 s for 200 members with 10 load cases. Forces per member at its ends and extremes; deflections not yet. [`docs/verify/calc-run.md`](docs/verify/calc-run.md)
+- ✅ **Calculate a chat-built model and read the forces back**: pushed into a copy of LLSM's start model (`llsm start-model <template.esa>`, once per computer), a saved copy is calculated by SCIA's batch program while SCIA stays open; about 30 s for a small model, 150 s for 200 members with 10 load cases. Materials take their stiffness and weight from SCIA's library by grade (C30/37, S235); a beam on a pin and rollers is held against twisting by LLSM, a real mechanism is refused. Forces and deflections per member at its ends and extremes. [`docs/verify/calc-run.md`](docs/verify/calc-run.md)
 - ✅ **Beddings on a saved model** (v0.3.6): soil layers onto the piles, a checked new file next to the model. [`docs/verify/phase1-bedding.md`](docs/verify/phase1-bedding.md)
 - ✅ **Pilot readiness** (v0.3.7): LLSM only manages the SCIA it started, `install.cmd`, `llsm diagnose`. [`docs/verify/phase2-pilot.md`](docs/verify/phase2-pilot.md)
 - ✅ **Moving load on a saved model** (v0.3.11): one load case per vehicle position along a road. [`docs/verify/phase3-moving-load.md`](docs/verify/phase3-moving-load.md)
@@ -240,9 +240,9 @@ What was tested, and how, per phase: [`docs/verify/`](docs/verify/) (route spike
 
 ## Current tool surface (32 tools)
 
-- **Model defs**: `new_model`, `add_material`, `add_rectangular_section`
+- **Model defs**: `new_model`, `add_material` (with the grade the engineer names, e.g. C30/37 or S235, from SCIA's library), `add_rectangular_section` (width x height)
 - **Geometry**: `add_node`, `add_beam`, `update_node`, `set_member_endpoints`, `set_member_cross_section`, `delete_object`
-- **Supports**: `add_fixed_support`, `add_pinned_support`, `add_roller_support`
+- **Supports**: `add_fixed_support`, `add_pinned_support`, `add_roller_support` (where no load acts, LLSM holds a support in more directions so the model cannot twist or swing; `push_model` says which)
 - **Loads**: `add_load_group`, `add_load_case`, `add_line_load`, `set_line_load_magnitude` (a load case takes its action type from its group: Variable and Moving give a variable case with duration Short, Fire and Seismic an accidental one, Tensioning a permanent one; `action_type` and `duration` override)
 - **Query**: `model_summary`, `get_node_position`, `refresh_from_scia`
 - **Results**: `get_beam_deflection`, `get_beam_inner_forces`
@@ -259,5 +259,5 @@ Names are unique per model: an `add_*` with a name that already exists is refuse
 - Building a model from scratch: no point loads, surface loads or slabs yet (point and surface loads on a saved model: see Moving load).
 - LLSM writes no load combinations into a model, neither when building nor on a saved one ([`docs/12-plan-combinations.md`](docs/12-plan-combinations.md) is a proposal; the moving-load envelope is open). Only the report's chapter per load case uses one combination per case, on its throwaway print copy.
 - The OpenAPI cannot attach to a SCIA the engineer opened by hand, nor read back a model it did not build ([`docs/03-scia-integration.md`](docs/03-scia-integration.md)). So the saved-model routes work on the file through ESA_XML, with SCIA closed: beddings and moving load write a new `<model>_llsm-NN.esa` next to it; the report prints from a copy.
-- Calculating from the chat needs the start model (`llsm start-model`, see `llsm diagnose`). LLSM's materials carry no stiffness or weight yet: SCIA uses its default concrete (forces are right when all members share one material), deflections are not given, and steel models are not calculated. A single beam on a pin and a roller has no results (it can twist): give one end a fixed support. Support reactions are not read. The SCIA window itself stays uncalculated: the numbers come from a copy ([`docs/verify/calc-run.md`](docs/verify/calc-run.md)).
+- Calculating from the chat needs the start model (`llsm start-model`, see `llsm diagnose`). A material without a grade from SCIA's library gets SCIA's default concrete (forces right only when all members share it, no deflections). Free motions are checked for members rigidly connected at shared nodes: LLSM has no hinges or springs. Support reactions are not read. The SCIA window itself stays uncalculated: the numbers come from a copy ([`docs/verify/calc-run.md`](docs/verify/calc-run.md)).
 - Single SCIA install assumed on the machine.
